@@ -193,6 +193,44 @@ document.getElementById('randPanBtn').addEventListener('click', () => {
     }, 200);
 });
 
+// Reset Track Params
+document.getElementById('resetParamBtn').addEventListener('click', () => {
+    const t = tracks[uiManager.getSelectedTrackIndex()];
+    
+    // Apply requested parameter values
+    t.params.position = 0.00;
+    t.params.spray = 0.00;
+    t.params.grainSize = 0.11;
+    t.params.density = 3.00;
+    t.params.pitch = 1.00;
+    t.params.attack = 0.00; 
+    t.params.release = 0.50;
+    t.params.hpFilter = 20.00;
+    t.params.filter = 10000.00;
+    t.params.volume = 0.80;
+
+    // Turn OFF all LFO targets
+    t.lfos.forEach(lfo => {
+        lfo.target = 'none';
+    });
+
+    // Update UI components
+    uiManager.updateKnobs();
+    uiManager.updateLfoUI();
+    visualizer.drawBufferDisplay();
+
+    // Optional: Visual feedback on the button
+    const btn = document.getElementById('resetParamBtn');
+    const originalContent = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check mr-1"></i>Done';
+    btn.classList.add('text-emerald-400', 'border-emerald-500');
+    
+    setTimeout(() => {
+        btn.innerHTML = originalContent;
+        btn.classList.remove('text-emerald-400', 'border-emerald-500');
+    }, 800);
+});
+
 // Global Pan Shift Slider
 document.getElementById('panShiftSlider').addEventListener('input', (e) => {
     const shiftAmount = parseFloat(e.target.value);
