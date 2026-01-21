@@ -24,6 +24,11 @@
                 <span class="text-xs text-neutral-500 font-bold">BPM</span>
                 <input type="number" id="bpmInput" value="120" min="30" max="300" class="bg-transparent border-none w-12 text-sm text-center focus:outline-none text-emerald-400 font-mono">
             </div>
+            <!-- CPU / Grain Monitor -->
+            <div class="flex items-center gap-2 ml-2 bg-neutral-800 rounded px-2 py-1" title="Active Audio Grains / CPU Load">
+                <span class="text-xs text-neutral-500 font-bold"><i class="fas fa-microchip"></i> CPU</span>
+                <span id="grainMonitor" class="text-sm font-mono text-emerald-400 w-8 text-center">0</span>
+            </div>
         </div>
         <div class="flex items-center gap-2">
              <button id="snapshotBtn" class="text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2 py-1 rounded transition border border-neutral-700 w-16">Snap</button>

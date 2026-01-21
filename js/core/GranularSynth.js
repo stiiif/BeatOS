@@ -3,9 +3,20 @@ export class GranularSynth {
     constructor(audioEngine) {
         this.audioEngine = audioEngine;
         this.drawQueue = [];
+        this.activeGrains = 0;
+        this.MAX_GRAINS = 400; // Hard limit to prevent CPU overload/crackling
+    }
+
+    getActiveGrainCount() {
+        return this.activeGrains;
     }
 
     playGrain(track, time, scheduleVisualDrawCallback) {
+        // Safety Limiter: Drop grains if CPU is overloaded
+        if (this.activeGrains >= this.MAX_GRAINS) {
+            return;
+        }
+
         const audioCtx = this.audioEngine.getContext();
         if (!audioCtx || !track.buffer) return;
 
@@ -63,8 +74,14 @@ export class GranularSynth {
         env.gain.linearRampToValueAtTime(1, time + (dur*0.1));
         env.gain.linearRampToValueAtTime(0, time + dur);
 
+        // Increment active grain count
+        this.activeGrains++;
+
         src.start(time, offset, dur);
         src.onended = () => { 
+            // Decrement active grain count
+            this.activeGrains--;
+
             src.disconnect(); env.disconnect(); 
             lpNode.disconnect(); hpNode.disconnect(); 
             vol.disconnect(); panner.disconnect();

@@ -588,3 +588,23 @@ function showTrackLibrary() {
     modal.classList.remove('hidden');
 }
 
+// ============= GRAIN MONITOR UPDATER =============
+const grainMonitorEl = document.getElementById('grainMonitor');
+
+setInterval(() => {
+    const count = granularSynth.getActiveGrainCount();
+    grainMonitorEl.innerText = count;
+    
+    // Change color based on load
+    if (count > 350) {
+        grainMonitorEl.classList.replace('text-emerald-400', 'text-red-500');
+        grainMonitorEl.classList.add('font-bold');
+    } else if (count > 200) {
+        grainMonitorEl.classList.replace('text-emerald-400', 'text-amber-400');
+        grainMonitorEl.classList.remove('text-red-500');
+        grainMonitorEl.classList.add('font-bold');
+    } else {
+        grainMonitorEl.classList.remove('text-red-500', 'text-amber-400', 'font-bold');
+        grainMonitorEl.classList.add('text-emerald-400');
+    }
+}, 100);
