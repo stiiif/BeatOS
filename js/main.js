@@ -590,6 +590,16 @@ function showTrackLibrary() {
 
 // ============= GRAIN MONITOR UPDATER =============
 const grainMonitorEl = document.getElementById('grainMonitor');
+const maxGrainsInput = document.getElementById('maxGrainsInput');
+
+// Max Grains Control
+if(maxGrainsInput) {
+    maxGrainsInput.addEventListener('change', (e) => {
+        let val = parseInt(e.target.value);
+        if(isNaN(val) || val < 10) val = 400;
+        granularSynth.setMaxGrains(val);
+    });
+}
 
 setInterval(() => {
     const count = granularSynth.getActiveGrainCount();

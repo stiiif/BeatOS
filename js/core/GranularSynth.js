@@ -11,6 +11,10 @@ export class GranularSynth {
         return this.activeGrains;
     }
 
+    setMaxGrains(max) {
+        this.MAX_GRAINS = max;
+    }
+
     playGrain(track, time, scheduleVisualDrawCallback) {
         // Safety Limiter: Drop grains if CPU is overloaded
         if (this.activeGrains >= this.MAX_GRAINS) {
