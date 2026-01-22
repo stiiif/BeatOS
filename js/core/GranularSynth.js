@@ -97,7 +97,11 @@ export class GranularSynth {
     scheduleNote(track, time, scheduleVisualDrawCallback) {
         const density = Math.max(1, track.params.density);
         const dur = track.params.release;
-        const grains = Math.floor(dur * density);
+        
+        // FIX: Use Math.ceil instead of Math.floor.
+        // This ensures that if (Duration * Density) < 1, we still get at least 1 grain.
+        // Example: 0.5s Release * 1Hz Density = 0.5 -> Ceil = 1 Grain.
+        const grains = Math.ceil(dur * density);
         const interval = 1/density;
 
         for(let i=0; i<grains; i++) {
