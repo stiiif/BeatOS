@@ -86,13 +86,9 @@ export class UIManager {
         const container = document.getElementById('matrixContainer');
         container.innerHTML = ''; 
         
-        // Render existing tracks
-        this.tracks.forEach(t => {
-            this.appendTrackRow(t.id, visualizerCallback);
-        });
-
-        // Add "Add Track" Row
+        // Add "Add Track" Row FIRST so tracks are inserted before it
         const buttonRow = document.createElement('div');
+        buttonRow.id = 'matrixButtonRow'; // Explicit ID for reliable finding
         buttonRow.className = 'flex gap-2 mt-2 px-1';
         
         const addTrackBtn = document.createElement('button');
@@ -111,6 +107,11 @@ export class UIManager {
         buttonRow.appendChild(addGroupBtn);
         
         container.appendChild(buttonRow);
+
+        // Render existing tracks (They will now correctly insert BEFORE the button row)
+        this.tracks.forEach(t => {
+            this.appendTrackRow(t.id, visualizerCallback);
+        });
 
         // Visualizer Click Selection
         const vis = document.getElementById('visualizer');
@@ -174,7 +175,8 @@ export class UIManager {
 
     appendTrackRow(trk, visualizerCallback = null) {
         const container = document.getElementById('matrixContainer');
-        const buttonRow = container.lastElementChild;
+        // Retrieve the button row by ID to ensure we always insert before it
+        const buttonRow = document.getElementById('matrixButtonRow');
         
         const groupIdx = Math.floor(trk / TRACKS_PER_GROUP);
         
@@ -262,6 +264,7 @@ export class UIManager {
         rowDiv.appendChild(actionsDiv);
         rowElements.push(actionsDiv);
         
+        // Insert row before button row
         if (buttonRow) {
             container.insertBefore(rowDiv, buttonRow);
         } else {
