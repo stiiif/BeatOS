@@ -40,7 +40,7 @@ export class UIManager {
         this.tracks = tracks;
     }
 
-    initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
+initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
         
         // --- Step Headers ---
@@ -86,7 +86,15 @@ export class UIManager {
         const container = document.getElementById('matrixContainer');
         container.innerHTML = ''; 
         
-        // Add "Add Track" Row FIRST so tracks are inserted before it
+        // 1. Render existing tracks FIRST
+        // During this loop, 'matrixButtonRow' does not exist yet, so appendTrackRow 
+        // will default to appendChild, stacking tracks in the correct order (1, 2, 3...)
+        this.tracks.forEach(t => {
+            this.appendTrackRow(t.id, visualizerCallback);
+        });
+
+        // 2. Add "Add Track" Row LAST
+        // This ensures it appears at the bottom after all initial tracks
         const buttonRow = document.createElement('div');
         buttonRow.id = 'matrixButtonRow'; // Explicit ID for reliable finding
         buttonRow.className = 'flex gap-2 mt-2 px-1';
@@ -107,11 +115,6 @@ export class UIManager {
         buttonRow.appendChild(addGroupBtn);
         
         container.appendChild(buttonRow);
-
-        // Render existing tracks (They will now correctly insert BEFORE the button row)
-        this.tracks.forEach(t => {
-            this.appendTrackRow(t.id, visualizerCallback);
-        });
 
         // Visualizer Click Selection
         const vis = document.getElementById('visualizer');
