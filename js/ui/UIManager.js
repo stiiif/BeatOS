@@ -14,6 +14,26 @@ export class UIManager {
         this.randomChokeGroups = [];
         this.basePanValues = [];
         this.globalPanShift = 0;
+        
+        // Define Keyboard Mapping (Physical Codes for layout adaptability)
+        this.keyMapping = {
+            // Beat 1 (Steps 1-4)
+            'Digit1': 0, 'KeyQ': 1, 'KeyA': 2, 'KeyZ': 3,
+            // Beat 2 (Steps 5-8)
+            'Digit2': 4, 'KeyW': 5, 'KeyS': 6, 'KeyX': 7,
+            // Beat 3 (Steps 9-12)
+            'Digit3': 8, 'KeyE': 9, 'KeyD': 10, 'KeyC': 11,
+            // Beat 4 (Steps 13-16)
+            'Digit4': 12, 'KeyR': 13, 'KeyF': 14, 'KeyV': 15,
+            // Beat 5 (Steps 17-20)
+            'Digit5': 16, 'KeyT': 17, 'KeyG': 18, 'KeyB': 19,
+            // Beat 6 (Steps 21-24)
+            'Digit6': 20, 'KeyY': 21, 'KeyH': 22, 'KeyN': 23,
+            // Beat 7 (Steps 25-28)
+            'Digit7': 24, 'KeyU': 25, 'KeyJ': 26, 'KeyM': 27,
+            // Beat 8 (Steps 29-32) - Note: 'Comma' is usually next to M
+            'Digit8': 28, 'KeyI': 29, 'KeyK': 30, 'Comma': 31
+        };
     }
 
     setTracks(tracks) {
@@ -24,7 +44,6 @@ export class UIManager {
         this.visualizerCallback = visualizerCallback;
         
         // --- Step Headers ---
-        // We now use the exact same grid class as the rows to ensure alignment
         const headerContainer = document.getElementById('stepHeaders');
         headerContainer.className = 'sequencer-grid sticky top-0 bg-neutral-950 z-30 pb-2 border-b border-neutral-800 pt-2';
         headerContainer.innerHTML = '';
@@ -74,7 +93,6 @@ export class UIManager {
 
         // Add "Add Track" Row
         const buttonRow = document.createElement('div');
-        // Make button row span full grid width visually, but inside our container structure
         buttonRow.className = 'flex gap-2 mt-2 px-1';
         
         const addTrackBtn = document.createElement('button');
@@ -92,8 +110,6 @@ export class UIManager {
         buttonRow.appendChild(addTrackBtn);
         buttonRow.appendChild(addGroupBtn);
         
-        // We append this after the matrix rows, handled dynamically in appendTrackRow usually,
-        // but here we just append it to the main container
         container.appendChild(buttonRow);
 
         // Visualizer Click Selection
@@ -114,6 +130,28 @@ export class UIManager {
                 this.handleSliderWheel(e);
             }
         }, { passive: false });
+
+        // --- KEYBOARD INPUT LISTENER ---
+        document.addEventListener('keydown', (e) => {
+            // Ignore if user is typing in an input field
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            
+            // Check if key is in our map
+            if (this.keyMapping.hasOwnProperty(e.code)) {
+                // Prevent default scrolling for Space/Arrows if mapped (though we aren't using them currently)
+                // e.preventDefault(); 
+                
+                const stepIndex = this.keyMapping[e.code];
+                const currentTrackId = this.selectedTrackIndex;
+                
+                // Toggle the step on the currently selected track
+                if (currentTrackId >= 0 && currentTrackId < this.tracks.length) {
+                    this.toggleStep(currentTrackId, stepIndex);
+                    
+                    // Optional: Visual feedback on the specific button could go here
+                }
+            }
+        });
     }
 
     handleSliderWheel(e) {
@@ -136,7 +174,6 @@ export class UIManager {
 
     appendTrackRow(trk, visualizerCallback = null) {
         const container = document.getElementById('matrixContainer');
-        // The last child is usually the button row, insert before it
         const buttonRow = container.lastElementChild;
         
         const groupIdx = Math.floor(trk / TRACKS_PER_GROUP);
@@ -151,14 +188,18 @@ export class UIManager {
 
         // Create the ROW container (Grid)
         const rowDiv = document.createElement('div');
-        rowDiv.className = 'sequencer-grid'; // Use the shared grid class
+        rowDiv.className = 'sequencer-grid'; 
         
         const rowElements = [];
         
         // 1. Label
         const label = document.createElement('div');
         label.className = `track-label ${trk===0 ? 'selected' : ''}`;
-        label.innerText = trk < 10 ? `0${trk}` : trk;
+        
+        // [MODIFIED] Display Number starting from 1 instead of 0
+        const displayNum = trk + 1;
+        label.innerText = displayNum < 10 ? `0${displayNum}` : displayNum;
+        
         label.title = `Group ${effectiveGroup}`;
         label.onclick = () => this.selectTrack(trk, visualizerCallback);
         label.style.borderRight = `3px solid ${groupColor}`;
@@ -221,7 +262,6 @@ export class UIManager {
         rowDiv.appendChild(actionsDiv);
         rowElements.push(actionsDiv);
         
-        // Insert row before button row
         if (buttonRow) {
             container.insertBefore(rowDiv, buttonRow);
         } else {
@@ -231,8 +271,6 @@ export class UIManager {
         this.trackRowElements[trk] = rowElements;
     }
 
-    // ... [Rest of the file remains unchanged, just need to make sure we keep it]
-    
     updateMatrixHead(current) {
         const prev = (current - 1 + NUM_STEPS) % NUM_STEPS;
         for(let t=0; t<this.tracks.length; t++) {
@@ -248,7 +286,9 @@ export class UIManager {
         if(this.trackLabelElements[this.selectedTrackIndex])
             this.trackLabelElements[this.selectedTrackIndex].classList.add('selected');
         
-        document.getElementById('currentTrackNum').innerText = idx < 10 ? '0'+idx : idx;
+        // [MODIFIED] Display Number starting from 1 instead of 0
+        const displayNum = idx + 1;
+        document.getElementById('currentTrackNum').innerText = displayNum < 10 ? '0'+displayNum : displayNum;
         
         const normalGrp = Math.floor(idx / TRACKS_PER_GROUP);
         const grp = this.randomChokeMode ? this.randomChokeGroups[idx] : normalGrp;
@@ -262,7 +302,7 @@ export class UIManager {
         indicator.style.backgroundColor = groupColor;
         indicator.style.boxShadow = `0 0 8px ${groupColorGlow}`;
         
-        const rightPanel = document.querySelector('.right-pane'); // Updated selector
+        const rightPanel = document.querySelector('.right-pane');
         if (rightPanel) {
             rightPanel.style.setProperty('--group-color', groupColor);
             rightPanel.style.setProperty('--group-color-glow', groupColorGlow);
@@ -276,6 +316,8 @@ export class UIManager {
         }
     }
 
+    // ... existing getters and methods ...
+    
     getSelectedTrackIndex() { return this.selectedTrackIndex; }
     getSelectedLfoIndex() { return this.selectedLfoIndex; }
     setSelectedLfoIndex(index) { this.selectedLfoIndex = index; }
