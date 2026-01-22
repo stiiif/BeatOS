@@ -8,6 +8,7 @@ import { TrackLibrary } from './modules/TrackLibrary.js';
 import { UIManager } from './ui/UIManager.js';
 import { Visualizer } from './ui/Visualizer.js';
 import { LayoutManager } from './ui/LayoutManager.js';
+import { NUM_LFOS } from './utils/constants.js';
 
 // Initialize all systems
 const audioEngine = new AudioEngine();
@@ -375,7 +376,7 @@ console.log('saveTrackBtn:', document.getElementById('saveTrackBtn'));
 console.log('loadTrackBtn:', document.getElementById('loadTrackBtn'));
 console.log('loadSampleBtn:', document.getElementById('loadSampleBtn'));
 
-// Save Track to Library
+// Save Track to Library (LocalStorage)
 document.getElementById('saveTrackBtn').addEventListener('click', () => {
     try {
         if (!tracks || tracks.length === 0) {
@@ -405,6 +406,39 @@ document.getElementById('saveTrackBtn').addEventListener('click', () => {
     }
 });
 
+// EXPORT CURRENT TRACK to FILE (.beattrk)
+document.getElementById('exportCurrentTrackBtn').addEventListener('click', async () => {
+    try {
+        if (!tracks || tracks.length === 0) {
+            alert('Please initialize audio first');
+            return;
+        }
+        const currentTrack = tracks[uiManager.getSelectedTrackIndex()];
+        if (!currentTrack) {
+            alert('No track selected');
+            return;
+        }
+
+        const btn = document.getElementById('exportCurrentTrackBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Exporting...';
+        btn.disabled = true;
+
+        await trackLibrary.exportTrackToZip(currentTrack);
+
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+
+    } catch (error) {
+        console.error('Error exporting track:', error);
+        alert('Failed to export track: ' + error.message);
+        const btn = document.getElementById('exportCurrentTrackBtn');
+        btn.innerHTML = '<i class="fas fa-file-export mr-1"></i>Export';
+        btn.disabled = false;
+    }
+});
+
+
 // Load Track from Library - Show Modal
 document.getElementById('loadTrackBtn').addEventListener('click', () => {
     try {
@@ -431,7 +465,7 @@ document.getElementById('trackLibraryModal').addEventListener('click', (e) => {
     }
 });
 
-// Import Track from File
+// Import Track from File (Handles .json and .beattrk)
 document.getElementById('importTrackBtn').addEventListener('click', () => {
     document.getElementById('importTrackInput').click();
 });
@@ -439,12 +473,90 @@ document.getElementById('importTrackBtn').addEventListener('click', () => {
 document.getElementById('importTrackInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) {
-        trackLibrary.importTrack(file, (success) => {
-            if (success) {
-                showTrackLibrary(); // Refresh the library view
-                alert('Track imported successfully!');
-            }
-        });
+        // Handle .beattrk or .zip file (New Format)
+        if (file.name.endsWith('.beattrk') || file.name.endsWith('.zip')) {
+             trackLibrary.importTrackFromZip(file, async (success, trackData, arrayBuffer) => {
+                if (success) {
+                    // We found a sample, so let's load it directly into the current track
+                    // instead of just adding it to the metadata library
+                    const currentTrack = tracks[uiManager.getSelectedTrackIndex()];
+                    const audioCtx = audioEngine.getContext();
+
+                    // Apply Parameters
+                    currentTrack.params = { ...currentTrack.params, ...trackData.params };
+                    currentTrack.steps = [...trackData.steps];
+                    currentTrack.muted = !!trackData.muted;
+                    currentTrack.soloed = !!trackData.soloed;
+                    currentTrack.stepLock = !!trackData.stepLock;
+
+                    if (trackData.lfos) {
+                        trackData.lfos.forEach((lData, lIdx) => {
+                            if (lIdx < NUM_LFOS) {
+                                currentTrack.lfos[lIdx].wave = lData.wave;
+                                currentTrack.lfos[lIdx].rate = lData.rate;
+                                currentTrack.lfos[lIdx].amount = lData.amount;
+                                currentTrack.lfos[lIdx].target = lData.target;
+                            }
+                        });
+                    }
+
+                    // Decode and Apply Audio
+                    if (arrayBuffer && audioCtx) {
+                         try {
+                            const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                            currentTrack.customSample = {
+                                name: trackData.sampleName || "Imported .beattrk",
+                                buffer: audioBuffer,
+                                duration: audioBuffer.duration
+                            };
+                            currentTrack.buffer = audioBuffer;
+                            
+                            // Update Track Label
+                            const typeLabel = document.getElementById('trackTypeLabel');
+                            typeLabel.textContent = currentTrack.customSample.name;
+                            typeLabel.title = currentTrack.customSample.name;
+                         } catch (err) {
+                             console.error("Error decoding .beattrk audio", err);
+                             alert("Loaded track settings, but failed to decode audio sample.");
+                         }
+                    } else if (trackData.hasSample) {
+                        alert("Note: This track setting expects a sample but none was found in the file.");
+                    }
+
+                    // Update UI
+                    uiManager.updateKnobs();
+                    uiManager.updateLfoUI();
+                    uiManager.updateTrackStateUI(uiManager.getSelectedTrackIndex());
+                    
+                    // Update grid
+                    const matrixSteps = uiManager.matrixStepElements[uiManager.getSelectedTrackIndex()];
+                    for (let s = 0; s < currentTrack.steps.length; s++) {
+                        if (currentTrack.steps[s]) {
+                            matrixSteps[s].classList.add('active');
+                        } else {
+                            matrixSteps[s].classList.remove('active');
+                        }
+                    }
+                    visualizer.drawBufferDisplay();
+                    
+                    document.getElementById('trackLibraryModal').classList.add('hidden');
+                    alert(`Loaded "${trackData.name}" directly to current track!`);
+                    
+                    // Optionally also save to library (metadata only)
+                    // trackLibrary.savedTracks.push(trackData);
+                    // trackLibrary.saveLibrary();
+                }
+             });
+        } 
+        // Handle .json (Legacy)
+        else {
+            trackLibrary.importTrack(file, (success) => {
+                if (success) {
+                    showTrackLibrary(); // Refresh the library view
+                    alert('Track imported to library successfully!');
+                }
+            });
+        }
     }
     e.target.value = '';
 });

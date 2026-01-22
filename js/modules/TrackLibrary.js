@@ -1,5 +1,6 @@
 // Track Library Module - Manages saved track presets
 import { NUM_LFOS } from '../utils/constants.js';
+import { AudioUtils } from '../utils/AudioUtils.js';
 
 export class TrackLibrary {
     constructor() {
@@ -27,7 +28,7 @@ export class TrackLibrary {
         }
     }
 
-    // Save current track to library
+    // Save current track to library (Metadata only)
     saveTrack(track, trackName = null) {
         const name = trackName || prompt('Enter a name for this track:', `Track ${track.id}`);
         if (!name) return null;
@@ -47,7 +48,7 @@ export class TrackLibrary {
                 amount: l.amount, 
                 target: l.target 
             })),
-            // Store custom sample info if present
+            // Store custom sample info if present (but NOT the buffer)
             customSample: track.customSample ? {
                 name: track.customSample.name,
                 duration: track.customSample.duration
@@ -59,7 +60,80 @@ export class TrackLibrary {
         return trackData;
     }
 
-    // Load track data into a track object
+    // EXPORT: Create a .beattrk ZIP file containing JSON + WAV
+    async exportTrackToZip(track) {
+        if (!track) return;
+
+        const zip = new JSZip();
+        
+        // 1. Prepare JSON Data
+        const trackData = {
+            name: track.customSample ? track.customSample.name : `Track ${track.id}`,
+            params: track.params,
+            steps: track.steps,
+            muted: track.muted,
+            soloed: track.soloed,
+            stepLock: track.stepLock,
+            lfos: track.lfos.map(l => ({ wave: l.wave, rate: l.rate, amount: l.amount, target: l.target })),
+            hasSample: false
+        };
+
+        // 2. Add WAV if sample exists
+        if (track.customSample && track.buffer) {
+            try {
+                const wavBuffer = AudioUtils.audioBufferToWav(track.buffer);
+                zip.file("sample.wav", wavBuffer);
+                trackData.hasSample = true;
+                trackData.sampleName = track.customSample.name;
+            } catch (e) {
+                console.error("Failed to encode WAV for export:", e);
+            }
+        }
+
+        zip.file("track.json", JSON.stringify(trackData, null, 2));
+
+        // 3. Generate File
+        const blob = await zip.generateAsync({type:"blob"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const safeName = (trackData.name || "track").replace(/[^a-z0-9]/gi, '_');
+        a.download = `${safeName}.beattrk`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    // IMPORT: Read .beattrk ZIP file
+    async importTrackFromZip(file, callback) {
+        try {
+            const zip = await JSZip.loadAsync(file);
+            
+            // 1. Load JSON
+            const jsonFile = zip.file("track.json");
+            if (!jsonFile) throw new Error("Invalid .beattrk file");
+            
+            const jsonStr = await jsonFile.async("string");
+            const trackData = JSON.parse(jsonStr);
+
+            // 2. Load Sample
+            const sampleFile = zip.file("sample.wav");
+            let arrayBuffer = null;
+            if (sampleFile) {
+                arrayBuffer = await sampleFile.async("arraybuffer");
+            }
+
+            // Return data and buffer to callback
+            callback(true, trackData, arrayBuffer);
+
+        } catch (e) {
+            console.error("Failed to import .beattrk:", e);
+            callback(false, null, null);
+        }
+    }
+
+    // Load track data into a track object (Memory/Library only)
     loadTrackInto(savedTrackIndex, targetTrack) {
         if (savedTrackIndex < 0 || savedTrackIndex >= this.savedTracks.length) {
             return false;
@@ -110,7 +184,7 @@ export class TrackLibrary {
         return false;
     }
 
-    // Export track to file
+    // Export track to file (JSON Only - for library items without buffer)
     exportTrack(index) {
         if (index < 0 || index >= this.savedTracks.length) return;
         
@@ -127,7 +201,7 @@ export class TrackLibrary {
         URL.revokeObjectURL(url);
     }
 
-    // Import track from file
+    // Import track from legacy JSON file
     importTrack(file, callback) {
         const reader = new FileReader();
         reader.onload = (e) => {
