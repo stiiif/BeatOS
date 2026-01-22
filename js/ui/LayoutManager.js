@@ -46,14 +46,12 @@ export class LayoutManager {
 
         if (this.isResizingV) {
             // Calculate new width for right pane
-            // Window width - mouse X = Right pane width
             const containerRect = this.container.getBoundingClientRect();
             const newRightWidth = containerRect.right - e.clientX;
             
             // Constrain width
             if (newRightWidth > 250 && newRightWidth < 800) {
                 this.rightPane.style.width = `${newRightWidth}px`;
-                // Signal resize for canvas
                 window.dispatchEvent(new Event('resize'));
             }
         }
@@ -67,7 +65,6 @@ export class LayoutManager {
             const topHeight = Math.max(100, Math.min(totalHeight - 100, relativeY));
             const bottomHeight = totalHeight - topHeight;
             
-            // Update flex-grow values to maintain ratio
             this.sequencerPanel.style.flex = `${topHeight}`;
             this.futurePanel.style.flex = `${bottomHeight}`;
         }
@@ -76,8 +73,8 @@ export class LayoutManager {
     stopResizing() {
         this.isResizingV = false;
         this.isResizingH = false;
-        this.resizerV.classList.remove('resizing');
-        this.resizerH.classList.remove('resizing');
+        if(this.resizerV) this.resizerV.classList.remove('resizing');
+        if(this.resizerH) this.resizerH.classList.remove('resizing');
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
     }

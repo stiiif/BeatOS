@@ -2,19 +2,7 @@
 import { NUM_LFOS } from '../utils/constants.js';
 
 export class PresetManager {
-    // Helper: Convert ArrayBuffer to Base64
-    bufferToBase64(buffer) {
-        let binary = '';
-        const bytes = new Uint8Array(buffer);
-        const len = bytes.byteLength;
-        for (let i = 0; i < len; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        return window.btoa(binary);
-    }
-
     // Helper: Convert AudioBuffer to WAV ArrayBuffer
-    // Simple WAV encoder implementation
     audioBufferToWav(buffer, opt) {
         opt = opt || {};
         var numChannels = buffer.numberOfChannels;
@@ -109,8 +97,16 @@ export class PresetManager {
         }
     }
 
+    // --- SAVE LOGIC ---
     async savePreset(tracks, bpm) {
-        const tracksData = await Promise.all(tracks.map(async t => {
+        // Create new ZIP
+        const zip = new JSZip();
+        
+        // Prepare track data for JSON
+        const tracksData = [];
+        
+        for(let i=0; i<tracks.length; i++) {
+            const t = tracks[i];
             const trackObj = {
                 id: t.id, 
                 params: t.params, 
@@ -119,129 +115,177 @@ export class PresetManager {
                 soloed: t.soloed, 
                 stepLock: t.stepLock,
                 lfos: t.lfos.map(l => ({ wave: l.wave, rate: l.rate, amount: l.amount, target: l.target })),
-                hasCustomSample: false
+                samplePath: null // Will be filled if custom sample exists
             };
 
-            // If track has a custom sample, serialize it
+            // If track has a custom sample, add it to the ZIP
             if (t.customSample && t.buffer) {
                 try {
-                    // Convert AudioBuffer to WAV
-                    const wavBuffer = this.audioBufferToWav(t.buffer);
-                    // Convert WAV ArrayBuffer to Base64 string
-                    const base64Audio = this.bufferToBase64(wavBuffer);
+                    // 1. Create a safe filename
+                    const safeName = t.customSample.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                    const filename = `samples/${i}_${safeName}.wav`;
                     
-                    trackObj.hasCustomSample = true;
-                    trackObj.customSampleData = {
-                        name: t.customSample.name,
-                        data: base64Audio,
-                        mimeType: 'audio/wav' // We converted to WAV
-                    };
+                    // 2. Convert AudioBuffer to WAV ArrayBuffer
+                    const wavBuffer = this.audioBufferToWav(t.buffer);
+                    
+                    // 3. Add to ZIP
+                    zip.file(filename, wavBuffer);
+                    
+                    // 4. Update JSON reference
+                    trackObj.samplePath = filename;
+                    trackObj.sampleName = t.customSample.name; // Keep original name for display
+                    
                 } catch (e) {
-                    console.error(`Failed to serialize sample for track ${t.id}:`, e);
+                    console.error(`Failed to pack sample for track ${t.id}:`, e);
                 }
             }
-            return trackObj;
-        }));
+            tracksData.push(trackObj);
+        }
 
-        const data = {
+        const presetData = {
             bpm: bpm,
-            version: "1.1",
+            version: "2.0", // Bump version for .beatos format
             tracks: tracksData
         };
 
-        const json = JSON.stringify(data, null, 2);
-        const blob = new Blob([json], {type: 'application/json'});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); 
-        a.href = url;
-        a.download = `grain_preset_full_${new Date().toISOString().slice(0,19).replace(/:/g,"-")}.json`;
-        document.body.appendChild(a); 
-        a.click(); 
-        document.body.removeChild(a); 
-        URL.revokeObjectURL(url);
+        // Add JSON to ZIP
+        zip.file("preset.json", JSON.stringify(presetData, null, 2));
+
+        // Generate the .beatos file
+        zip.generateAsync({type:"blob"}).then(function(content) {
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a'); 
+            a.href = url;
+            a.download = `project_${new Date().toISOString().slice(0,19).replace(/:/g,"-")}.beatos`;
+            document.body.appendChild(a); 
+            a.click(); 
+            document.body.removeChild(a); 
+            URL.revokeObjectURL(url);
+        });
     }
 
+    // --- LOAD LOGIC ---
     loadPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine) {
         if (!file) return;
+
+        // Check file extension to decide handling
+        const isZip = file.name.endsWith('.beatos') || file.name.endsWith('.zip');
+
+        if (isZip) {
+            this.loadZipPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine);
+        } else {
+            // Fallback for legacy .json files
+            this.loadJsonPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine);
+        }
+    }
+
+    async loadZipPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine) {
+        try {
+            const zip = await JSZip.loadAsync(file);
+            
+            // 1. Load preset.json
+            if (!zip.file("preset.json")) throw new Error("Invalid .beatos file: missing preset.json");
+            const jsonStr = await zip.file("preset.json").async("string");
+            const data = JSON.parse(jsonStr);
+            
+            await this.applyPresetData(data, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, zip);
+
+        } catch (err) {
+            console.error(err);
+            alert("Failed to load .beatos file: " + err.message);
+        }
+    }
+
+    loadJsonPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine) {
         const reader = new FileReader();
         reader.onload = async (e) => {
             try {
                 const data = JSON.parse(e.target.result);
-                if(!data.tracks || !Array.isArray(data.tracks)) throw new Error("Invalid preset");
-                const bpm = data.bpm || 120;
-                
-                // Ensure we have enough tracks
-                while(tracks.length < data.tracks.length) addTrackCallback();
-                
-                const audioCtx = audioEngine.getContext();
-
-                // Process tracks sequentially or via Promise.all if independent
-                for (let i = 0; i < data.tracks.length; i++) {
-                    const trackData = data.tracks[i];
-                    if (i >= tracks.length) break;
-                    
-                    const t = tracks[i];
-                    t.params = { ...t.params, ...trackData.params };
-                    t.steps = [...trackData.steps];
-                    t.muted = !!trackData.muted; t.soloed = !!trackData.soloed;
-                    t.stepLock = !!trackData.stepLock;
-                    
-                    if (trackData.lfos) trackData.lfos.forEach((lData, lIdx) => {
-                        if(lIdx < NUM_LFOS) {
-                            t.lfos[lIdx].wave = lData.wave; t.lfos[lIdx].rate = lData.rate;
-                            t.lfos[lIdx].amount = lData.amount; t.lfos[lIdx].target = lData.target;
-                        }
-                    });
-
-                    // Handle Custom Sample Loading
-                    if (trackData.hasCustomSample && trackData.customSampleData && audioCtx) {
-                        try {
-                            const sampleInfo = trackData.customSampleData;
-                            // Decode Base64 back to ArrayBuffer
-                            const binaryString = window.atob(sampleInfo.data);
-                            const len = binaryString.length;
-                            const bytes = new Uint8Array(len);
-                            for (let j = 0; j < len; j++) {
-                                bytes[j] = binaryString.charCodeAt(j);
-                            }
-                            
-                            // Decode Audio Data
-                            const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
-                            
-                            // Apply to track
-                            t.customSample = {
-                                name: sampleInfo.name,
-                                buffer: audioBuffer,
-                                duration: audioBuffer.duration
-                            };
-                            t.buffer = audioBuffer;
-                            t.needsSampleReload = false; // It's loaded now
-                            
-                        } catch (err) {
-                            console.error(`Failed to load custom sample for track ${i}:`, err);
-                            alert(`Warning: Could not load sample for Track ${i+1}. It may be corrupted or too large.`);
-                        }
-                    }
-
-                    updateTrackStateUICallback(i);
-                    // Refresh grid
-                    for(let s=0; s<t.steps.length; s++) {
-                         const btn = matrixStepElements[i][s];
-                         if(t.steps[s]) btn.classList.add('active'); else btn.classList.remove('active');
-                    }
-                }
-                
-                selectTrackCallback(selectedTrackIndex);
-                
-                // Return BPM to caller (needs async handling usually, but here we might trigger callback or event)
-                // We use a custom property on audioEngine to notify main.js
-                if (audioEngine.onBpmChange) audioEngine.onBpmChange(bpm);
-
+                await this.applyPresetData(data, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, null);
             } catch (err) { 
                 console.error(err); 
-                alert("Failed to load preset. " + err.message); 
+                alert("Failed to load JSON preset."); 
             }
         };
         reader.readAsText(file);
+    }
+
+    // Shared application logic
+    async applyPresetData(data, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, zipInstance) {
+        if(!data.tracks || !Array.isArray(data.tracks)) throw new Error("Invalid preset structure");
+        
+        const bpm = data.bpm || 120;
+        const audioCtx = audioEngine.getContext();
+
+        // Ensure we have enough tracks
+        while(tracks.length < data.tracks.length) addTrackCallback();
+        
+        for (let i = 0; i < data.tracks.length; i++) {
+            const trackData = data.tracks[i];
+            if (i >= tracks.length) break;
+            
+            const t = tracks[i];
+            t.params = { ...t.params, ...trackData.params };
+            t.steps = [...trackData.steps];
+            t.muted = !!trackData.muted; t.soloed = !!trackData.soloed;
+            t.stepLock = !!trackData.stepLock;
+            
+            if (trackData.lfos) trackData.lfos.forEach((lData, lIdx) => {
+                if(lIdx < NUM_LFOS) {
+                    t.lfos[lIdx].wave = lData.wave; t.lfos[lIdx].rate = lData.rate;
+                    t.lfos[lIdx].amount = lData.amount; t.lfos[lIdx].target = lData.target;
+                }
+            });
+
+            // HANDLE SAMPLES
+            // Case A: ZIP file with embedded sample path
+            if (zipInstance && trackData.samplePath && audioCtx) {
+                try {
+                    const sampleFile = zipInstance.file(trackData.samplePath);
+                    if (sampleFile) {
+                        const arrayBuffer = await sampleFile.async("arraybuffer");
+                        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                        
+                        t.customSample = {
+                            name: trackData.sampleName || "Imported Sample",
+                            buffer: audioBuffer,
+                            duration: audioBuffer.duration
+                        };
+                        t.buffer = audioBuffer;
+                        t.needsSampleReload = false;
+                    }
+                } catch (e) {
+                    console.error(`Failed to load sample ${trackData.samplePath}`, e);
+                }
+            } 
+            // Case B: Legacy JSON with base64 (from previous implementation attempt, if any)
+            else if (trackData.hasCustomSample && trackData.customSampleData && audioCtx) {
+                try {
+                    const sampleInfo = trackData.customSampleData;
+                    const binaryString = window.atob(sampleInfo.data);
+                    const len = binaryString.length;
+                    const bytes = new Uint8Array(len);
+                    for (let j = 0; j < len; j++) bytes[j] = binaryString.charCodeAt(j);
+                    
+                    const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
+                    t.customSample = {
+                        name: sampleInfo.name,
+                        buffer: audioBuffer,
+                        duration: audioBuffer.duration
+                    };
+                    t.buffer = audioBuffer;
+                } catch (e) { console.error("Legacy sample load failed", e); }
+            }
+
+            updateTrackStateUICallback(i);
+            // Refresh grid
+            for(let s=0; s<t.steps.length; s++) {
+                 const btn = matrixStepElements[i][s];
+                 if(t.steps[s]) btn.classList.add('active'); else btn.classList.remove('active');
+            }
+        }
+        
+        selectTrackCallback(selectedTrackIndex);
+        if (audioEngine.onBpmChange) audioEngine.onBpmChange(bpm);
     }
 }

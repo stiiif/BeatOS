@@ -15,23 +15,15 @@ export class UIManager {
         this.basePanValues = [];
         this.globalPanShift = 0;
         
-        // Define Keyboard Mapping (Physical Codes for layout adaptability)
+        // Define Keyboard Mapping
         this.keyMapping = {
-            // Beat 1 (Steps 1-4)
             'Digit1': 0, 'KeyQ': 1, 'KeyA': 2, 'KeyZ': 3,
-            // Beat 2 (Steps 5-8)
             'Digit2': 4, 'KeyW': 5, 'KeyS': 6, 'KeyX': 7,
-            // Beat 3 (Steps 9-12)
             'Digit3': 8, 'KeyE': 9, 'KeyD': 10, 'KeyC': 11,
-            // Beat 4 (Steps 13-16)
             'Digit4': 12, 'KeyR': 13, 'KeyF': 14, 'KeyV': 15,
-            // Beat 5 (Steps 17-20)
             'Digit5': 16, 'KeyT': 17, 'KeyG': 18, 'KeyB': 19,
-            // Beat 6 (Steps 21-24)
             'Digit6': 20, 'KeyY': 21, 'KeyH': 22, 'KeyN': 23,
-            // Beat 7 (Steps 25-28)
             'Digit7': 24, 'KeyU': 25, 'KeyJ': 26, 'KeyM': 27,
-            // Beat 8 (Steps 29-32) - Note: 'Comma' is usually next to M
             'Digit8': 28, 'KeyI': 29, 'KeyK': 30, 'Comma': 31
         };
     }
@@ -40,7 +32,7 @@ export class UIManager {
         this.tracks = tracks;
     }
 
-initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
+    initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
         
         // --- Step Headers ---
@@ -48,35 +40,25 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         headerContainer.className = 'sequencer-grid sticky top-0 bg-neutral-950 z-30 pb-2 border-b border-neutral-800 pt-2';
         headerContainer.innerHTML = '';
         
-        // 1. Track Column Header
         const trkHeader = document.createElement('div');
         trkHeader.className = 'header-cell font-bold';
         trkHeader.innerText = 'TRK';
         headerContainer.appendChild(trkHeader);
 
-        // 2. Step Numbers
         for(let i=0; i<NUM_STEPS; i++) {
             const div = document.createElement('div');
             div.className = 'header-cell';
             div.innerText = i+1;
-            
             if (i % 4 === 0) div.classList.add('text-neutral-400', 'font-bold');
-            
-            // Add divider class for every 4th step (except the last one)
-            if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) {
-                div.classList.add('beat-divider');
-            }
-            
+            if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) div.classList.add('beat-divider');
             headerContainer.appendChild(div);
         }
 
-        // 3. Rnd Header
         const rndHeader = document.createElement('div');
         rndHeader.className = 'header-cell';
         rndHeader.innerHTML = '<i class="fas fa-dice"></i>';
         headerContainer.appendChild(rndHeader);
 
-        // 4. Actions Header
         const actHeader = document.createElement('div');
         actHeader.className = 'header-cell';
         actHeader.innerText = 'ACTIONS';
@@ -86,17 +68,10 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         const container = document.getElementById('matrixContainer');
         container.innerHTML = ''; 
         
-        // 1. Render existing tracks FIRST
-        // During this loop, 'matrixButtonRow' does not exist yet, so appendTrackRow 
-        // will default to appendChild, stacking tracks in the correct order (1, 2, 3...)
-        this.tracks.forEach(t => {
-            this.appendTrackRow(t.id, visualizerCallback);
-        });
-
-        // 2. Add "Add Track" Row LAST
-        // This ensures it appears at the bottom after all initial tracks
+        // 1. Create and Append Button Row FIRST
+        // This ensures it acts as the anchor for insertBefore, keeping tracks in order (0, 1, 2...)
         const buttonRow = document.createElement('div');
-        buttonRow.id = 'matrixButtonRow'; // Explicit ID for reliable finding
+        buttonRow.id = 'matrixButtonRow';
         buttonRow.className = 'flex gap-2 mt-2 px-1';
         
         const addTrackBtn = document.createElement('button');
@@ -116,16 +91,23 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         
         container.appendChild(buttonRow);
 
+        // 2. Render existing tracks
+        this.tracks.forEach(t => {
+            this.appendTrackRow(t.id, visualizerCallback);
+        });
+
         // Visualizer Click Selection
         const vis = document.getElementById('visualizer');
-        vis.addEventListener('click', (e) => {
-            if(this.tracks.length === 0) return;
-            const rect = vis.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const w = rect.width;
-            const trkIdx = Math.floor((x / w) * this.tracks.length);
-            if(trkIdx >= 0 && trkIdx < this.tracks.length) this.selectTrack(trkIdx, visualizerCallback);
-        });
+        if(vis) {
+            vis.addEventListener('click', (e) => {
+                if(this.tracks.length === 0) return;
+                const rect = vis.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const w = rect.width;
+                const trkIdx = Math.floor((x / w) * this.tracks.length);
+                if(trkIdx >= 0 && trkIdx < this.tracks.length) this.selectTrack(trkIdx, visualizerCallback);
+            });
+        }
 
         // Handle Wheel on Sliders
         document.body.addEventListener('wheel', (e) => {
@@ -135,24 +117,14 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
             }
         }, { passive: false });
 
-        // --- KEYBOARD INPUT LISTENER ---
+        // Keyboard Listener
         document.addEventListener('keydown', (e) => {
-            // Ignore if user is typing in an input field
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-            
-            // Check if key is in our map
             if (this.keyMapping.hasOwnProperty(e.code)) {
-                // Prevent default scrolling for Space/Arrows if mapped (though we aren't using them currently)
-                // e.preventDefault(); 
-                
                 const stepIndex = this.keyMapping[e.code];
                 const currentTrackId = this.selectedTrackIndex;
-                
-                // Toggle the step on the currently selected track
                 if (currentTrackId >= 0 && currentTrackId < this.tracks.length) {
                     this.toggleStep(currentTrackId, stepIndex);
-                    
-                    // Optional: Visual feedback on the specific button could go here
                 }
             }
         });
@@ -178,11 +150,9 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
 
     appendTrackRow(trk, visualizerCallback = null) {
         const container = document.getElementById('matrixContainer');
-        // Retrieve the button row by ID to ensure we always insert before it
         const buttonRow = document.getElementById('matrixButtonRow');
         
         const groupIdx = Math.floor(trk / TRACKS_PER_GROUP);
-        
         if (this.randomChokeMode && this.randomChokeGroups.length === trk) {
             this.randomChokeGroups.push(Math.floor(Math.random() * 8));
         }
@@ -191,20 +161,16 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         const groupColor = `hsl(${effectiveGroup * 45}, 70%, 50%)`;
         const groupColorGlow = `hsla(${effectiveGroup * 45}, 70%, 50%, 0.4)`;
 
-        // Create the ROW container (Grid)
         const rowDiv = document.createElement('div');
         rowDiv.className = 'sequencer-grid'; 
         
         const rowElements = [];
         
-        // 1. Label
+        // Label
         const label = document.createElement('div');
         label.className = `track-label ${trk===0 ? 'selected' : ''}`;
-        
-        // [MODIFIED] Display Number starting from 1 instead of 0
         const displayNum = trk + 1;
         label.innerText = displayNum < 10 ? `0${displayNum}` : displayNum;
-        
         label.title = `Group ${effectiveGroup}`;
         label.onclick = () => this.selectTrack(trk, visualizerCallback);
         label.style.borderRight = `3px solid ${groupColor}`;
@@ -214,25 +180,20 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.matrixStepElements[trk] = [];
         rowElements.push(label);
 
-        // 2. Steps
+        // Steps
         for(let step=0; step<NUM_STEPS; step++) {
             const btn = document.createElement('div');
             btn.className = 'step-btn';
             btn.onclick = () => this.toggleStep(trk, step);
             btn.style.setProperty('--step-group-color', groupColor);
             btn.style.setProperty('--step-group-color-glow', groupColorGlow);
-            
-            // Add visual divider
-            if ((step + 1) % 4 === 0 && step !== NUM_STEPS - 1) {
-                btn.classList.add('beat-divider');
-            }
-            
+            if ((step + 1) % 4 === 0 && step !== NUM_STEPS - 1) btn.classList.add('beat-divider');
             rowDiv.appendChild(btn);
             this.matrixStepElements[trk][step] = btn;
             rowElements.push(btn);
         }
 
-        // 3. Randomize Pattern
+        // Randomize
         const rndBtn = document.createElement('div');
         rndBtn.className = 'track-rnd-btn';
         rndBtn.innerHTML = '<i class="fas fa-random"></i>';
@@ -240,10 +201,9 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         rowDiv.appendChild(rndBtn);
         rowElements.push(rndBtn);
 
-        // 4. Actions Panel
+        // Actions
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'track-actions';
-        
         const createAction = (txt, fn, title, cls='') => {
             const b = document.createElement('button');
             b.className = 'action-btn ' + cls;
@@ -251,7 +211,6 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
             b.onclick = (e) => { e.stopPropagation(); fn(trk); };
             return b;
         };
-
         const btnM = createAction('M', (t) => this.toggleMute(t), 'Mute Track'); btnM.id = `btnM_${trk}`;
         const btnS = createAction('S', (t) => this.toggleSolo(t), 'Solo Track'); btnS.id = `btnS_${trk}`;
         const btnL = createAction('L', (t) => this.toggleStepLock(t), 'Lock Steps'); btnL.id = `btnL_${trk}`;
@@ -267,7 +226,7 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         rowDiv.appendChild(actionsDiv);
         rowElements.push(actionsDiv);
         
-        // Insert row before button row
+        // Insertion Logic
         if (buttonRow) {
             container.insertBefore(rowDiv, buttonRow);
         } else {
@@ -277,11 +236,12 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.trackRowElements[trk] = rowElements;
     }
 
+    // ... rest of the class remains same ...
     updateMatrixHead(current) {
         const prev = (current - 1 + NUM_STEPS) % NUM_STEPS;
         for(let t=0; t<this.tracks.length; t++) {
-            if(this.matrixStepElements[t][prev]) this.matrixStepElements[t][prev].classList.remove('step-playing');
-            if(this.matrixStepElements[t][current]) this.matrixStepElements[t][current].classList.add('step-playing');
+            if(this.matrixStepElements[t] && this.matrixStepElements[t][prev]) this.matrixStepElements[t][prev].classList.remove('step-playing');
+            if(this.matrixStepElements[t] && this.matrixStepElements[t][current]) this.matrixStepElements[t][current].classList.add('step-playing');
         }
     }
 
@@ -292,21 +252,26 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         if(this.trackLabelElements[this.selectedTrackIndex])
             this.trackLabelElements[this.selectedTrackIndex].classList.add('selected');
         
-        // [MODIFIED] Display Number starting from 1 instead of 0
         const displayNum = idx + 1;
-        document.getElementById('currentTrackNum').innerText = displayNum < 10 ? '0'+displayNum : displayNum;
+        const numEl = document.getElementById('currentTrackNum');
+        if(numEl) numEl.innerText = displayNum < 10 ? '0'+displayNum : displayNum;
         
         const normalGrp = Math.floor(idx / TRACKS_PER_GROUP);
         const grp = this.randomChokeMode ? this.randomChokeGroups[idx] : normalGrp;
         const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
         const groupColorGlow = `hsla(${grp * 45}, 70%, 50%, 0.4)`;
         
-        document.getElementById('trackGroupLabel').innerText = `GRP ${grp}`;
-        document.getElementById('trackGroupLabel').style.color = groupColor;
+        const grpLbl = document.getElementById('trackGroupLabel');
+        if(grpLbl) {
+            grpLbl.innerText = `GRP ${grp}`;
+            grpLbl.style.color = groupColor;
+        }
         
         const indicator = document.getElementById('trackIndicator');
-        indicator.style.backgroundColor = groupColor;
-        indicator.style.boxShadow = `0 0 8px ${groupColorGlow}`;
+        if(indicator) {
+            indicator.style.backgroundColor = groupColor;
+            indicator.style.boxShadow = `0 0 8px ${groupColorGlow}`;
+        }
         
         const rightPanel = document.querySelector('.right-pane');
         if (rightPanel) {
@@ -322,8 +287,6 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         }
     }
 
-    // ... existing getters and methods ...
-    
     getSelectedTrackIndex() { return this.selectedTrackIndex; }
     getSelectedLfoIndex() { return this.selectedLfoIndex; }
     setSelectedLfoIndex(index) { this.selectedLfoIndex = index; }
@@ -467,12 +430,12 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         if(t.muted) btnM.classList.add('mute-active'); else btnM.classList.remove('mute-active');
         if(t.soloed) btnS.classList.add('solo-active'); else btnS.classList.remove('solo-active');
         if(t.stepLock) btnL.classList.add('lock-active'); else btnL.classList.remove('lock-active');
-        this.trackRowElements[trk].forEach(el => el.style.opacity = t.muted ? '0.4' : '1.0');
+        if(this.trackRowElements[trk]) this.trackRowElements[trk].forEach(el => el.style.opacity = t.muted ? '0.4' : '1.0');
     }
 
     clearTrack(trk) {
         this.tracks[trk].steps.fill(false);
-        for(let s=0; s<NUM_STEPS; s++) this.matrixStepElements[trk][s].classList.remove('active');
+        for(let s=0; s<NUM_STEPS; s++) if(this.matrixStepElements[trk] && this.matrixStepElements[trk][s]) this.matrixStepElements[trk][s].classList.remove('active');
     }
 
     clearGroup(grp) {
@@ -562,20 +525,24 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
 
     updateKnobs() {
         const t = this.tracks[this.selectedTrackIndex];
+        if(!t) return;
         document.querySelectorAll('.param-slider').forEach(el => {
             const param = el.dataset.param;
-            el.value = t.params[param];
-            let suffix = '';
-            if(param === 'density') suffix = 'hz';
-            if(param === 'grainSize') suffix = 's';
-            if(param === 'pitch') suffix = 'x';
-            if(el.nextElementSibling) {
-                el.nextElementSibling.innerText = t.params[param].toFixed(2) + suffix;
+            if(t.params[param] !== undefined) {
+                el.value = t.params[param];
+                let suffix = '';
+                if(param === 'density') suffix = 'hz';
+                if(param === 'grainSize') suffix = 's';
+                if(param === 'pitch') suffix = 'x';
+                if(el.nextElementSibling) {
+                    el.nextElementSibling.innerText = t.params[param].toFixed(2) + suffix;
+                }
             }
         });
     }
 
     updateLfoUI() {
+        if(!this.tracks[this.selectedTrackIndex]) return;
         const lfo = this.tracks[this.selectedTrackIndex].lfos[this.selectedLfoIndex];
         const normalGrp = Math.floor(this.selectedTrackIndex / TRACKS_PER_GROUP);
         const grp = this.randomChokeMode ? this.randomChokeGroups[this.selectedTrackIndex] : normalGrp;
@@ -595,15 +562,17 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
             }
         });
         
-        document.getElementById('lfoRateVal').style.color = groupColor;
-        document.getElementById('lfoAmtVal').style.color = groupColor;
+        const rateVal = document.getElementById('lfoRateVal');
+        const amtVal = document.getElementById('lfoAmtVal');
+        if(rateVal) rateVal.style.color = groupColor;
+        if(amtVal) amtVal.style.color = groupColor;
         
         document.getElementById('lfoTarget').value = lfo.target;
         document.getElementById('lfoWave').value = lfo.wave;
         document.getElementById('lfoRate').value = lfo.rate;
-        document.getElementById('lfoRateVal').innerText = lfo.rate.toFixed(1);
+        if(rateVal) rateVal.innerText = lfo.rate.toFixed(1);
         document.getElementById('lfoAmt').value = lfo.amount;
-        document.getElementById('lfoAmtVal').innerText = lfo.amount.toFixed(2);
+        if(amtVal) amtVal.innerText = lfo.amount.toFixed(2);
     }
 
     toggleSnapshot() {
@@ -662,7 +631,8 @@ initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
     clearPlayheadForStop() {
         for(let t=0; t<this.tracks.length; t++) {
             for(let s=0; s<NUM_STEPS; s++) {
-                this.matrixStepElements[t][s].classList.remove('step-playing');
+                if(this.matrixStepElements[t] && this.matrixStepElements[t][s])
+                    this.matrixStepElements[t][s].classList.remove('step-playing');
             }
         }
     }
