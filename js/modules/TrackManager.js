@@ -1,6 +1,6 @@
 // Track Manager Module
 import { Track } from './Track.js';
-import { START_TRACKS, MAX_TRACKS, NUM_LFOS } from '../utils/constants.js';
+import { START_TRACKS, MAX_TRACKS } from '../utils/constants.js';
 
 export class TrackManager {
     constructor(audioEngine) {
@@ -13,9 +13,8 @@ export class TrackManager {
     }
 
     initTracks() {
-        // Initial 8 tracks
         for (let i = 0; i < START_TRACKS; i++) {
-            this.addTrack(true); // true = silent add (no render yet)
+            this.addTrack(true);
         }
         this.applyDefaultPresets();
     }
@@ -26,10 +25,14 @@ export class TrackManager {
         const t = new Track(newId);
         this.tracks.push(t);
         
-        // Generate buffer immediately if context exists
+        // Generate buffer
         const audioCtx = this.audioEngine.getContext();
         if (audioCtx) {
             t.buffer = this.audioEngine.generateBufferForTrack(newId);
+            // Idea 3: Analyze
+            t.rmsMap = this.audioEngine.analyzeBuffer(t.buffer);
+            // Global Params: Init Bus
+            this.audioEngine.initTrackBus(t);
         }
 
         return silent ? null : newId;
@@ -37,13 +40,12 @@ export class TrackManager {
 
     applyDefaultPresets() {
         // Track 0: Kick
-        this.tracks[0].params = { ...this.tracks[0].params, density: 1, grainSize: 0.3, pitch: 1.0, release: 0.3, filter: 200, hpFilter: 20 };
+        this.tracks[0].params = { ...this.tracks[0].params, density: 1, grainSize: 0.3, pitch: 1.0, relGrain: 0.3, filter: 200, hpFilter: 20 };
         // Track 1: Snare
         this.tracks[1].params = { ...this.tracks[1].params, density: 4, position: 0.5, filter: 4000, hpFilter: 100 };
         // Track 2: Hat
         this.tracks[2].params = { ...this.tracks[2].params, density: 40, grainSize: 0.02, pitch: 2.0, filter: 9000, hpFilter: 1000 };
         
-        // Others random defaults
         for(let i=3; i<this.tracks.length; i++) {
              this.tracks[i].params.position = Math.random();
              this.tracks[i].params.density = 2 + Math.floor(Math.random() * 20);
@@ -55,6 +57,8 @@ export class TrackManager {
     createBuffersForAllTracks() {
         for(let i=0; i<this.tracks.length; i++) {
             this.tracks[i].buffer = this.audioEngine.generateBufferForTrack(i);
+            this.tracks[i].rmsMap = this.audioEngine.analyzeBuffer(this.tracks[i].buffer);
+            this.audioEngine.initTrackBus(this.tracks[i]);
         }
     }
 
@@ -62,16 +66,15 @@ export class TrackManager {
         t.params.position = Math.random();
         t.params.spray = Math.random() * 0.1;
         t.params.grainSize = 0.05 + Math.random() * 0.25;
-        t.params.filter = 200 + Math.random() * 9000;
-        t.params.hpFilter = 20 + Math.random() * 5000;
+        // Don't randomize filters too wildly, keep them open-ish
+        t.params.filter = 2000 + Math.random() * 10000;
+        t.params.hpFilter = 20 + Math.random() * 500;
         t.params.pitch = 0.5 + Math.random() * 1.5;
-        t.params.attack = 0.001 + Math.random() * 0.1;
         
-        // Use provided release range if specified, otherwise full random range
         if (releaseMin !== null && releaseMax !== null) {
-            t.params.release = releaseMin + Math.random() * (releaseMax - releaseMin);
+            t.params.relGrain = releaseMin + Math.random() * (releaseMax - releaseMin);
         } else {
-            t.params.release = 0.05 + Math.random() * 0.5;
+            t.params.relGrain = 0.05 + Math.random() * 0.5;
         }
     }
 
@@ -89,21 +92,12 @@ export class TrackManager {
     }
 
     randomizePanning() {
-        // Distribute groups evenly across stereo field
-        const numGroups = 8; // Maximum number of groups
-        
+        const numGroups = 8;
         for (let i = 0; i < this.tracks.length; i++) {
-            const groupIdx = Math.floor(i / 4); // 4 tracks per group
-            
-            // Calculate center position for this group (-1 to 1)
-            // Groups are evenly distributed across the stereo field
+            const groupIdx = Math.floor(i / 4); 
             const groupCenter = -1 + (groupIdx / (numGroups - 1)) * 2;
-            
-            // Add small random variation within the group's zone
-            // Variation is ±0.1, keeping tracks together
             const variation = (Math.random() - 0.5) * 0.2;
             const pan = Math.max(-1, Math.min(1, groupCenter + variation));
-            
             this.tracks[i].params.pan = parseFloat(pan.toFixed(3));
         }
     }

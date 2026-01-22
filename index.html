@@ -166,6 +166,18 @@
                             <span class="text-[10px] text-emerald-400 font-mono">0.00</span>
                         </div>
                         
+                        <!-- NEW Overlap and Scan Controls -->
+                        <div class="knob-container col-span-2">
+                            <label class="text-[10px] text-neutral-500 mb-1">Overlap (Thicken)</label>
+                            <input type="range" min="0" max="8" step="0.1" data-param="overlap" class="param-slider" title="Overrides Density. >1 = Continuous Sound">
+                            <span class="text-[10px] text-emerald-400 font-mono">0.0x</span>
+                        </div>
+                        <div class="knob-container col-span-2">
+                            <label class="text-[10px] text-neutral-500 mb-1">Scan Speed</label>
+                            <input type="range" min="-2" max="2" step="0.01" data-param="scanSpeed" class="param-slider" title="Auto-movement of Playhead">
+                            <span class="text-[10px] text-emerald-400 font-mono">0.00</span>
+                        </div>
+
                         <div class="knob-container col-span-2">
                             <label class="text-[10px] text-neutral-500 mb-1">Grain Size</label>
                             <input type="range" min="0.01" max="0.5" step="0.01" data-param="grainSize" class="param-slider">
@@ -177,7 +189,6 @@
                             <span class="text-[10px] text-emerald-400 font-mono">10hz</span>
                         </div>
 
-                        <!-- MODIFIED: Pitch and Rel Grain next to each other -->
                         <div class="knob-container col-span-2 bg-neutral-800/50 p-2 rounded border border-neutral-800">
                              <label class="text-[10px] text-neutral-500 mb-1">Pitch / Rate</label>
                              <input type="range" min="0.1" max="4.0" step="0.01" data-param="pitch" class="param-slider">
@@ -190,7 +201,7 @@
                         </div>
                     </div>
 
-                    <!-- NEW: Amp Envelope Section (ADR) -->
+                    <!-- Amp Envelope Section (ADR) -->
                     <div class="pt-2 border-t border-neutral-800">
                         <div class="flex justify-between items-end mb-1">
                             <label class="text-[10px] text-neutral-500 uppercase font-bold">Amp Envelope (ADR)</label>
@@ -214,22 +225,27 @@
                         </div>
                     </div>
 
-                    <!-- Filters & Vol (Grid 3 cols) -->
-                    <div class="grid grid-cols-3 gap-2 pt-2 border-t border-neutral-800">
-                        <div class="knob-container">
-                            <label class="text-[10px] text-neutral-500 mb-1">HPF</label>
-                            <input type="range" min="20" max="5000" step="10" data-param="hpFilter" class="param-slider">
-                            <span class="text-[10px] text-emerald-400 font-mono">20</span>
+                    <!-- Global Track Effects (Bus) -->
+                    <div class="pt-2 border-t border-neutral-800">
+                        <div class="flex justify-between items-end mb-1">
+                            <label class="text-[10px] text-neutral-500 uppercase font-bold">Track Effects (Global)</label>
                         </div>
-                        <div class="knob-container">
-                            <label class="text-[10px] text-neutral-500 mb-1">LPF</label>
-                            <input type="range" min="100" max="10000" step="100" data-param="filter" class="param-slider">
-                            <span class="text-[10px] text-emerald-400 font-mono">8000</span>
-                        </div>
-                        <div class="knob-container">
-                            <label class="text-[10px] text-neutral-500 mb-1">Vol</label>
-                            <input type="range" min="0" max="1.5" step="0.01" data-param="volume" class="param-slider">
-                            <span class="text-[10px] text-emerald-400 font-mono">0.80</span>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div class="knob-container">
+                                <label class="text-[10px] text-neutral-500 mb-1">HPF</label>
+                                <input type="range" min="20" max="5000" step="10" data-param="hpFilter" class="param-slider">
+                                <span class="text-[10px] text-emerald-400 font-mono">20</span>
+                            </div>
+                            <div class="knob-container">
+                                <label class="text-[10px] text-neutral-500 mb-1">LPF</label>
+                                <input type="range" min="100" max="10000" step="100" data-param="filter" class="param-slider">
+                                <span class="text-[10px] text-emerald-400 font-mono">8000</span>
+                            </div>
+                            <div class="knob-container">
+                                <label class="text-[10px] text-neutral-500 mb-1">Vol</label>
+                                <input type="range" min="0" max="1.5" step="0.01" data-param="volume" class="param-slider">
+                                <span class="text-[10px] text-emerald-400 font-mono">0.80</span>
+                            </div>
                         </div>
                     </div>
 
@@ -272,6 +288,8 @@
                                     <option value="grainSize">Grain Size</option>
                                     <option value="pitch">Pitch</option>
                                     <option value="relGrain">Rel Grain</option>
+                                    <option value="overlap">Overlap</option>
+                                    <option value="scanSpeed">Scan Speed</option>
                                     <option value="filter">LPF</option>
                                     <option value="hpFilter">HPF</option>
                                     <option value="ampAttack">Amp Attack</option>

@@ -6,30 +6,49 @@ export class Track {
     constructor(id) {
         this.id = id;
         this.buffer = null;
+        this.rmsMap = []; // Idea 3: Map of loud/silent regions
         this.steps = new Array(NUM_STEPS).fill(false);
         this.lfos = [new LFO(), new LFO(), new LFO()];
+        
+        // State for Idea 2 (Scan) & Idea 5 (Continuous Play)
+        this.playhead = 0; 
+        
         this.muted = false;
         this.soloed = false;
-        this.stepLock = false; // When true, this track's steps cannot be stolen by other tracks in the group
+        this.stepLock = false; 
+
+        // Persistent Audio Bus Nodes (Created in TrackManager/AudioEngine)
+        this.bus = {
+            input: null,
+            hp: null,
+            lp: null,
+            vol: null,
+            pan: null
+        };
+
         this.params = {
-            // Granular Params
+            // --- Grain Generation ---
             position: 0.0, 
             spray: 0.00, 
-            density: 15, 
-            grainSize: 0.01,
-            pitch: 1.0, 
-            relGrain: 0.4, // Formerly "release" - duration of grain generation
+            scanSpeed: 0.0, // Idea 2: Speed of playhead movement (0 = static)
             
-            // Amp Envelope Params (ADR)
+            density: 15, 
+            overlap: 0, // Idea 1: If > 0, overrides density to ensure layer overlap
+            
+            grainSize: 0.05,
+            pitch: 1.0, 
+            relGrain: 0.4, // Duration of the grain cloud (Trigger window)
+            
+            // --- Amp Envelope (Global per trigger) ---
             ampAttack: 0.01,
             ampDecay: 0.1,
             ampRelease: 0.3,
             
-            // Filter & Mix
-            volume: 0.8, 
-            filter: 10000, 
+            // --- Track Bus (Global Effects) ---
             hpFilter: 20,
-            pan: 0 // -1 (left) to 1 (right), 0 is center
+            filter: 20000, 
+            volume: 0.8, 
+            pan: 0 
         };
     }
 }

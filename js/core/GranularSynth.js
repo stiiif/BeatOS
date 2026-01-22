@@ -1,10 +1,9 @@
-// Granular Synthesis Engine
+// Granular Synthesis Engine - Restructured (Ideas 1-5 Implemented)
 export class GranularSynth {
     constructor(audioEngine) {
         this.audioEngine = audioEngine;
-        this.drawQueue = [];
         this.activeGrains = 0;
-        this.MAX_GRAINS = 400; // Hard limit to prevent CPU overload/crackling
+        this.MAX_GRAINS = 400; 
     }
 
     getActiveGrainCount() {
@@ -15,15 +14,28 @@ export class GranularSynth {
         this.MAX_GRAINS = max;
     }
 
-    playGrain(track, time, scheduleVisualDrawCallback, ampEnvelope = 1.0) {
-        // Safety Limiter: Drop grains if CPU is overloaded
-        if (this.activeGrains >= this.MAX_GRAINS) {
-            return;
+    // Idea 3: Helper to find non-silent buffer position
+    findActivePosition(track, requestedPos) {
+        if (!track.rmsMap || track.rmsMap.length === 0) return requestedPos;
+        
+        const mapIdx = Math.floor(requestedPos * 99); // 0-99
+        if (track.rmsMap[mapIdx]) return requestedPos; // Current spot is valid
+
+        // Search Spiral: Look left and right for nearest active chunk
+        for (let i = 1; i < 50; i++) {
+            if (track.rmsMap[mapIdx + i]) return (mapIdx + i) / 99;
+            if (track.rmsMap[mapIdx - i]) return (mapIdx - i) / 99;
         }
+        return requestedPos; // Fallback
+    }
+
+    playGrain(track, time, scheduleVisualDrawCallback, ampEnvelope = 1.0) {
+        if (this.activeGrains >= this.MAX_GRAINS) return;
 
         const audioCtx = this.audioEngine.getContext();
-        if (!audioCtx || !track.buffer) return;
+        if (!audioCtx || !track.buffer || !track.bus) return; // Ensure Bus exists
 
+        // LFO Modulation
         let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, filter:0, hpFilter:0 };
         track.lfos.forEach(lfo => {
             const v = lfo.getValue(time);
@@ -33,116 +45,131 @@ export class GranularSynth {
         });
 
         const p = track.params;
-        let gPos = Math.max(0, Math.min(1, p.position + mod.position));
+
+        // Idea 2: Buffer Scan / Travel
+        // We use track.playhead (updated in scheduleNote) as the base, not just p.position
+        // If scanSpeed is 0, playhead stays at p.position.
+        let basePos = (p.scanSpeed > 0.01 || p.scanSpeed < -0.01) ? track.playhead : p.position;
+        
+        // Calculate Position & Spray
+        let gPos = Math.max(0, Math.min(1, basePos + mod.position));
         const spray = Math.max(0, p.spray + mod.spray);
         gPos += (Math.random()*2-1) * spray;
         gPos = Math.max(0, Math.min(1, gPos));
 
+        // Idea 3: RMS Silence Skipping
+        // Only skip if we are randomly spraying (don't override manual position too aggressively)
+        if (spray > 0.01) {
+            gPos = this.findActivePosition(track, gPos);
+        }
+
         const dur = Math.max(0.01, p.grainSize + mod.grainSize);
         const pitch = Math.max(0.1, p.pitch + mod.pitch);
-        const lpCutoff = Math.max(100, Math.min(20000, p.filter + mod.filter));
-        const hpCutoff = Math.max(20, Math.min(10000, p.hpFilter + mod.hpFilter));
 
+        // Update Track Bus (Global Params) - Idea 4 & User Request
+        // We update the bus parameters at the scheduled time to ensure automation works
+        if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(Math.max(20, p.hpFilter + mod.hpFilter), time);
+        if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(Math.max(100, p.filter + mod.filter), time);
+        if(track.bus.vol) track.bus.vol.gain.setValueAtTime(p.volume, time);
+        if(track.bus.pan) track.bus.pan.pan.setValueAtTime(p.pan, time);
+
+        // Voice Pooling / Simplified Graph
+        // Instead of creating Filter -> Panner -> etc per grain, we just create:
+        // Source -> Gain(Window) -> TrackBus
         const src = audioCtx.createBufferSource();
         src.buffer = track.buffer;
         src.playbackRate.value = pitch;
 
-        const env = audioCtx.createGain();
-        const lpNode = audioCtx.createBiquadFilter();
-        lpNode.type = 'lowpass';
-        lpNode.frequency.value = lpCutoff;
+        const grainWindow = audioCtx.createGain();
+        
+        // Apply Note-Level Amp Envelope to the grain's volume
+        // This shapes the grain cloud intensity
+        grainWindow.gain.value = ampEnvelope;
 
-        const hpNode = audioCtx.createBiquadFilter();
-        hpNode.type = 'highpass';
-        hpNode.frequency.value = hpCutoff;
-
-        const vol = audioCtx.createGain();
-        // Apply track volume AND the calculated envelope scalar
-        vol.gain.value = p.volume * ampEnvelope;
-
-        // Add stereo panner
-        const panner = audioCtx.createStereoPanner();
-        panner.pan.value = p.pan || 0; // -1 (left) to 1 (right)
-
-        src.connect(hpNode);
-        hpNode.connect(lpNode);
-        lpNode.connect(env);
-        env.connect(vol);
-        vol.connect(panner);
-        panner.connect(audioCtx.destination);
+        src.connect(grainWindow);
+        grainWindow.connect(track.bus.input); // Connect to persistent track bus
 
         const bufDur = track.buffer.duration;
         let offset = gPos * bufDur;
         if (offset + dur > bufDur) offset = 0;
 
-        env.gain.setValueAtTime(0, time);
-        env.gain.linearRampToValueAtTime(1, time + (dur*0.1));
-        env.gain.linearRampToValueAtTime(0, time + dur);
+        // Grain Windowing (Anti-click) - Fixed, fast micro-envelope
+        // The MACRO shape is handled by ampEnvelope passed in
+        grainWindow.gain.setValueAtTime(0, time);
+        grainWindow.gain.linearRampToValueAtTime(ampEnvelope, time + (dur * 0.1)); // 10% fade in
+        grainWindow.gain.linearRampToValueAtTime(0, time + dur);
 
-        // Increment active grain count
         this.activeGrains++;
-
         src.start(time, offset, dur);
         src.onended = () => { 
-            // Decrement active grain count
             this.activeGrains--;
-
-            src.disconnect(); env.disconnect(); 
-            lpNode.disconnect(); hpNode.disconnect(); 
-            vol.disconnect(); panner.disconnect();
+            src.disconnect();
+            grainWindow.disconnect();
         };
         
         scheduleVisualDrawCallback(time, track.id);
     }
 
     scheduleNote(track, time, scheduleVisualDrawCallback) {
-        const density = Math.max(1, track.params.density);
-        // Use 'relGrain' for the duration loop, fallback to old 'release' if missing
-        const dur = track.params.relGrain !== undefined ? track.params.relGrain : track.params.release;
+        const p = track.params;
         
-        // FIX: Use Math.ceil instead of Math.floor.
-        // This ensures that if (Duration * Density) < 1, we still get at least 1 grain.
-        const rawGrains = Math.ceil(dur * density);
-        
-        // SAFETY CAP: Prevent CPU bomb if user sets high density + long duration
-        // 50 Grains per step per track is a reasonable maximum to prevent crackling
-        const grains = Math.min(50, rawGrains);
-        
-        const interval = 1/density;
+        // Idea 1: Overlap Mode
+        let density = Math.max(1, p.density);
+        let interval;
+        const dur = p.grainSize; // Grain duration
 
-        // Envelope Parameters
-        const atk = track.params.ampAttack || 0.01;
-        const dec = track.params.ampDecay || 0.1;
-        const rel = track.params.ampRelease || 0.1;
-        const sustainLevel = 0.6; // Fixed sustain level for ADR shape
+        if (p.overlap > 0) {
+            // Calculate Interval based on overlap target
+            // Interval = Duration / Overlap
+            // e.g. 0.5s / 2 = 0.25s interval (2 grains overlap)
+            interval = dur / Math.max(0.1, p.overlap);
+            // Back-calculate density for the loop count logic
+            density = 1 / interval; 
+        } else {
+            interval = 1 / density;
+        }
+
+        const noteDur = p.relGrain !== undefined ? p.relGrain : 0.4;
+        
+        // Safety Cap
+        const rawGrains = Math.ceil(noteDur / interval);
+        const grains = Math.min(64, rawGrains); // 64 grains per step max
+
+        // Envelope Params
+        const atk = p.ampAttack || 0.01;
+        const dec = p.ampDecay || 0.1;
+        const rel = p.ampRelease || 0.1;
+        const sustainLevel = 0.6;
+
+        // Idea 2: Update Playhead (Scan)
+        // Move playhead forward for next step
+        if (p.scanSpeed !== 0) {
+            track.playhead = (track.playhead + (p.scanSpeed * 0.1)) % 1.0;
+            if (track.playhead < 0) track.playhead += 1.0;
+        } else {
+            // Reset to position if not scanning
+            track.playhead = p.position;
+        }
 
         for(let i=0; i<grains; i++) {
             const grainRelativeTime = i * interval;
             let ampEnv = 0;
 
             // ADR Envelope Logic
-            // 1. Attack Phase
             if (grainRelativeTime < atk) {
                 ampEnv = grainRelativeTime / atk;
-            } 
-            // 2. Decay Phase (Target -> Sustain)
-            else if (grainRelativeTime < atk + dec) {
+            } else if (grainRelativeTime < atk + dec) {
                 const decProgress = (grainRelativeTime - atk) / dec;
                 ampEnv = 1.0 - (decProgress * (1.0 - sustainLevel));
-            } 
-            // 3. Release Phase (Sustain -> 0)
-            else if (grainRelativeTime < atk + dec + rel) {
+            } else if (grainRelativeTime < atk + dec + rel) {
                 const relProgress = (grainRelativeTime - (atk + dec)) / rel;
                 ampEnv = sustainLevel * (1.0 - relProgress);
-            }
-            // 4. End (Silence)
-            else {
+            } else {
                 ampEnv = 0;
             }
 
             const jitter = Math.random() * 0.005;
-            // Pass the calculated envelope volume to the grain
-            if (ampEnv > 0.001) { // Optimization: don't play silent grains
+            if (ampEnv > 0.001) { 
                 this.playGrain(track, time + grainRelativeTime + jitter, scheduleVisualDrawCallback, ampEnv);
             }
         }
