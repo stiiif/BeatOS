@@ -11,9 +11,9 @@ export class UIManager {
         this.trackRowElements = [];
         this.snapshotData = null;
         this.randomChokeMode = false;
-        this.randomChokeGroups = []; // Stores random group assignments when in random mode
-        this.basePanValues = []; // Stores base pan values before global shift
-        this.globalPanShift = 0; // Current pan shift amount (0 to 1)
+        this.randomChokeGroups = [];
+        this.basePanValues = [];
+        this.globalPanShift = 0;
     }
 
     setTracks(tracks) {
@@ -23,29 +23,59 @@ export class UIManager {
     initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
         
-        // Step Headers
+        // --- Step Headers ---
+        // We now use the exact same grid class as the rows to ensure alignment
         const headerContainer = document.getElementById('stepHeaders');
+        headerContainer.className = 'sequencer-grid sticky top-0 bg-neutral-950 z-30 pb-2 border-b border-neutral-800 pt-2';
         headerContainer.innerHTML = '';
+        
+        // 1. Track Column Header
+        const trkHeader = document.createElement('div');
+        trkHeader.className = 'header-cell font-bold';
+        trkHeader.innerText = 'TRK';
+        headerContainer.appendChild(trkHeader);
+
+        // 2. Step Numbers
         for(let i=0; i<NUM_STEPS; i++) {
             const div = document.createElement('div');
-            div.className = 'text-[10px] text-neutral-600 flex items-center justify-center h-4';
+            div.className = 'header-cell';
             div.innerText = i+1;
+            
             if (i % 4 === 0) div.classList.add('text-neutral-400', 'font-bold');
+            
+            // Add divider class for every 4th step (except the last one)
+            if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) {
+                div.classList.add('beat-divider');
+            }
+            
             headerContainer.appendChild(div);
         }
 
-        // Matrix
+        // 3. Rnd Header
+        const rndHeader = document.createElement('div');
+        rndHeader.className = 'header-cell';
+        rndHeader.innerHTML = '<i class="fas fa-dice"></i>';
+        headerContainer.appendChild(rndHeader);
+
+        // 4. Actions Header
+        const actHeader = document.createElement('div');
+        actHeader.className = 'header-cell';
+        actHeader.innerText = 'ACTIONS';
+        headerContainer.appendChild(actHeader);
+
+        // --- Matrix ---
         const container = document.getElementById('matrixContainer');
         container.innerHTML = ''; 
         
-        // Render existing tracks with proper colors
+        // Render existing tracks
         this.tracks.forEach(t => {
             this.appendTrackRow(t.id, visualizerCallback);
         });
 
-        // Add "Add Track" and "Add Group" Button row
-        const buttonContainer = document.createElement('div');
-        buttonContainer.className = 'col-span-full flex gap-2 mt-2';
+        // Add "Add Track" Row
+        const buttonRow = document.createElement('div');
+        // Make button row span full grid width visually, but inside our container structure
+        buttonRow.className = 'flex gap-2 mt-2 px-1';
         
         const addTrackBtn = document.createElement('button');
         addTrackBtn.id = 'addTrackBtn';
@@ -59,9 +89,12 @@ export class UIManager {
         addGroupBtn.innerHTML = '<i class="fas fa-layer-group mr-2"></i>ADD NEW GROUP';
         addGroupBtn.onclick = () => addGroupCallback();
         
-        buttonContainer.appendChild(addTrackBtn);
-        buttonContainer.appendChild(addGroupBtn);
-        container.appendChild(buttonContainer);
+        buttonRow.appendChild(addTrackBtn);
+        buttonRow.appendChild(addGroupBtn);
+        
+        // We append this after the matrix rows, handled dynamically in appendTrackRow usually,
+        // but here we just append it to the main container
+        container.appendChild(buttonRow);
 
         // Visualizer Click Selection
         const vis = document.getElementById('visualizer');
@@ -74,7 +107,7 @@ export class UIManager {
             if(trkIdx >= 0 && trkIdx < this.tracks.length) this.selectTrack(trkIdx, visualizerCallback);
         });
 
-        // Handle Wheel on Sliders (Global Delegation for future elements)
+        // Handle Wheel on Sliders
         document.body.addEventListener('wheel', (e) => {
             if (e.target.type === 'range') {
                 e.preventDefault();
@@ -103,21 +136,25 @@ export class UIManager {
 
     appendTrackRow(trk, visualizerCallback = null) {
         const container = document.getElementById('matrixContainer');
-        const buttonContainer = container.querySelector('.col-span-full');
+        // The last child is usually the button row, insert before it
+        const buttonRow = container.lastElementChild;
+        
         const groupIdx = Math.floor(trk / TRACKS_PER_GROUP);
         
-        // If in random choke mode, assign random group for this new track
         if (this.randomChokeMode && this.randomChokeGroups.length === trk) {
             this.randomChokeGroups.push(Math.floor(Math.random() * 8));
         }
         
-        const rowElements = [];
-        
-        // Calculate group color
         const effectiveGroup = this.randomChokeMode ? this.randomChokeGroups[trk] : groupIdx;
         const groupColor = `hsl(${effectiveGroup * 45}, 70%, 50%)`;
         const groupColorGlow = `hsla(${effectiveGroup * 45}, 70%, 50%, 0.4)`;
 
+        // Create the ROW container (Grid)
+        const rowDiv = document.createElement('div');
+        rowDiv.className = 'sequencer-grid'; // Use the shared grid class
+        
+        const rowElements = [];
+        
         // 1. Label
         const label = document.createElement('div');
         label.className = `track-label ${trk===0 ? 'selected' : ''}`;
@@ -125,7 +162,7 @@ export class UIManager {
         label.title = `Group ${effectiveGroup}`;
         label.onclick = () => this.selectTrack(trk, visualizerCallback);
         label.style.borderRight = `3px solid ${groupColor}`;
-        container.insertBefore(label, buttonContainer);
+        rowDiv.appendChild(label);
         
         this.trackLabelElements[trk] = label;
         this.matrixStepElements[trk] = [];
@@ -136,10 +173,15 @@ export class UIManager {
             const btn = document.createElement('div');
             btn.className = 'step-btn';
             btn.onclick = () => this.toggleStep(trk, step);
-            // Set CSS variables for this step's group color
             btn.style.setProperty('--step-group-color', groupColor);
             btn.style.setProperty('--step-group-color-glow', groupColorGlow);
-            container.insertBefore(btn, buttonContainer);
+            
+            // Add visual divider
+            if ((step + 1) % 4 === 0 && step !== NUM_STEPS - 1) {
+                btn.classList.add('beat-divider');
+            }
+            
+            rowDiv.appendChild(btn);
             this.matrixStepElements[trk][step] = btn;
             rowElements.push(btn);
         }
@@ -149,7 +191,7 @@ export class UIManager {
         rndBtn.className = 'track-rnd-btn';
         rndBtn.innerHTML = '<i class="fas fa-random"></i>';
         rndBtn.onclick = () => this.randomizeTrackPattern(trk);
-        container.insertBefore(rndBtn, buttonContainer);
+        rowDiv.appendChild(rndBtn);
         rowElements.push(rndBtn);
 
         // 4. Actions Panel
@@ -166,7 +208,7 @@ export class UIManager {
 
         const btnM = createAction('M', (t) => this.toggleMute(t), 'Mute Track'); btnM.id = `btnM_${trk}`;
         const btnS = createAction('S', (t) => this.toggleSolo(t), 'Solo Track'); btnS.id = `btnS_${trk}`;
-        const btnL = createAction('L', (t) => this.toggleStepLock(t), 'Lock Steps (Prevent Stealing)'); btnL.id = `btnL_${trk}`;
+        const btnL = createAction('L', (t) => this.toggleStepLock(t), 'Lock Steps'); btnL.id = `btnL_${trk}`;
         
         actionsDiv.appendChild(btnL);
         actionsDiv.appendChild(btnM);
@@ -176,11 +218,21 @@ export class UIManager {
         actionsDiv.appendChild(createAction('C', () => this.clearTrack(trk), 'Clear Track', 'erase'));
         actionsDiv.appendChild(createAction('Cg', () => this.clearGroup(groupIdx), 'Clear Group', 'erase'));
 
-        container.insertBefore(actionsDiv, buttonContainer);
+        rowDiv.appendChild(actionsDiv);
         rowElements.push(actionsDiv);
+        
+        // Insert row before button row
+        if (buttonRow) {
+            container.insertBefore(rowDiv, buttonRow);
+        } else {
+            container.appendChild(rowDiv);
+        }
+        
         this.trackRowElements[trk] = rowElements;
     }
 
+    // ... [Rest of the file remains unchanged, just need to make sure we keep it]
+    
     updateMatrixHead(current) {
         const prev = (current - 1 + NUM_STEPS) % NUM_STEPS;
         for(let t=0; t<this.tracks.length; t++) {
@@ -198,7 +250,6 @@ export class UIManager {
         
         document.getElementById('currentTrackNum').innerText = idx < 10 ? '0'+idx : idx;
         
-        // Use effective group (random if in random mode, otherwise normal)
         const normalGrp = Math.floor(idx / TRACKS_PER_GROUP);
         const grp = this.randomChokeMode ? this.randomChokeGroups[idx] : normalGrp;
         const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
@@ -207,13 +258,11 @@ export class UIManager {
         document.getElementById('trackGroupLabel').innerText = `GRP ${grp}`;
         document.getElementById('trackGroupLabel').style.color = groupColor;
         
-        // Update track indicator
         const indicator = document.getElementById('trackIndicator');
         indicator.style.backgroundColor = groupColor;
         indicator.style.boxShadow = `0 0 8px ${groupColorGlow}`;
         
-        // Apply group color to right panel using CSS variables
-        const rightPanel = document.querySelector('.w-80.md\\:w-96');
+        const rightPanel = document.querySelector('.right-pane'); // Updated selector
         if (rightPanel) {
             rightPanel.style.setProperty('--group-color', groupColor);
             rightPanel.style.setProperty('--group-color-glow', groupColorGlow);
@@ -222,53 +271,31 @@ export class UIManager {
         this.updateKnobs();
         this.updateLfoUI();
         
-        // Notify visualizer if callback provided
         if (visualizerCallback) {
             visualizerCallback();
         }
     }
 
-    getSelectedTrackIndex() {
-        return this.selectedTrackIndex;
-    }
-
-    getSelectedLfoIndex() {
-        return this.selectedLfoIndex;
-    }
-
-    setSelectedLfoIndex(index) {
-        this.selectedLfoIndex = index;
-    }
-
-    getRandomChokeInfo() {
-        return {
-            mode: this.randomChokeMode,
-            groups: this.randomChokeGroups
-        };
-    }
+    getSelectedTrackIndex() { return this.selectedTrackIndex; }
+    getSelectedLfoIndex() { return this.selectedLfoIndex; }
+    setSelectedLfoIndex(index) { this.selectedLfoIndex = index; }
+    getRandomChokeInfo() { return { mode: this.randomChokeMode, groups: this.randomChokeGroups }; }
 
     toggleStepLock(trk) {
         this.tracks[trk].stepLock = !this.tracks[trk].stepLock;
         const btnL = document.getElementById(`btnL_${trk}`);
-        if (this.tracks[trk].stepLock) {
-            btnL.classList.add('lock-active');
-        } else {
-            btnL.classList.remove('lock-active');
-        }
+        if (this.tracks[trk].stepLock) btnL.classList.add('lock-active'); else btnL.classList.remove('lock-active');
     }
 
     toggleRandomChoke() {
         this.randomChokeMode = !this.randomChokeMode;
         const btn = document.getElementById('rndChokeBtn');
-        
         if (this.randomChokeMode) {
-            // Generate random choke groups for each track
             this.randomChokeGroups = this.tracks.map(() => Math.floor(Math.random() * 8));
             btn.classList.add('rnd-choke-active');
             this.updateAllTrackColors();
             this.applyRandomChokeDimming();
         } else {
-            // Return to normal
             this.randomChokeGroups = [];
             btn.classList.remove('rnd-choke-active');
             this.updateAllTrackColors();
@@ -277,20 +304,15 @@ export class UIManager {
     }
 
     updateAllTrackColors() {
-        // Update all track labels and step colors
         for (let trk = 0; trk < this.tracks.length; trk++) {
             const normalGroup = Math.floor(trk / TRACKS_PER_GROUP);
             const effectiveGroup = this.randomChokeMode ? this.randomChokeGroups[trk] : normalGroup;
             const groupColor = `hsl(${effectiveGroup * 45}, 70%, 50%)`;
             const groupColorGlow = `hsla(${effectiveGroup * 45}, 70%, 50%, 0.4)`;
-            
-            // Update track label border
             if (this.trackLabelElements[trk]) {
                 this.trackLabelElements[trk].style.borderRight = `3px solid ${groupColor}`;
                 this.trackLabelElements[trk].title = `Group ${effectiveGroup}`;
             }
-            
-            // Update all step colors for this track
             for (let step = 0; step < NUM_STEPS; step++) {
                 if (this.matrixStepElements[trk] && this.matrixStepElements[trk][step]) {
                     const stepEl = this.matrixStepElements[trk][step];
@@ -299,43 +321,28 @@ export class UIManager {
                 }
             }
         }
-        
-        // Update the currently selected track's inspector colors if needed
         if (this.tracks[this.selectedTrackIndex]) {
             this.selectTrack(this.selectedTrackIndex, this.visualizerCallback);
         }
     }
 
     applyRandomChokeDimming() {
-        // For each step position, find conflicts in random choke groups
         for (let step = 0; step < NUM_STEPS; step++) {
-            // Group tracks by their random choke group
             const chokeGroupMap = new Map();
-            
             for (let t = 0; t < this.tracks.length; t++) {
                 if (this.tracks[t].steps[step]) {
                     const randomGroup = this.randomChokeGroups[t];
-                    if (!chokeGroupMap.has(randomGroup)) {
-                        chokeGroupMap.set(randomGroup, []);
-                    }
+                    if (!chokeGroupMap.has(randomGroup)) chokeGroupMap.set(randomGroup, []);
                     chokeGroupMap.get(randomGroup).push(t);
                 }
             }
-            
-            // For each choke group, randomly pick a winner and dim the losers
             chokeGroupMap.forEach((trackIds) => {
                 if (trackIds.length > 1) {
-                    // Randomly pick winner
                     const winnerIdx = Math.floor(Math.random() * trackIds.length);
                     trackIds.forEach((trackId, idx) => {
                         const stepEl = this.matrixStepElements[trackId][step];
-                        if (idx === winnerIdx) {
-                            // Winner - remove dimming
-                            stepEl.classList.remove('step-dimmed');
-                        } else {
-                            // Loser - add dimming
-                            stepEl.classList.add('step-dimmed');
-                        }
+                        if (idx === winnerIdx) stepEl.classList.remove('step-dimmed');
+                        else stepEl.classList.add('step-dimmed');
                     });
                 }
             });
@@ -343,7 +350,6 @@ export class UIManager {
     }
 
     clearRandomChokeDimming() {
-        // Remove all dimming classes
         for (let t = 0; t < this.tracks.length; t++) {
             for (let step = 0; step < NUM_STEPS; step++) {
                 this.matrixStepElements[t][step].classList.remove('step-dimmed');
@@ -351,46 +357,22 @@ export class UIManager {
         }
     }
 
-    savePanBaseline() {
-        // Save current pan values as baseline for shifting
-        this.basePanValues = this.tracks.map(t => t.params.pan);
-    }
+    savePanBaseline() { this.basePanValues = this.tracks.map(t => t.params.pan); }
 
     applyPanShift(shiftAmount) {
-        // shiftAmount: 0 to 1, representing 0° to 360° rotation
         this.globalPanShift = shiftAmount;
-        
-        if (this.basePanValues.length === 0) {
-            // No baseline saved, save current values
-            this.savePanBaseline();
-        }
-        
+        if (this.basePanValues.length === 0) this.savePanBaseline();
         const numGroups = 8;
-        
         for (let i = 0; i < this.tracks.length; i++) {
             const groupIdx = Math.floor(i / TRACKS_PER_GROUP);
             const basePan = this.basePanValues[i] || 0;
-            
-            // Calculate the shift in terms of group positions
-            // Full rotation (shiftAmount = 1) should shift by numGroups positions
             const shiftInGroups = shiftAmount * numGroups;
-            
-            // Calculate new group position (wrapping around)
             const newGroupPosition = (groupIdx + shiftInGroups) % numGroups;
-            
-            // Calculate the group's center position
             const newGroupCenter = -1 + (newGroupPosition / (numGroups - 1)) * 2;
-            
-            // Get the track's offset from its original group center
             const originalGroupCenter = -1 + (groupIdx / (numGroups - 1)) * 2;
             const offsetFromCenter = basePan - originalGroupCenter;
-            
-            // Apply the offset to the new position
             let newPan = newGroupCenter + offsetFromCenter;
-            
-            // Clamp to valid range
             newPan = Math.max(-1, Math.min(1, newPan));
-            
             this.tracks[i].params.pan = parseFloat(newPan.toFixed(3));
         }
     }
@@ -458,14 +440,11 @@ export class UIManager {
             const groupEnd = groupStart + TRACKS_PER_GROUP;
             for(let i=groupStart; i<groupEnd; i++) {
                 if (this.tracks[i] && i !== trk && this.tracks[i].steps[step]) {
-                    // Check if the other track has step lock enabled
                     if (!this.tracks[i].stepLock) {
-                        // Only steal if the other track is NOT locked
                         this.tracks[i].steps[step] = false;
                         this.matrixStepElements[i][step].classList.remove('active');
                     } else {
-                        // Cannot activate this step because another track has it locked
-                        return; // Don't activate the current track's step
+                        return;
                     }
                 }
             }
@@ -473,11 +452,7 @@ export class UIManager {
         this.tracks[trk].steps[step] = newState;
         const btn = this.matrixStepElements[trk][step];
         if(newState) btn.classList.add('active'); else btn.classList.remove('active');
-        
-        // If in random choke mode, reapply dimming
-        if (this.randomChokeMode) {
-            this.applyRandomChokeDimming();
-        }
+        if (this.randomChokeMode) this.applyRandomChokeDimming();
     }
 
     randomizeTrackPattern(trkIdx) {
@@ -487,7 +462,6 @@ export class UIManager {
         for(let i=0; i<NUM_STEPS; i++) {
             const active = Math.random() < 0.25;
             if (active) {
-                // Check if any other track in the group has this step locked
                 let isStepLocked = false;
                 for(let sib=groupStart; sib<groupEnd; sib++) {
                     if(this.tracks[sib] && sib !== trkIdx && this.tracks[sib].steps[i] && this.tracks[sib].stepLock) {
@@ -495,9 +469,7 @@ export class UIManager {
                         break;
                     }
                 }
-                
                 if (!isStepLocked) {
-                    // Clear other tracks in group (only if they're not locked)
                     for(let sib=groupStart; sib<groupEnd; sib++) {
                         if(this.tracks[sib] && sib !== trkIdx && this.tracks[sib].steps[i] && !this.tracks[sib].stepLock) {
                             this.tracks[sib].steps[i] = false;
@@ -506,7 +478,6 @@ export class UIManager {
                     }
                     t.steps[i] = active;
                 } else {
-                    // Cannot activate because step is locked by another track
                     t.steps[i] = false;
                 }
             } else {
@@ -515,11 +486,7 @@ export class UIManager {
             const btn = this.matrixStepElements[trkIdx][i];
             if(t.steps[i]) btn.classList.add('active'); else btn.classList.remove('active');
         }
-        
-        // If in random choke mode, reapply dimming
-        if (this.randomChokeMode) {
-            this.applyRandomChokeDimming();
-        }
+        if (this.randomChokeMode) this.applyRandomChokeDimming();
     }
 
     randomizeAllPatterns() {
@@ -534,7 +501,6 @@ export class UIManager {
                 for (let i = 0; i < TRACKS_PER_GROUP; i++) {
                     const trkId = groupStart + i;
                     if (!this.tracks[trkId]) continue;
-                    
                     const shouldBeActive = plays && (trkId === activeTrackId);
                     this.tracks[trkId].steps[step] = shouldBeActive;
                     const btn = this.matrixStepElements[trkId][step];
@@ -543,11 +509,7 @@ export class UIManager {
                 }
             }
         }
-        
-        // If in random choke mode, reapply dimming
-        if (this.randomChokeMode) {
-            this.applyRandomChokeDimming();
-        }
+        if (this.randomChokeMode) this.applyRandomChokeDimming();
     }
 
     updateKnobs() {
@@ -559,7 +521,6 @@ export class UIManager {
             if(param === 'density') suffix = 'hz';
             if(param === 'grainSize') suffix = 's';
             if(param === 'pitch') suffix = 'x';
-            
             if(el.nextElementSibling) {
                 el.nextElementSibling.innerText = t.params[param].toFixed(2) + suffix;
             }
@@ -586,7 +547,6 @@ export class UIManager {
             }
         });
         
-        // Apply group color to LFO value displays
         document.getElementById('lfoRateVal').style.color = groupColor;
         document.getElementById('lfoAmtVal').style.color = groupColor;
         
@@ -600,9 +560,7 @@ export class UIManager {
 
     toggleSnapshot() {
         const btn = document.getElementById('snapshotBtn');
-        
         if(!this.snapshotData) {
-            // Save
             this.snapshotData = JSON.stringify({
                 tracks: this.tracks.map(t => ({
                     params: {...t.params},
@@ -616,7 +574,6 @@ export class UIManager {
             btn.classList.add('snap-active');
             btn.innerText = 'RESTORE';
         } else {
-            // Restore
             try {
                 const data = JSON.parse(this.snapshotData);
                 data.tracks.forEach((trackData, i) => {
@@ -627,7 +584,6 @@ export class UIManager {
                     t.muted = trackData.muted;
                     t.soloed = trackData.soloed;
                     t.stepLock = trackData.stepLock || false;
-                    
                     trackData.lfos.forEach((lData, lIdx) => {
                         if(lIdx < NUM_LFOS) {
                             t.lfos[lIdx].wave = lData.wave;
@@ -637,21 +593,15 @@ export class UIManager {
                         }
                     });
                     this.updateTrackStateUI(i);
-                    // Refresh grid
                     for(let s=0; s<NUM_STEPS; s++) {
                          const btn = this.matrixStepElements[i][s];
                          if(t.steps[s]) btn.classList.add('active'); else btn.classList.remove('active');
                     }
                 });
-                
-                // Clear snapshot
                 this.snapshotData = null;
                 btn.classList.remove('snap-active');
                 btn.innerText = 'Snap';
-                
-                // Refresh current view
                 this.selectTrack(this.selectedTrackIndex, this.visualizerCallback);
-                
             } catch(e) {
                 console.error("Snapshot restore failed", e);
                 this.snapshotData = null;

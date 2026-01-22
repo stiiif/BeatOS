@@ -7,6 +7,7 @@ import { PresetManager } from './modules/PresetManager.js';
 import { TrackLibrary } from './modules/TrackLibrary.js';
 import { UIManager } from './ui/UIManager.js';
 import { Visualizer } from './ui/Visualizer.js';
+import { LayoutManager } from './ui/LayoutManager.js';
 
 // Initialize all systems
 const audioEngine = new AudioEngine();
@@ -17,6 +18,9 @@ const presetManager = new PresetManager();
 const trackLibrary = new TrackLibrary();
 const uiManager = new UIManager();
 const visualizer = new Visualizer('visualizer', 'bufferDisplay', audioEngine);
+
+// Initialize Layout
+const layoutManager = new LayoutManager();
 
 // Initialize tracks
 trackManager.initTracks();
