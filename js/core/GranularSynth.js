@@ -102,8 +102,12 @@ export class GranularSynth {
         
         // FIX: Use Math.ceil instead of Math.floor.
         // This ensures that if (Duration * Density) < 1, we still get at least 1 grain.
-        // Example: 0.5s Release * 1Hz Density = 0.5 -> Ceil = 1 Grain.
-        const grains = Math.ceil(dur * density);
+        const rawGrains = Math.ceil(dur * density);
+        
+        // SAFETY CAP: Prevent CPU bomb if user sets high density + long duration
+        // 50 Grains per step per track is a reasonable maximum to prevent crackling
+        const grains = Math.min(50, rawGrains);
+        
         const interval = 1/density;
 
         // Envelope Parameters

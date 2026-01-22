@@ -267,9 +267,22 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
     });
 });
 
-// Wire up the new inline "Sample" button to the existing file input
+// Load Custom Sample (Inline Button) - Now handles validation
 document.getElementById('loadSampleBtnInline').addEventListener('click', () => {
-    document.getElementById('sampleInput').click();
+    try {
+        if (!tracks || tracks.length === 0) {
+            alert('Please initialize audio first by clicking "INITIALIZE AUDIO"');
+            return;
+        }
+        if (!audioEngine.getContext()) {
+            alert('Please initialize audio first by clicking "INITIALIZE AUDIO"');
+            return;
+        }
+        document.getElementById('sampleInput').click();
+    } catch (error) {
+        console.error('Error opening sample picker:', error);
+        alert('Failed to open sample picker: ' + error.message);
+    }
 });
 
 
@@ -411,7 +424,7 @@ visualizer.resizeCanvas();
 console.log('Initializing new features...');
 console.log('saveTrackBtn:', document.getElementById('saveTrackBtn'));
 console.log('loadTrackBtn:', document.getElementById('loadTrackBtn'));
-console.log('loadSampleBtn:', document.getElementById('loadSampleBtn'));
+// console.log('loadSampleBtn:', document.getElementById('loadSampleBtn')); // Removed
 
 // Save Track to Library (LocalStorage)
 document.getElementById('saveTrackBtn').addEventListener('click', () => {
@@ -598,34 +611,18 @@ document.getElementById('importTrackInput').addEventListener('change', (e) => {
     e.target.value = '';
 });
 
-// Load Custom Sample
-document.getElementById('loadSampleBtn').addEventListener('click', () => {
-    try {
-        if (!tracks || tracks.length === 0) {
-            alert('Please initialize audio first by clicking "INITIALIZE AUDIO"');
-            return;
-        }
-        if (!audioEngine.getContext()) {
-            alert('Please initialize audio first by clicking "INITIALIZE AUDIO"');
-            return;
-        }
-        document.getElementById('sampleInput').click();
-    } catch (error) {
-        console.error('Error opening sample picker:', error);
-        alert('Failed to open sample picker: ' + error.message);
-    }
-});
-
+// Load Custom Sample Input Handler
 document.getElementById('sampleInput').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     
     const currentTrack = tracks[uiManager.getSelectedTrackIndex()];
-    const btn = document.getElementById('loadSampleBtn');
+    // Visual feedback now targets the inline button
+    const btn = document.getElementById('loadSampleBtnInline');
     const originalText = btn.innerHTML;
     
     try {
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Loading...';
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         btn.disabled = true;
         
         await audioEngine.loadCustomSample(file, currentTrack);
@@ -637,7 +634,7 @@ document.getElementById('sampleInput').addEventListener('change', async (e) => {
         
         visualizer.drawBufferDisplay();
         
-        btn.innerHTML = '<i class="fas fa-check mr-1"></i>Loaded!';
+        btn.innerHTML = '<i class="fas fa-check"></i>';
         btn.classList.add('bg-sky-600');
         setTimeout(() => {
             btn.innerHTML = originalText;
@@ -784,18 +781,22 @@ if(maxGrainsInput) {
 
 setInterval(() => {
     const count = granularSynth.getActiveGrainCount();
-    grainMonitorEl.innerText = count;
     
-    // Change color based on load
-    if (count > 350) {
-        grainMonitorEl.classList.replace('text-emerald-400', 'text-red-500');
-        grainMonitorEl.classList.add('font-bold');
-    } else if (count > 200) {
-        grainMonitorEl.classList.replace('text-emerald-400', 'text-amber-400');
-        grainMonitorEl.classList.remove('text-red-500');
-        grainMonitorEl.classList.add('font-bold');
-    } else {
-        grainMonitorEl.classList.remove('text-red-500', 'text-amber-400', 'font-bold');
-        grainMonitorEl.classList.add('text-emerald-400');
+    // Safety check if element exists (fixed "Nothing" display issue)
+    if (grainMonitorEl) {
+        grainMonitorEl.innerText = count;
+        
+        // Change color based on load
+        if (count > 350) {
+            grainMonitorEl.classList.replace('text-emerald-400', 'text-red-500');
+            grainMonitorEl.classList.add('font-bold');
+        } else if (count > 200) {
+            grainMonitorEl.classList.replace('text-emerald-400', 'text-amber-400');
+            grainMonitorEl.classList.remove('text-red-500');
+            grainMonitorEl.classList.add('font-bold');
+        } else {
+            grainMonitorEl.classList.remove('text-red-500', 'text-amber-400', 'font-bold');
+            grainMonitorEl.classList.add('text-emerald-400');
+        }
     }
 }, 100);
