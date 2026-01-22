@@ -15,7 +15,7 @@ export class GranularSynth {
         this.MAX_GRAINS = max;
     }
 
-    playGrain(track, time, scheduleVisualDrawCallback) {
+    playGrain(track, time, scheduleVisualDrawCallback, ampEnvelope = 1.0) {
         // Safety Limiter: Drop grains if CPU is overloaded
         if (this.activeGrains >= this.MAX_GRAINS) {
             return;
@@ -57,7 +57,8 @@ export class GranularSynth {
         hpNode.frequency.value = hpCutoff;
 
         const vol = audioCtx.createGain();
-        vol.gain.value = p.volume;
+        // Apply track volume AND the calculated envelope scalar
+        vol.gain.value = p.volume * ampEnvelope;
 
         // Add stereo panner
         const panner = audioCtx.createStereoPanner();
@@ -96,7 +97,8 @@ export class GranularSynth {
 
     scheduleNote(track, time, scheduleVisualDrawCallback) {
         const density = Math.max(1, track.params.density);
-        const dur = track.params.release;
+        // Use 'relGrain' for the duration loop, fallback to old 'release' if missing
+        const dur = track.params.relGrain !== undefined ? track.params.relGrain : track.params.release;
         
         // FIX: Use Math.ceil instead of Math.floor.
         // This ensures that if (Duration * Density) < 1, we still get at least 1 grain.
@@ -104,9 +106,41 @@ export class GranularSynth {
         const grains = Math.ceil(dur * density);
         const interval = 1/density;
 
+        // Envelope Parameters
+        const atk = track.params.ampAttack || 0.01;
+        const dec = track.params.ampDecay || 0.1;
+        const rel = track.params.ampRelease || 0.1;
+        const sustainLevel = 0.6; // Fixed sustain level for ADR shape
+
         for(let i=0; i<grains; i++) {
+            const grainRelativeTime = i * interval;
+            let ampEnv = 0;
+
+            // ADR Envelope Logic
+            // 1. Attack Phase
+            if (grainRelativeTime < atk) {
+                ampEnv = grainRelativeTime / atk;
+            } 
+            // 2. Decay Phase (Target -> Sustain)
+            else if (grainRelativeTime < atk + dec) {
+                const decProgress = (grainRelativeTime - atk) / dec;
+                ampEnv = 1.0 - (decProgress * (1.0 - sustainLevel));
+            } 
+            // 3. Release Phase (Sustain -> 0)
+            else if (grainRelativeTime < atk + dec + rel) {
+                const relProgress = (grainRelativeTime - (atk + dec)) / rel;
+                ampEnv = sustainLevel * (1.0 - relProgress);
+            }
+            // 4. End (Silence)
+            else {
+                ampEnv = 0;
+            }
+
             const jitter = Math.random() * 0.005;
-            this.playGrain(track, time + (i*interval) + jitter, scheduleVisualDrawCallback);
+            // Pass the calculated envelope volume to the grain
+            if (ampEnv > 0.001) { // Optimization: don't play silent grains
+                this.playGrain(track, time + grainRelativeTime + jitter, scheduleVisualDrawCallback, ampEnv);
+            }
         }
     }
 }

@@ -47,12 +47,10 @@
              
              <button id="exportCurrentTrackBtn" class="text-[10px] bg-neutral-800 hover:bg-indigo-900/30 text-indigo-400 px-2 py-1 rounded transition border border-neutral-700" title="Export current track with sample to .beattrk file"><i class="fas fa-file-export mr-1"></i>Export</button>
              
-             <button id="loadSampleBtn" class="text-[10px] bg-neutral-800 hover:bg-sky-900/30 text-sky-500 px-2 py-1 rounded transition border border-neutral-700" title="Load custom audio sample"><i class="fas fa-file-audio mr-1"></i>Load Sample</button>
              <input type="file" id="sampleInput" class="hidden" accept="audio/*">
              
              <div class="h-6 w-px bg-neutral-700 mx-1"></div>
              
-             <!-- Randomization Tools Moved to Dropdown or Compacted if needed, but keeping for now -->
              <button id="randomizeAllPatternsBtn" class="text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2 py-1 rounded transition border border-neutral-700">Rand Pat</button>
              <button id="randAllParamsBtn" class="text-[10px] bg-indigo-900/40 hover:bg-indigo-800 text-indigo-300 px-2 py-1 rounded transition border border-indigo-900/50">Rand Prms</button>
              
@@ -60,17 +58,16 @@
              <button id="clearTrackBtn" class="text-[10px] bg-neutral-800 hover:bg-red-900/50 text-red-400 px-2 py-1 rounded transition border border-neutral-700">Clear</button>
              <button id="saveBtn" class="text-[10px] bg-neutral-800 hover:bg-emerald-900/30 text-emerald-500 px-2 py-1 rounded transition border border-neutral-700" title="Save Project (.beatos)"><i class="fas fa-download"></i></button>
              <button id="loadBtn" class="text-[10px] bg-neutral-800 hover:bg-emerald-900/30 text-emerald-500 px-2 py-1 rounded transition border border-neutral-700" title="Load Project (.beatos)"><i class="fas fa-upload"></i></button>
-             <!-- Allow .json, .beatos, .zip -->
              <input type="file" id="fileInput" class="hidden" accept=".json,.beatos,.zip">
         </div>
     </header>
 
-    <!-- Main App Container (Split Layout) -->
+    <!-- Main App Container -->
     <div class="app-container">
         
         <!-- Left Pane -->
         <div class="left-pane">
-            <!-- Sequencer Panel (Top Left) -->
+            <!-- Sequencer Panel -->
             <div class="sequencer-panel relative custom-scrollbar">
                 
                 <!-- START OVERLAY -->
@@ -90,10 +87,9 @@
                 <div class="h-10"></div>
             </div>
             
-            <!-- Horizontal Resizer -->
             <div class="resizer-h"></div>
             
-            <!-- Future Panel (Bottom Left) -->
+            <!-- Future Panel -->
             <div class="future-panel custom-scrollbar">
                 <div class="text-neutral-600 text-center">
                     <i class="fas fa-tools text-2xl mb-2"></i>
@@ -103,7 +99,6 @@
             </div>
         </div>
 
-        <!-- Vertical Resizer -->
         <div class="resizer-v"></div>
 
         <!-- Right Pane (Controls) -->
@@ -182,25 +177,45 @@
                             <span class="text-[10px] text-emerald-400 font-mono">10hz</span>
                         </div>
 
-                        <div class="knob-container col-span-4 bg-neutral-800/50 p-2 rounded border border-neutral-800">
-                             <label class="text-[10px] text-neutral-500 mb-1">Pitch / Playback Rate</label>
+                        <!-- MODIFIED: Pitch and Rel Grain next to each other -->
+                        <div class="knob-container col-span-2 bg-neutral-800/50 p-2 rounded border border-neutral-800">
+                             <label class="text-[10px] text-neutral-500 mb-1">Pitch / Rate</label>
                              <input type="range" min="0.1" max="4.0" step="0.01" data-param="pitch" class="param-slider">
                              <span class="text-[10px] text-emerald-400 font-mono">1.00x</span>
                         </div>
+                        <div class="knob-container col-span-2 bg-neutral-800/50 p-2 rounded border border-neutral-800">
+                            <label class="text-[10px] text-neutral-500 mb-1">Rel Grain (Dur)</label>
+                            <input type="range" min="0.01" max="2" step="0.01" data-param="relGrain" class="param-slider">
+                            <span class="text-[10px] text-emerald-400 font-mono">0.40s</span>
+                        </div>
                     </div>
 
-                    <!-- Envelope & Filters (Grid 5 cols) -->
-                    <div class="grid grid-cols-5 gap-2 pt-2 border-t border-neutral-800">
-                         <div class="knob-container">
-                            <label class="text-[10px] text-neutral-500 mb-1">Atk</label>
-                            <input type="range" min="0.001" max="1" step="0.01" data-param="attack" class="param-slider">
-                            <span class="text-[10px] text-emerald-400 font-mono">0.01</span>
+                    <!-- NEW: Amp Envelope Section (ADR) -->
+                    <div class="pt-2 border-t border-neutral-800">
+                        <div class="flex justify-between items-end mb-1">
+                            <label class="text-[10px] text-neutral-500 uppercase font-bold">Amp Envelope (ADR)</label>
                         </div>
-                        <div class="knob-container">
-                            <label class="text-[10px] text-neutral-500 mb-1">Rel</label>
-                            <input type="range" min="0.01" max="2" step="0.01" data-param="release" class="param-slider">
-                            <span class="text-[10px] text-emerald-400 font-mono">0.40</span>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div class="knob-container">
+                                <label class="text-[10px] text-neutral-500 mb-1">Attack</label>
+                                <input type="range" min="0.001" max="1" step="0.01" data-param="ampAttack" class="param-slider">
+                                <span class="text-[10px] text-emerald-400 font-mono">0.01</span>
+                            </div>
+                            <div class="knob-container">
+                                <label class="text-[10px] text-neutral-500 mb-1">Decay</label>
+                                <input type="range" min="0.01" max="1" step="0.01" data-param="ampDecay" class="param-slider">
+                                <span class="text-[10px] text-emerald-400 font-mono">0.10</span>
+                            </div>
+                            <div class="knob-container">
+                                <label class="text-[10px] text-neutral-500 mb-1">Release</label>
+                                <input type="range" min="0.01" max="2" step="0.01" data-param="ampRelease" class="param-slider">
+                                <span class="text-[10px] text-emerald-400 font-mono">0.30</span>
+                            </div>
                         </div>
+                    </div>
+
+                    <!-- Filters & Vol (Grid 3 cols) -->
+                    <div class="grid grid-cols-3 gap-2 pt-2 border-t border-neutral-800">
                         <div class="knob-container">
                             <label class="text-[10px] text-neutral-500 mb-1">HPF</label>
                             <input type="range" min="20" max="5000" step="10" data-param="hpFilter" class="param-slider">
@@ -256,10 +271,12 @@
                                     <option value="density">Density</option>
                                     <option value="grainSize">Grain Size</option>
                                     <option value="pitch">Pitch</option>
+                                    <option value="relGrain">Rel Grain</option>
                                     <option value="filter">LPF</option>
                                     <option value="hpFilter">HPF</option>
-                                    <option value="attack">Attack</option>
-                                    <option value="release">Release</option>
+                                    <option value="ampAttack">Amp Attack</option>
+                                    <option value="ampDecay">Amp Decay</option>
+                                    <option value="ampRelease">Amp Release</option>
                                 </select>
                              </div>
                              <div class="flex-1">
