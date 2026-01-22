@@ -5,19 +5,18 @@ import { NUM_STEPS } from '../utils/constants.js';
 export class Track {
     constructor(id) {
         this.id = id;
+        this.type = 'granular'; // 'granular' or 'simple-drum'
         this.buffer = null;
-        this.rmsMap = []; // Idea 3: Map of loud/silent regions
+        this.rmsMap = []; 
         this.steps = new Array(NUM_STEPS).fill(false);
         this.lfos = [new LFO(), new LFO(), new LFO()];
         
-        // State for Idea 2 (Scan) & Idea 5 (Continuous Play)
         this.playhead = 0; 
         
         this.muted = false;
         this.soloed = false;
         this.stepLock = false; 
 
-        // Persistent Audio Bus Nodes (Created in TrackManager/AudioEngine)
         this.bus = {
             input: null,
             hp: null,
@@ -27,24 +26,27 @@ export class Track {
         };
 
         this.params = {
-            // --- Grain Generation ---
+            // --- Common / Granular ---
             position: 0.0, 
             spray: 0.00, 
-            scanSpeed: 0.0, // Idea 2: Speed of playhead movement (0 = static)
-            
+            scanSpeed: 0.0,
             density: 15, 
-            overlap: 0, // Idea 1: If > 0, overrides density to ensure layer overlap
-            
+            overlap: 0, 
             grainSize: 0.05,
             pitch: 1.0, 
-            relGrain: 0.4, // Duration of the grain cloud (Trigger window)
+            relGrain: 0.4,
             
-            // --- Amp Envelope (Global per trigger) ---
+            // --- 909 / Simple Drum Params ---
+            drumType: 'kick', // kick, snare, closed-hat, open-hat, cymbal
+            drumTune: 0.5,    // Simple tuning parameter (0-1)
+            drumDecay: 0.5,   // Simple decay parameter (0-1)
+            
+            // --- Amp Envelope ---
             ampAttack: 0.01,
             ampDecay: 0.1,
             ampRelease: 0.3,
             
-            // --- Track Bus (Global Effects) ---
+            // --- Track Bus ---
             hpFilter: 20,
             filter: 20000, 
             volume: 0.8, 
