@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Granular Drum Machine</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Add JSZip Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="css/base.css">
     <link rel="stylesheet" href="css/controls.css">
@@ -52,7 +54,8 @@
              <button id="clearTrackBtn" class="text-[10px] bg-neutral-800 hover:bg-red-900/50 text-red-400 px-2 py-1 rounded transition border border-neutral-700">Clear</button>
              <button id="saveBtn" class="text-[10px] bg-neutral-800 hover:bg-emerald-900/30 text-emerald-500 px-2 py-1 rounded transition border border-neutral-700"><i class="fas fa-download"></i></button>
              <button id="loadBtn" class="text-[10px] bg-neutral-800 hover:bg-emerald-900/30 text-emerald-500 px-2 py-1 rounded transition border border-neutral-700"><i class="fas fa-upload"></i></button>
-             <input type="file" id="fileInput" class="hidden" accept=".json">
+             <!-- Allow both .json and .beatos files -->
+             <input type="file" id="fileInput" class="hidden" accept=".json,.beatos,.zip">
         </div>
     </header>
 
@@ -233,6 +236,8 @@
                                     <option value="pitch">Pitch</option>
                                     <option value="filter">LPF</option>
                                     <option value="hpFilter">HPF</option>
+                                    <option value="attack">Attack</option>
+                                    <option value="release">Release</option>
                                 </select>
                              </div>
                              <div class="flex-1">
