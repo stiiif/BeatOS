@@ -236,6 +236,43 @@ document.getElementById('resetParamBtn').addEventListener('click', () => {
     }, 800);
 });
 
+// NEW SOUND GENERATOR BUTTONS LOGIC
+document.querySelectorAll('.sound-gen-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        if (!audioEngine.getContext()) return;
+        
+        const type = e.target.dataset.type;
+        const currentTrackIdx = uiManager.getSelectedTrackIndex();
+        const t = tracks[currentTrackIdx];
+        
+        // Generate new buffer
+        const newBuf = audioEngine.generateBufferByType(type);
+        if (newBuf) {
+            t.buffer = newBuf;
+            t.customSample = null; // Clear custom sample flag as we are using synth now
+            
+            // Visual feedback
+            visualizer.drawBufferDisplay();
+            
+            // Update label
+            const typeLabel = document.getElementById('trackTypeLabel');
+            typeLabel.textContent = type.toUpperCase() + ' (Synth)';
+            typeLabel.title = `Synthesized ${type}`;
+            
+            // Button flash effect
+            const originalBg = e.target.style.backgroundColor;
+            e.target.style.backgroundColor = '#059669'; // Emerald
+            setTimeout(() => { e.target.style.backgroundColor = originalBg; }, 200);
+        }
+    });
+});
+
+// Wire up the new inline "Sample" button to the existing file input
+document.getElementById('loadSampleBtnInline').addEventListener('click', () => {
+    document.getElementById('sampleInput').click();
+});
+
+
 // Global Pan Shift Slider
 document.getElementById('panShiftSlider').addEventListener('input', (e) => {
     const shiftAmount = parseFloat(e.target.value);
