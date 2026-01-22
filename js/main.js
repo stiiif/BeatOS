@@ -297,6 +297,8 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
         if (newBuf) {
             t.buffer = newBuf;
             t.customSample = null;
+            // Re-analyze buffer RMS for new synth sound
+            t.rmsMap = audioEngine.analyzeBuffer(newBuf);
             visualizer.drawBufferDisplay();
             
             const typeLabel = document.getElementById('trackTypeLabel');
@@ -343,21 +345,69 @@ document.querySelectorAll('.drum-sel-btn').forEach(btn => {
 });
 
 // Load Custom Sample (Inline Button)
-document.getElementById('loadSampleBtnInline').addEventListener('click', () => {
-    try {
-        if (!tracks || tracks.length === 0) {
-            alert('Please initialize audio first');
-            return;
+const loadSampleBtnInline = document.getElementById('loadSampleBtnInline');
+const sampleInput = document.getElementById('sampleInput');
+
+if(loadSampleBtnInline && sampleInput) {
+    loadSampleBtnInline.addEventListener('click', () => {
+        try {
+            if (!tracks || tracks.length === 0) {
+                alert('Please initialize audio first');
+                return;
+            }
+            if (!audioEngine.getContext()) {
+                alert('Please initialize audio first');
+                return;
+            }
+            sampleInput.click();
+        } catch (error) {
+            console.error('Error opening sample picker:', error);
         }
-        if (!audioEngine.getContext()) {
-            alert('Please initialize audio first');
-            return;
+    });
+
+    sampleInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const currentTrack = tracks[uiManager.getSelectedTrackIndex()];
+        const btn = loadSampleBtnInline;
+        const originalText = btn.innerHTML;
+        
+        try {
+            // Force Granular Mode when loading a sample
+            currentTrack.type = 'granular';
+            updateTrackControlsVisibility();
+
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+            
+            await audioEngine.loadCustomSample(file, currentTrack);
+            
+            // Update UI to show sample is loaded
+            const typeLabel = document.getElementById('trackTypeLabel');
+            if(typeLabel) {
+                typeLabel.textContent = currentTrack.customSample.name;
+                typeLabel.title = `Custom Sample: ${currentTrack.customSample.name}`;
+            }
+            
+            visualizer.drawBufferDisplay();
+            
+            btn.innerHTML = '<i class="fas fa-check"></i>';
+            btn.classList.add('bg-sky-600');
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.classList.remove('bg-sky-600');
+                btn.disabled = false;
+            }, 1500);
+        } catch (err) {
+            alert('Failed to load audio sample: ' + err.message);
+            console.error('Sample loading error:', err);
+            btn.innerHTML = originalText;
+            btn.disabled = false;
         }
-        document.getElementById('sampleInput').click();
-    } catch (error) {
-        console.error('Error opening sample picker:', error);
-    }
-});
+        e.target.value = '';
+    });
+}
 
 
 // Global Pan Shift Slider
@@ -537,6 +587,8 @@ document.getElementById('importTrackInput').addEventListener('change', (e) => {
                             const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
                             currentTrack.customSample = { name: trackData.sampleName, buffer: audioBuffer, duration: audioBuffer.duration };
                             currentTrack.buffer = audioBuffer;
+                            // Re-analyze
+                            currentTrack.rmsMap = audioEngine.analyzeBuffer(audioBuffer);
                          } catch (err) { console.error(err); }
                     }
                     
