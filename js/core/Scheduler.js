@@ -8,6 +8,7 @@ export class Scheduler {
         this.isPlaying = false;
         this.bpm = 120;
         this.currentStep = 0;
+        this.totalStepsPlayed = 0; // NEW: Absolute step counter
         this.nextNoteTime = 0.0;
         this.schedulerTimerID = null;
         this.tracks = [];
@@ -48,6 +49,7 @@ export class Scheduler {
         if (!this.isPlaying) {
             this.isPlaying = true;
             this.currentStep = 0;
+            this.totalStepsPlayed = 0; // Reset absolute counter
             this.nextNoteTime = audioCtx.currentTime + 0.1;
             
             // Reset automation state on start
@@ -68,7 +70,9 @@ export class Scheduler {
         }
         
         // Stop all sound on stop
-        this.tracks.forEach(t => t.stopAllSources());
+        this.tracks.forEach(t => {
+            if(t.stopAllSources) t.stopAllSources();
+        });
     }
 
     getIsPlaying() {
@@ -92,25 +96,29 @@ export class Scheduler {
         const secondsPerBeat = 60.0 / this.bpm;
         this.nextNoteTime += secondsPerBeat / 4;
         this.currentStep = (this.currentStep + 1) % NUM_STEPS;
+        this.totalStepsPlayed++; // Increment absolute counter
     }
 
     scheduleStep(step, time, scheduleVisualDrawCallback) {
         if (this.updateMatrixHeadCallback) {
-            requestAnimationFrame(() => this.updateMatrixHeadCallback(step));
+            // Pass both the looped step AND the absolute totalStepsPlayed
+            requestAnimationFrame(() => this.updateMatrixHeadCallback(step, this.totalStepsPlayed));
         }
         
         // --- AUTOMATION TRACK LOGIC ---
+        // Pass totalStepsPlayed for calculation
         this.tracks.forEach(t => {
             if (t.type === 'automation' && !t.muted) {
-                this.processAutomationTrack(t, step, time);
+                this.processAutomationTrack(t, this.totalStepsPlayed, time);
             }
         });
 
         // --- AUDIO TRIGGER LOGIC ---
+        // (Audio tracks still use the looped 'step' 0-63)
         const randomChokeInfo = this.randomChokeCallback ? this.randomChokeCallback() : { mode: false, groups: [] };
         
         if (randomChokeInfo.mode) {
-            // Random Choke Mode (Visual grouping logic)
+            // Random Choke Mode
             const chokeGroupMap = new Map();
             const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
             
@@ -154,8 +162,6 @@ export class Scheduler {
     }
 
     triggerTrack(track, time, scheduleVisualDrawCallback) {
-        // --- REAL CHOKE GROUP LOGIC ---
-        // If this track is in a choke group, cut others in same group
         if (track.chokeGroup > 0) {
             this.tracks.forEach(other => {
                 if (other.id !== track.id && other.chokeGroup === track.chokeGroup) {
@@ -163,14 +169,14 @@ export class Scheduler {
                 }
             });
         }
-
         this.granularSynth.scheduleNote(track, time, scheduleVisualDrawCallback);
     }
 
-    processAutomationTrack(track, globalStep, time) {
+    processAutomationTrack(track, totalSteps, time) {
         if (!this.trackManager) return;
 
-        const effectiveStepIndex = Math.floor(globalStep / track.clockDivider) % NUM_STEPS;
+        // Use absolute totalSteps divided by clockDivider
+        const effectiveStepIndex = Math.floor(totalSteps / track.clockDivider) % NUM_STEPS;
         const currentValue = track.steps[effectiveStepIndex];
         const prevValue = track.lastAutoValue;
 
