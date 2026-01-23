@@ -1,4 +1,4 @@
-// UI Manager Module - Updated for Robust Playhead
+// UI Manager Module - Updated for Choke Groups & Debugging
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS } from '../utils/constants.js';
 
 export class UIManager {
@@ -15,7 +15,6 @@ export class UIManager {
         this.basePanValues = [];
         this.globalPanShift = 0;
         
-        // Define Keyboard Mapping
         this.keyMapping = {
             'Digit1': 0, 'KeyQ': 1, 'KeyA': 2, 'KeyZ': 3,
             'Digit2': 4, 'KeyW': 5, 'KeyS': 6, 'KeyX': 7,
@@ -27,7 +26,7 @@ export class UIManager {
             'Digit8': 28, 'KeyI': 29, 'KeyK': 30, 'Comma': 31
         };
         
-        // IMMEDIATE CSS UPDATE in Constructor
+        console.log(`[UIManager] Init. NUM_STEPS: ${NUM_STEPS}`);
         document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
     }
 
@@ -38,7 +37,6 @@ export class UIManager {
     initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
         
-        // Ensure CSS var is set again
         document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
         this.generateLfoTabs();
 
@@ -56,14 +54,11 @@ export class UIManager {
             div.className = 'header-cell';
             div.innerText = i+1;
             if (i % 4 === 0) div.classList.add('text-neutral-400', 'font-bold');
-            
-            // Dividers logic: 16-step (Bar) takes precedence over 4-step (Beat)
             if ((i + 1) % 16 === 0 && i !== NUM_STEPS - 1) {
                 div.classList.add('bar-divider');
             } else if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) {
                 div.classList.add('beat-divider');
             }
-            
             headerContainer.appendChild(div);
         }
 
@@ -184,7 +179,6 @@ export class UIManager {
         label.className = 'text-[9px] font-bold text-neutral-500 mr-1';
         container.appendChild(label);
 
-        // Create 8 small buttons instead of a select
         const btnGroup = document.createElement('div');
         btnGroup.className = 'flex gap-0.5';
         
@@ -288,7 +282,6 @@ export class UIManager {
             btn.style.setProperty('--step-group-color', groupColor);
             btn.style.setProperty('--step-group-color-glow', groupColorGlow);
             
-            // Dividers Logic: Bar (16) vs Beat (4)
             if ((step + 1) % 16 === 0 && step !== NUM_STEPS - 1) {
                 btn.classList.add('bar-divider');
             } else if ((step + 1) % 4 === 0 && step !== NUM_STEPS - 1) {
@@ -398,7 +391,7 @@ export class UIManager {
         const lfoSection = document.getElementById('lfoSection');
         const typeLabel = document.getElementById('trackTypeLabel');
         const speedSel = document.getElementById('autoSpeedSelect');
-        const chokeSel = document.getElementById('chokeGroupSelect'); 
+        // chokeSel REMOVED from here
 
         if(granularControls) granularControls.classList.add('hidden');
         if(drumControls) drumControls.classList.add('hidden');
@@ -454,9 +447,9 @@ export class UIManager {
         }
     }
 
+    // UPDATE MATRIX HEAD with absolute step support
     updateMatrixHead(currentStep, totalStepsPlayed) {
         // Use totalStepsPlayed if available, otherwise fallback to currentStep
-        // This decouples the UI head from the global loop length for polyrhythmic/dividing tracks
         const masterStep = (typeof totalStepsPlayed !== 'undefined') ? totalStepsPlayed : currentStep;
 
         for(let t=0; t<this.tracks.length; t++) {
@@ -464,9 +457,6 @@ export class UIManager {
             const div = track.clockDivider || 1;
             
             // ROBUST CLEARING:
-            // Instead of trying to calculate "prev", which is prone to errors if divider/total changes,
-            // we simply find any currently playing step for this track and clear it.
-            // This is O(N) where N=Steps but ensures perfect visual state.
             const currentLit = this.matrixStepElements[t].filter(el => el.classList.contains('step-playing'));
             currentLit.forEach(el => el.classList.remove('step-playing'));
             

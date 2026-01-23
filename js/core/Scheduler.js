@@ -18,8 +18,8 @@ export class Scheduler {
         this.trackManager = null; 
         this.activeSnapshot = null; 
 
-        // DEBUG: Verify imported constant
-        console.log(`[Scheduler] Initialized. NUM_STEPS constant is: ${NUM_STEPS}`);
+        // DEBUG
+        console.log(`[Scheduler] Init. NUM_STEPS: ${NUM_STEPS}`);
     }
 
     setTracks(tracks) {
@@ -55,11 +55,9 @@ export class Scheduler {
             this.totalStepsPlayed = 0; // Reset absolute counter
             this.nextNoteTime = audioCtx.currentTime + 0.1;
             
-            // Reset automation state on start
             this.activeSnapshot = null;
             this.tracks.forEach(t => { if(t.type === 'automation') t.lastAutoValue = 0; });
 
-            console.log("[Scheduler] Started playback.");
             this.schedule(scheduleVisualDrawCallback);
         }
     }
@@ -67,18 +65,13 @@ export class Scheduler {
     stop() {
         this.isPlaying = false;
         clearTimeout(this.schedulerTimerID);
-        // Restore snapshot if stopping mid-automation
         if(this.activeSnapshot && this.trackManager) {
             this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
             this.activeSnapshot = null;
         }
-        
-        // Stop all sound on stop
         this.tracks.forEach(t => {
             if(t.stopAllSources) t.stopAllSources();
         });
-        
-        console.log("[Scheduler] Stopped playback.");
     }
 
     getIsPlaying() {
@@ -102,31 +95,27 @@ export class Scheduler {
         const secondsPerBeat = 60.0 / this.bpm;
         this.nextNoteTime += secondsPerBeat / 4;
         this.currentStep = (this.currentStep + 1) % NUM_STEPS;
-        this.totalStepsPlayed++; // Increment absolute counter
+        this.totalStepsPlayed++; 
     }
 
     scheduleStep(step, time, scheduleVisualDrawCallback) {
-        // Capture totalStepsPlayed locally to avoid race conditions in async callback
         const currentTotal = this.totalStepsPlayed;
 
         if (this.updateMatrixHeadCallback) {
             requestAnimationFrame(() => this.updateMatrixHeadCallback(step, currentTotal));
         }
         
-        // --- AUTOMATION TRACK LOGIC ---
-        // Pass absolute totalStepsPlayed for calculation
+        // Automation Tracks (Use Absolute Total)
         this.tracks.forEach(t => {
             if (t.type === 'automation' && !t.muted) {
                 this.processAutomationTrack(t, currentTotal, time);
             }
         });
 
-        // --- AUDIO TRIGGER LOGIC ---
-        // (Audio tracks still use the looped 'step' 0-63)
+        // Audio Tracks (Use Looped Step)
         const randomChokeInfo = this.randomChokeCallback ? this.randomChokeCallback() : { mode: false, groups: [] };
         
         if (randomChokeInfo.mode) {
-            // Random Choke Mode
             const chokeGroupMap = new Map();
             const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
             
@@ -152,7 +141,6 @@ export class Scheduler {
                 }
             });
         } else {
-            // Normal mode
             const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
             for (let i = 0; i < this.tracks.length; i++) {
                 const t = this.tracks[i];
@@ -183,48 +171,26 @@ export class Scheduler {
     processAutomationTrack(track, totalSteps, time) {
         if (!this.trackManager) return;
 
-        // Use track.steps.length instead of NUM_STEPS constant to ensure it matches the actual track size
         const trackLength = track.steps.length > 0 ? track.steps.length : NUM_STEPS;
-        
-        // Use absolute totalSteps divided by clockDivider
-        // Formula: Index = floor(Total / Divider) % Length
         const effectiveStepIndex = Math.floor(totalSteps / track.clockDivider) % trackLength;
         
-        // --- DEBUG LOGGING ---
-        // Only log when effective step changes to reduce spam, or if it wraps
-        const prevEffectiveStep = Math.floor((totalSteps - 1) / track.clockDivider) % trackLength;
-        
-        if (effectiveStepIndex !== prevEffectiveStep || totalSteps === 0) {
-            console.log(`[AutoTrack #${track.id}] Update:`, {
-                totalSteps: totalSteps,
-                clockDivider: track.clockDivider,
-                trackLength: trackLength,
-                calc: `Math.floor(${totalSteps} / ${track.clockDivider}) % ${trackLength}`,
-                effectiveIndex: effectiveStepIndex,
-                wrapsAt: trackLength * track.clockDivider
-            });
-        }
-        // ---------------------
+        // Removed spammy logs, kept state change logs if needed
+        // console.log(`[AutoTrack #${track.id}] Index: ${effectiveStepIndex} (Total: ${totalSteps})`);
 
         const currentValue = track.steps[effectiveStepIndex];
         const prevValue = track.lastAutoValue;
 
         if (currentValue !== prevValue) {
-            console.log(`[AutoTrack #${track.id}] CHANGE DETECTED: ${prevValue} -> ${currentValue}`);
-
             if (prevValue === 0 && currentValue > 0) {
-                console.log(`   -> SNAPSHOT & RANDOMIZE (Level ${currentValue})`);
                 if (!this.activeSnapshot) {
                     this.activeSnapshot = this.trackManager.saveGlobalSnapshot();
                 }
                 this.trackManager.triggerRandomization(currentValue);
             }
             else if (prevValue > 0 && currentValue > 0) {
-                console.log(`   -> RE-RANDOMIZE (Level ${currentValue})`);
                 this.trackManager.triggerRandomization(currentValue);
             }
             else if (prevValue > 0 && currentValue === 0) {
-                console.log(`   -> RESTORE SNAPSHOT`);
                 if (this.activeSnapshot) {
                     this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
                     this.activeSnapshot = null;
