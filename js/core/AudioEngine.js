@@ -133,7 +133,8 @@ export class AudioEngine {
                 d[i] = noise * Math.exp(-decay * t);
             }
         } else { 
-            const dur = 1.0 + (Math.random() * 3);
+            // Texture / FM - Limited to max 1.0s
+            const dur = 0.2 + (Math.random() * 0.8);
             buf = makeBuffer(dur);
             const d = buf.getChannelData(0);
             const modFreq = 10 + Math.random() * 400;
