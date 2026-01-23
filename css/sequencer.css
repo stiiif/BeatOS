@@ -5,6 +5,7 @@
     display: grid;
     /* TRK | Dynamic Steps | RND | ACTIONS */
     /* Remove fixed min-width (20px) and use minmax(0, 1fr) to allow steps to shrink */
+    /* Updated default to 64 to match configuration */
     grid-template-columns: 40px repeat(var(--num-steps, 64), minmax(0, 1fr)) 25px 125px;
     gap: 1px;
     width: 100%;
@@ -50,7 +51,6 @@
     cursor: pointer;
     border-radius: 1px;
     transition: all 0.2s;
-    /* Sticky removed because we aren't scrolling horizontally anymore */
 }
 .track-label:hover { background: #262626; color: #fff; }
 .track-label.selected {
