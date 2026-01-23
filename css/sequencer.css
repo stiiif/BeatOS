@@ -11,6 +11,8 @@
     width: 100%;
     padding-left: 4px;
     padding-right: 4px;
+    /* IMPORTANT: Force grid to be at least as wide as its content to trigger scroll */
+    min-width: max-content; 
 }
 
 .matrix-container {
@@ -19,12 +21,19 @@
     gap: 1px;
     padding-bottom: 20px;
     width: 100%;
+    min-width: max-content;
 }
 
 /* Divider for every 4th step (Beat Markers) */
 .beat-divider {
     border-right: 1px solid #444 !important;
     margin-right: 1px; 
+}
+
+/* Divider for every 16th step (Bar Markers) */
+.bar-divider {
+    border-right: 2px solid #737373 !important; /* neutral-500 approx */
+    margin-right: 1px;
 }
 
 /* Header Cells */
@@ -51,6 +60,9 @@
     cursor: pointer;
     border-radius: 1px;
     transition: all 0.2s;
+    position: sticky;
+    left: 0;
+    z-index: 10; /* Keep track number visible when scrolling */
 }
 .track-label:hover { background: #262626; color: #fff; }
 .track-label.selected {
@@ -118,11 +130,16 @@
     cursor: pointer;
     font-size: 0.5rem;
     transition: all 0.2s;
+    position: sticky;
+    right: 125px; /* Stick RND button if actions stick, otherwise normal flow */
 }
 .track-rnd-btn:hover { background: #262626; color: #10b981; }
 
 .track-actions { 
     height: 16px; display: flex; gap: 1px; background: #000;
+    position: sticky;
+    right: 0;
+    z-index: 10; /* Keep actions visible when scrolling */
 }
 .action-btn {
     flex: 1; font-size: 0.45rem; display: flex; align-items: center; justify-content: center;

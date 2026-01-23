@@ -1,4 +1,4 @@
-// UI Manager Module - Updated for Choke Groups
+// UI Manager Module - Updated for Bar Dividers (16 steps)
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS } from '../utils/constants.js';
 
 export class UIManager {
@@ -26,6 +26,9 @@ export class UIManager {
             'Digit7': 24, 'KeyU': 25, 'KeyJ': 26, 'KeyM': 27,
             'Digit8': 28, 'KeyI': 29, 'KeyK': 30, 'Comma': 31
         };
+        
+        // IMMEDIATE CSS UPDATE in Constructor
+        document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
     }
 
     setTracks(tracks) {
@@ -35,6 +38,7 @@ export class UIManager {
     initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
         
+        // Ensure CSS var is set again
         document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
         this.generateLfoTabs();
 
@@ -52,7 +56,14 @@ export class UIManager {
             div.className = 'header-cell';
             div.innerText = i+1;
             if (i % 4 === 0) div.classList.add('text-neutral-400', 'font-bold');
-            if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) div.classList.add('beat-divider');
+            
+            // Dividers logic: 16-step (Bar) takes precedence over 4-step (Beat)
+            if ((i + 1) % 16 === 0 && i !== NUM_STEPS - 1) {
+                div.classList.add('bar-divider');
+            } else if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) {
+                div.classList.add('beat-divider');
+            }
+            
             headerContainer.appendChild(div);
         }
 
@@ -95,8 +106,6 @@ export class UIManager {
         });
 
         this.bindAutomationControls();
-        
-        // --- NEW: Add Choke Selector to Header next to AUTO button ---
         this.addChokeSelectorToHeader();
 
         const vis = document.getElementById('visualizer');
@@ -161,14 +170,9 @@ export class UIManager {
         }
     }
 
-    // New: Inject Choke Group Selector into the Header
     addChokeSelectorToHeader() {
-        // Find the container where Sound Gen buttons are
-        // Assuming they are in a div.flex.gap-1.ml-2
         const headerControls = document.querySelector('.right-pane .p-3 .flex.gap-1.ml-2');
         if(!headerControls) return;
-
-        // Check if already exists to prevent dupes
         if(document.getElementById('headerChokeContainer')) return;
 
         const container = document.createElement('div');
@@ -183,7 +187,6 @@ export class UIManager {
         select.id = 'chokeGroupSelect';
         select.className = 'bg-neutral-800 text-neutral-300 text-[9px] border border-neutral-700 rounded px-1 py-1 outline-none hover:border-neutral-500 transition cursor-pointer w-10';
         
-        // Options
         const opts = ['-', '1', '2', '3', '4', '5', '6', '7', '8'];
         opts.forEach((val, idx) => {
             const opt = document.createElement('option');
@@ -201,7 +204,6 @@ export class UIManager {
 
         container.appendChild(label);
         container.appendChild(select);
-        
         headerControls.appendChild(container);
     }
 
@@ -257,7 +259,13 @@ export class UIManager {
             btn.onclick = () => this.toggleStep(trk, step);
             btn.style.setProperty('--step-group-color', groupColor);
             btn.style.setProperty('--step-group-color-glow', groupColorGlow);
-            if ((step + 1) % 4 === 0 && step !== NUM_STEPS - 1) btn.classList.add('beat-divider');
+            
+            // Dividers Logic: Bar (16) vs Beat (4)
+            if ((step + 1) % 16 === 0 && step !== NUM_STEPS - 1) {
+                btn.classList.add('bar-divider');
+            } else if ((step + 1) % 4 === 0 && step !== NUM_STEPS - 1) {
+                btn.classList.add('beat-divider');
+            }
             
             if (trackObj.type === 'automation') {
                 const val = trackObj.steps[step];
