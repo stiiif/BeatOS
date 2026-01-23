@@ -23,12 +23,15 @@ const visualizer = new Visualizer('visualizer', 'bufferDisplay', audioEngine);
 // Initialize Layout
 const layoutManager = new LayoutManager();
 
+// Wire up Scheduler dependencies (CRITICAL for Automation)
+scheduler.setTrackManager(trackManager);
+scheduler.setTracks(trackManager.getTracks());
+
 // Initialize tracks
 trackManager.initTracks();
 const tracks = trackManager.getTracks();
 
-// Wire up dependencies
-scheduler.setTracks(tracks);
+// Wire up UI/Visualizer dependencies
 uiManager.setTracks(tracks);
 visualizer.setTracks(tracks);
 
@@ -42,15 +45,12 @@ function updateTrackControlsVisibility() {
     const track = tracks[idx];
     if (!track) return;
 
-    const granularControls = document.getElementById('granularControls');
-    const simpleDrumControls = document.getElementById('simpleDrumControls');
-    const lfoSection = document.getElementById('lfoSection');
+    // Use UIManager's centralized logic for visibility
+    uiManager.updateTrackControlsVisibility();
+    
+    // Update labels manually if needed, though UIManager handles most
     const typeLabel = document.getElementById('trackTypeLabel');
-
     if (track.type === 'simple-drum') {
-        granularControls.classList.add('hidden');
-        simpleDrumControls.classList.remove('hidden');
-        lfoSection.classList.add('hidden'); // Minimal 909: No LFOs
         typeLabel.textContent = "909 " + (track.params.drumType || 'KICK').toUpperCase();
         typeLabel.className = "text-[10px] text-orange-400 font-mono uppercase truncate max-w-[80px]";
         
@@ -64,12 +64,10 @@ function updateTrackControlsVisibility() {
                 btn.classList.replace('bg-orange-700', 'bg-neutral-800');
             }
         });
-
+    } else if (track.type === 'automation') {
+         // Handled by UIManager
     } else {
-        granularControls.classList.remove('hidden');
-        simpleDrumControls.classList.add('hidden');
-        lfoSection.classList.remove('hidden');
-        
+        // Granular
         if (track.customSample) {
             typeLabel.textContent = track.customSample.name;
             typeLabel.className = "text-[10px] text-sky-400 font-mono uppercase truncate max-w-[80px]";
@@ -311,7 +309,7 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
     });
 });
 
-// --- NEW: 909 BUTTON LOGIC ---
+// --- NEW: 909 DRUM LOGIC ---
 document.getElementById('load909Btn').addEventListener('click', () => {
     if (!audioEngine.getContext()) return;
     const t = tracks[uiManager.getSelectedTrackIndex()];
@@ -332,6 +330,57 @@ document.getElementById('load909Btn').addEventListener('click', () => {
     ctx.fillStyle = '#f97316'; // orange
     ctx.fillText("909 ENGINE ACTIVE", 10, 40);
 });
+
+// --- NEW: AUTOMATION TRACK BUTTON (ADD THIS IF MISSING IN HTML) ---
+// Since we don't have a button in HTML yet, let's assume we might add one or hijack one.
+// But wait, the user wants a "new sequencer lane".
+// Let's add a button to the controls area or similar. 
+// Actually, let's convert the current track to automation if user clicks a button.
+// But better: Add a button to the Sound Gen area.
+
+// Create/Convert to Automation Track
+// We'll create a button dynamically if it doesn't exist, or you can add it to index.html
+// For now, let's create a "Load Auto" button logic similar to Load 909
+// Check if button exists first (it doesn't in provided HTML).
+// Let's rely on the user adding a button with id="loadAutoBtn" to index.html
+// OR we can add it to the DOM dynamically here for convenience.
+
+// Dynamic insertion of "Auto" button next to 909 button
+const btnContainer = document.querySelector('.flex.gap-1.ml-2');
+if (btnContainer && !document.getElementById('loadAutoBtn')) {
+    const autoBtn = document.createElement('button');
+    autoBtn.id = 'loadAutoBtn';
+    autoBtn.className = 'text-[9px] font-bold bg-indigo-900/30 hover:bg-indigo-800 text-indigo-400 px-2 py-1 rounded transition border border-indigo-900/50';
+    autoBtn.title = 'Convert to Automation Track';
+    autoBtn.innerText = 'AUTO';
+    btnContainer.appendChild(autoBtn);
+    
+    autoBtn.addEventListener('click', () => {
+        const t = tracks[uiManager.getSelectedTrackIndex()];
+        t.type = 'automation';
+        t.steps.fill(0); // Clear steps to 0 (integers)
+        
+        // Reset steps in UI
+        const stepElements = uiManager.matrixStepElements[t.id];
+        if(stepElements) {
+             stepElements.forEach(el => {
+                 el.className = 'step-btn';
+                 el.classList.remove('active');
+             });
+        }
+        
+        updateTrackControlsVisibility();
+        
+        // Clear buffer display
+        const bufCanvas = document.getElementById('bufferDisplay');
+        const ctx = bufCanvas.getContext('2d');
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0,0,bufCanvas.width, bufCanvas.height);
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#818cf8'; // indigo
+        ctx.fillText("AUTOMATION TRACK", 10, 40);
+    });
+}
 
 // --- NEW: 909 DRUM TYPE SELECTORS ---
 document.querySelectorAll('.drum-sel-btn').forEach(btn => {
@@ -533,9 +582,6 @@ uiManager.initUI(addTrack, addGroup, () => {
 window.addEventListener('resize', () => visualizer.resizeCanvas());
 visualizer.resizeCanvas();
 
-// ... (Track Library Events: Save, Export, Import, LoadSample) ...
-// (These remain largely the same, just checking tracks[idx] is valid)
-
 // Save Track to Library
 document.getElementById('saveTrackBtn').addEventListener('click', () => {
     try {
@@ -552,19 +598,116 @@ document.getElementById('saveTrackBtn').addEventListener('click', () => {
     } catch (error) { alert('Failed to save: ' + error.message); }
 });
 
-// ... (Export/Load/Import Code block preserved from previous logic) ...
-// The full implementation of the remaining buttons (Export, Load, Import, etc) 
-// is maintained from the previous file content provided in the context.
-// For brevity in this response, I'm ensuring the 'updateTrackControlsVisibility' 
-// is called after any load/import action.
-
 document.getElementById('exportCurrentTrackBtn').addEventListener('click', async () => {
     const t = tracks[uiManager.getSelectedTrackIndex()];
     if(t) await trackLibrary.exportTrackToZip(t);
 });
 
 document.getElementById('loadTrackBtn').addEventListener('click', () => {
-    if(tracks.length > 0) showTrackLibrary();
+    if(tracks.length > 0) {
+        document.getElementById('trackLibraryModal').classList.remove('hidden');
+        renderTrackLibrary();
+    }
+});
+
+// Render Library List
+function renderTrackLibrary() {
+    const list = document.getElementById('trackLibraryList');
+    const tracks = trackLibrary.getSavedTracks();
+    const emptyMsg = document.getElementById('emptyLibraryMsg');
+    
+    list.innerHTML = '';
+    
+    if (tracks.length === 0) {
+        emptyMsg.classList.remove('hidden');
+    } else {
+        emptyMsg.classList.add('hidden');
+        tracks.forEach((t, index) => {
+            const item = document.createElement('div');
+            item.className = 'bg-neutral-800 p-3 rounded hover:bg-neutral-750 border border-neutral-700 flex justify-between items-center group';
+            
+            const info = document.createElement('div');
+            info.className = 'flex-1 cursor-pointer';
+            info.onclick = () => loadTrackFromLibrary(index);
+            
+            const name = document.createElement('div');
+            name.className = 'font-bold text-sm text-white group-hover:text-emerald-400 transition';
+            name.innerText = t.name;
+            
+            const date = document.createElement('div');
+            date.className = 'text-xs text-neutral-500';
+            date.innerText = new Date(t.timestamp).toLocaleString();
+            
+            info.appendChild(name);
+            info.appendChild(date);
+            
+            const actions = document.createElement('div');
+            actions.className = 'flex gap-2 opacity-50 group-hover:opacity-100 transition';
+            
+            const delBtn = document.createElement('button');
+            delBtn.className = 'text-neutral-400 hover:text-red-500 transition px-2';
+            delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            delBtn.title = 'Delete';
+            delBtn.onclick = (e) => {
+                e.stopPropagation();
+                if(confirm('Delete this track?')) {
+                    trackLibrary.deleteTrack(index);
+                    renderTrackLibrary();
+                }
+            };
+            
+            const exportBtn = document.createElement('button');
+            exportBtn.className = 'text-neutral-400 hover:text-indigo-400 transition px-2';
+            exportBtn.innerHTML = '<i class="fas fa-file-export"></i>';
+            exportBtn.title = 'Export JSON';
+            exportBtn.onclick = (e) => {
+                e.stopPropagation();
+                trackLibrary.exportTrack(index);
+            };
+
+            actions.appendChild(exportBtn);
+            actions.appendChild(delBtn);
+            
+            item.appendChild(info);
+            item.appendChild(actions);
+            list.appendChild(item);
+        });
+    }
+}
+
+// Close Library
+document.getElementById('closeLibraryBtn').addEventListener('click', () => {
+    document.getElementById('trackLibraryModal').classList.add('hidden');
+});
+
+function loadTrackFromLibrary(index) {
+    const currentTrackIdx = uiManager.getSelectedTrackIndex();
+    const targetTrack = tracks[currentTrackIdx];
+    
+    if (trackLibrary.loadTrackInto(index, targetTrack)) {
+        // Check if sample reload is needed
+        if (targetTrack.needsSampleReload) {
+             alert(`Note: This track uses a custom sample: "${targetTrack.customSample.name}".\nPlease reload it using the "Smpl" button manually, as browsers block auto-loading local files.`);
+        }
+        
+        uiManager.updateTrackStateUI(currentTrackIdx);
+        updateTrackControlsVisibility();
+        uiManager.updateKnobs();
+        uiManager.updateLfoUI();
+        visualizer.drawBufferDisplay();
+        
+        // Refresh Grid
+        for(let s=0; s<NUM_STEPS; s++) {
+             const btn = uiManager.matrixStepElements[currentTrackIdx][s];
+             if(targetTrack.steps[s]) btn.classList.add('active'); else btn.classList.remove('active');
+        }
+        
+        document.getElementById('trackLibraryModal').classList.add('hidden');
+    }
+}
+
+document.getElementById('importTrackBtn').addEventListener('click', () => {
+    document.getElementById('importTrackInput').click();
 });
 
 document.getElementById('importTrackInput').addEventListener('change', (e) => {
@@ -601,8 +744,7 @@ document.getElementById('importTrackInput').addEventListener('change', (e) => {
     }
 });
 
-// ... (Rest of library modal logic and grain monitor logic) ...
-// The grain monitor logic at the bottom remains identical
+// Grain Monitor
 const grainMonitorEl = document.getElementById('grainMonitor');
 const maxGrainsInput = document.getElementById('maxGrainsInput');
 if(maxGrainsInput) {
