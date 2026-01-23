@@ -100,18 +100,18 @@ export class Scheduler {
     }
 
     scheduleStep(step, time, scheduleVisualDrawCallback) {
+        // Capture totalStepsPlayed locally to avoid race conditions in async callback
+        const currentTotal = this.totalStepsPlayed;
+
         if (this.updateMatrixHeadCallback) {
-            // Capture the current value of totalStepsPlayed locally
-            const currentTotal = this.totalStepsPlayed;
-            // Pass the captured value, not 'this.totalStepsPlayed'
             requestAnimationFrame(() => this.updateMatrixHeadCallback(step, currentTotal));
         }
         
         // --- AUTOMATION TRACK LOGIC ---
-        // Pass totalStepsPlayed for calculation
+        // Pass absolute totalStepsPlayed for calculation
         this.tracks.forEach(t => {
             if (t.type === 'automation' && !t.muted) {
-                this.processAutomationTrack(t, this.totalStepsPlayed, time);
+                this.processAutomationTrack(t, currentTotal, time);
             }
         });
 
@@ -177,8 +177,12 @@ export class Scheduler {
     processAutomationTrack(track, totalSteps, time) {
         if (!this.trackManager) return;
 
+        // Use track.steps.length instead of NUM_STEPS constant to ensure it matches the actual track size
+        const trackLength = track.steps.length > 0 ? track.steps.length : NUM_STEPS;
+        
         // Use absolute totalSteps divided by clockDivider
-        const effectiveStepIndex = Math.floor(totalSteps / track.clockDivider) % NUM_STEPS;
+        const effectiveStepIndex = Math.floor(totalSteps / track.clockDivider) % trackLength;
+        
         const currentValue = track.steps[effectiveStepIndex];
         const prevValue = track.lastAutoValue;
 
