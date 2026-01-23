@@ -1,4 +1,4 @@
-// UI Manager Module - Updated for Choke Groups
+// UI Manager Module - Updated for Playhead Speed
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS } from '../utils/constants.js';
 
 export class UIManager {
@@ -188,8 +188,6 @@ export class UIManager {
         const btnGroup = document.createElement('div');
         btnGroup.className = 'flex gap-0.5';
         
-        // Option 0 (Off) button - Optional, or just toggle active one off.
-        // Let's make 1-8 buttons. Clicking active one turns it off.
         for(let i=1; i<=8; i++) {
             const btn = document.createElement('button');
             btn.className = 'choke-btn w-4 h-4 text-[8px] bg-neutral-800 text-neutral-400 border border-neutral-700 rounded flex items-center justify-center hover:bg-neutral-700 transition';
@@ -204,14 +202,10 @@ export class UIManager {
                 const group = parseInt(btn.dataset.group);
                 
                 if (t.chokeGroup === group) {
-                    // Toggle Off
                     t.chokeGroup = 0;
                 } else {
-                    // Set New Group
                     t.chokeGroup = group;
                 }
-                
-                // Update UI state for all buttons
                 this.updateChokeButtonsState();
             });
             
@@ -222,7 +216,6 @@ export class UIManager {
         headerControls.appendChild(container);
     }
 
-    // Helper to update the visual state of choke buttons
     updateChokeButtonsState() {
         const t = this.tracks[this.selectedTrackIndex];
         if(!t) return;
@@ -233,11 +226,9 @@ export class UIManager {
         btns.forEach(btn => {
             const group = parseInt(btn.dataset.group);
             if (group === currentGroup) {
-                // Active Style
                 btn.classList.remove('bg-neutral-800', 'text-neutral-400');
                 btn.classList.add('bg-red-900', 'text-white', 'border-red-700');
             } else {
-                // Inactive Style
                 btn.classList.add('bg-neutral-800', 'text-neutral-400');
                 btn.classList.remove('bg-red-900', 'text-white', 'border-red-700');
             }
@@ -393,7 +384,7 @@ export class UIManager {
         
         this.updateKnobs();
         this.updateLfoUI();
-        this.updateTrackControlsVisibility(); // Ensure UI matches track type
+        this.updateTrackControlsVisibility(); 
         if (visualizerCallback) visualizerCallback();
     }
 
@@ -407,7 +398,7 @@ export class UIManager {
         const lfoSection = document.getElementById('lfoSection');
         const typeLabel = document.getElementById('trackTypeLabel');
         const speedSel = document.getElementById('autoSpeedSelect');
-        // const chokeSel = document.getElementById('chokeGroupSelect'); // REMOVED (No longer used as select)
+        // const chokeSel = document.getElementById('chokeGroupSelect'); // REMOVED
 
         if(granularControls) granularControls.classList.add('hidden');
         if(drumControls) drumControls.classList.add('hidden');
@@ -464,10 +455,29 @@ export class UIManager {
     }
 
     updateMatrixHead(current) {
+        // Calculate the previous step based on the global constant
         const prev = (current - 1 + NUM_STEPS) % NUM_STEPS;
+        
         for(let t=0; t<this.tracks.length; t++) {
-            if(this.matrixStepElements[t] && this.matrixStepElements[t][prev]) this.matrixStepElements[t][prev].classList.remove('step-playing');
-            if(this.matrixStepElements[t] && this.matrixStepElements[t][current]) this.matrixStepElements[t][current].classList.add('step-playing');
+            const track = this.tracks[t];
+            const div = track.clockDivider || 1;
+            
+            // Calculate effective steps for this track (speed adjusted)
+            const currentEffective = Math.floor(current / div) % NUM_STEPS;
+            const prevEffective = Math.floor(prev / div) % NUM_STEPS;
+            
+            // Note: When dividing clock, multiple global steps map to the same track step.
+            // We should only clear the previous if it is DIFFERENT from the current effective step.
+            if (currentEffective !== prevEffective) {
+                if(this.matrixStepElements[t] && this.matrixStepElements[t][prevEffective]) {
+                    this.matrixStepElements[t][prevEffective].classList.remove('step-playing');
+                }
+            }
+            
+            // Always highlight current
+            if(this.matrixStepElements[t] && this.matrixStepElements[t][currentEffective]) {
+                this.matrixStepElements[t][currentEffective].classList.add('step-playing');
+            }
         }
     }
 

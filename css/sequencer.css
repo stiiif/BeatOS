@@ -110,13 +110,14 @@
 .track-group-6 .track-label { border-right: 2px solid #84cc16; }
 .track-group-7 .track-label { border-right: 2px solid #14b8a6; }
 
+/* Playhead Style - Suggestion 1: Dimmed Grey Outline */
 .step-playing {
-    border-color: #fff !important;
-    background-color: #444;
+    border-color: #666 !important;     /* Grey border instead of white */
+    background-color: #333; /* Slightly lighter background */
 }
 .step-btn.active.step-playing {
-    background-color: #34d399;
-    border-color: #fff;
+    background-color: #34d399; /* Maintain active color */
+    border-color: #fff; /* Keep active steps bright or maybe dim slightly too? Let's keep bright for active note visibility */
 }
 
 .track-rnd-btn {
