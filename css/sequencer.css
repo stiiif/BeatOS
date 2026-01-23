@@ -3,8 +3,9 @@
 /* Common Grid Definition for BOTH Header and Rows to ensure perfect alignment */
 .sequencer-grid {
     display: grid;
-    /* TRK | 32 Steps | RND | ACTIONS */
-    grid-template-columns: 40px repeat(32, minmax(10px, 1fr)) 25px 125px;
+    /* TRK | Dynamic Steps | RND | ACTIONS */
+    /* We use a CSS variable --num-steps, defaulting to 32 if not set */
+    grid-template-columns: 40px repeat(var(--num-steps, 32), minmax(10px, 1fr)) 25px 125px;
     gap: 1px;
     width: 100%;
     padding-left: 4px;

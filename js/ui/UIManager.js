@@ -35,6 +35,12 @@ export class UIManager {
     initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
         
+        // --- 1. APPLY DYNAMIC CSS FOR STEPS ---
+        document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
+
+        // --- 2. GENERATE LFO TABS DYNAMICALLY ---
+        this.generateLfoTabs();
+
         // --- Step Headers ---
         const headerContainer = document.getElementById('stepHeaders');
         headerContainer.className = 'sequencer-grid sticky top-0 bg-neutral-950 z-30 pb-2 border-b border-neutral-800 pt-2';
@@ -123,10 +129,42 @@ export class UIManager {
                 const stepIndex = this.keyMapping[e.code];
                 const currentTrackId = this.selectedTrackIndex;
                 if (currentTrackId >= 0 && currentTrackId < this.tracks.length) {
-                    this.toggleStep(currentTrackId, stepIndex);
+                    // Safety check if NUM_STEPS changed but keymap didn't
+                    if(stepIndex < NUM_STEPS) {
+                        this.toggleStep(currentTrackId, stepIndex);
+                    }
                 }
             }
         });
+    }
+
+    generateLfoTabs() {
+        const container = document.getElementById('lfoTabsContainer');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        for(let i=0; i<NUM_LFOS; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'lfo-tab flex-1 text-[10px] font-bold py-1 rounded transition text-neutral-400 hover:bg-neutral-700 min-w-[40px]';
+            btn.dataset.lfo = i;
+            btn.innerText = `LFO ${i+1}`;
+            
+            // Re-bind click event directly here or delegate later. 
+            // Delegating is cleaner, but existing main.js binds to .lfo-tab querySelectorAll.
+            // We need to make sure main.js binds AFTER this is generated. 
+            // NOTE: initUI is called in main.js, so these exist. 
+            // But main.js binds events *before* initUI in the previous code structure? 
+            // Actually, main.js binds: document.querySelectorAll('.lfo-tab').forEach...
+            // If main.js runs that before initUI, these buttons won't have events.
+            // **FIX:** We must attach the listener here directly to ensure it works.
+            
+            btn.addEventListener('click', (e) => {
+                this.setSelectedLfoIndex(parseInt(e.target.dataset.lfo));
+                this.updateLfoUI();
+            });
+
+            container.appendChild(btn);
+        }
     }
 
     bindAutomationControls() {

@@ -1,6 +1,6 @@
 // Track Module
 import { LFO } from './LFO.js';
-import { NUM_STEPS } from '../utils/constants.js';
+import { NUM_STEPS, NUM_LFOS } from '../utils/constants.js';
 
 export class Track {
     constructor(id) {
@@ -15,7 +15,9 @@ export class Track {
         this.rmsMap = []; 
         // For automation, steps will hold integers 0-5
         this.steps = new Array(NUM_STEPS).fill(0); // 0 = Off/False
-        this.lfos = [new LFO(), new LFO(), new LFO()];
+        
+        // Dynamically create LFOs based on constant
+        this.lfos = Array.from({ length: NUM_LFOS }, () => new LFO());
         
         this.playhead = 0; 
         
@@ -38,7 +40,7 @@ export class Track {
             spray: 0.00, 
             scanSpeed: 0.0,
             density: 15, 
-            overlap: 0.5, 
+            overlap: 0, 
             grainSize: 0.05,
             pitch: 1.0, 
             relGrain: 0.4,

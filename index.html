@@ -309,10 +309,9 @@
                         <h3 class="text-xs font-bold text-neutral-400 uppercase"><i class="fas fa-wave-square mr-1"></i> Modulators</h3>
                     </div>
                     
-                    <div class="flex gap-1 bg-neutral-800 p-1 rounded">
-                        <button class="lfo-tab flex-1 text-[10px] font-bold py-1 rounded text-white" data-lfo="0">LFO 1</button>
-                        <button class="lfo-tab flex-1 text-[10px] font-bold py-1 rounded text-neutral-400 hover:bg-neutral-700" data-lfo="1">LFO 2</button>
-                        <button class="lfo-tab flex-1 text-[10px] font-bold py-1 rounded text-neutral-400 hover:bg-neutral-700" data-lfo="2">LFO 3</button>
+                    <!-- LFO Tabs Container (Dynamically Generated) -->
+                    <div id="lfoTabsContainer" class="flex gap-1 bg-neutral-800 p-1 rounded overflow-x-auto custom-scrollbar">
+                        <!-- JS injects buttons here -->
                     </div>
 
                     <div class="bg-neutral-800/30 p-3 rounded border border-neutral-800 space-y-3">
