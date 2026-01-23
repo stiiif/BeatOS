@@ -19,6 +19,29 @@ export class AudioEngine {
         return this.audioCtx;
     }
 
+    // Helper to map linear slider values to logarithmic/exponential curves
+    getMappedFrequency(value, type) {
+        let min, max;
+        // Ranges match the sliders in index.html
+        if (type === 'hp') { min = 20; max = 5000; }
+        else { min = 100; max = 10000; }
+
+        // Normalize linear input to 0..1
+        let norm = (value - min) / (max - min);
+        norm = Math.max(0, Math.min(1, norm));
+
+        if (type === 'lp') {
+            // Low Pass: Precision in lower range (Standard Audio Taper)
+            // y = x^3 stays low for longer, giving fine control over low frequencies
+            return min + (max - min) * Math.pow(norm, 3);
+        } else {
+            // High Pass: Precision in higher range
+            // y = 1 - (1-x)^3 rises quickly and flattens at the top,
+            // giving fine control over high frequencies
+            return min + (max - min) * (1 - Math.pow(1 - norm, 3));
+        }
+    }
+
     initTrackBus(track) {
         if(!this.audioCtx) return;
         const ctx = this.audioCtx;
@@ -30,10 +53,12 @@ export class AudioEngine {
         const pan = ctx.createStereoPanner();
 
         hp.type = 'highpass';
-        hp.frequency.value = track.params.hpFilter;
+        // Apply mapping for High Pass
+        hp.frequency.value = this.getMappedFrequency(track.params.hpFilter, 'hp');
         
         lp.type = 'lowpass';
-        lp.frequency.value = track.params.filter;
+        // Apply mapping for Low Pass
+        lp.frequency.value = this.getMappedFrequency(track.params.filter, 'lp');
         
         vol.gain.value = track.params.volume;
         pan.pan.value = track.params.pan;
@@ -134,7 +159,7 @@ export class AudioEngine {
             }
         } else { 
             // Texture / FM - Limited to max 1.0s
-            const dur = 0.2 + (Math.random() * 0.8);
+            const dur = 0.2 + (Math.random() * 0.8); // Random duration between 0.2s and 1.0s
             buf = makeBuffer(dur);
             const d = buf.getChannelData(0);
             const modFreq = 10 + Math.random() * 400;
@@ -167,6 +192,14 @@ export class AudioEngine {
 
         // Output node (connected to track bus)
         const out = track.bus.input;
+
+        // Ensure filter params are mapped correctly for drums
+        // Note: For granular synth, params are updated in playGrain/scheduleNote.
+        // For drums, we apply the bus filter update here if needed, or assume track.bus is already set.
+        // track.bus.hp and lp frequencies were set in initTrackBus, but might be updated by modulation?
+        // Let's force update them here to be safe and responsive to slider changes
+        if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.getMappedFrequency(track.params.hpFilter, 'hp'), t);
+        if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(this.getMappedFrequency(track.params.filter, 'lp'), t);
 
         if (type === 'kick') {
             const osc = ctx.createOscillator();
