@@ -101,8 +101,10 @@ export class Scheduler {
 
     scheduleStep(step, time, scheduleVisualDrawCallback) {
         if (this.updateMatrixHeadCallback) {
-            // Pass both the looped step AND the absolute totalStepsPlayed
-            requestAnimationFrame(() => this.updateMatrixHeadCallback(step, this.totalStepsPlayed));
+            // Capture the current value of totalStepsPlayed locally
+            const currentTotal = this.totalStepsPlayed;
+            // Pass the captured value, not 'this.totalStepsPlayed'
+            requestAnimationFrame(() => this.updateMatrixHeadCallback(step, currentTotal));
         }
         
         // --- AUTOMATION TRACK LOGIC ---
