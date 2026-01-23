@@ -291,6 +291,7 @@ export class UIManager {
         if (visualizerCallback) visualizerCallback();
     }
 
+    // Comprehensive visibility logic to ensure controls reappear
     updateTrackControlsVisibility() {
         const t = this.tracks[this.selectedTrackIndex];
         if (!t) return;
@@ -302,21 +303,55 @@ export class UIManager {
         const typeLabel = document.getElementById('trackTypeLabel');
         const speedSel = document.getElementById('autoSpeedSelect');
 
+        // 1. Reset: Hide everything first
+        if(granularControls) granularControls.classList.add('hidden');
+        if(drumControls) drumControls.classList.add('hidden');
+        if(lfoSection) lfoSection.classList.add('hidden');
+        if(autoControls) autoControls.classList.add('hidden');
+
+        // 2. Show based on Type
         if (t.type === 'automation') {
-            if(granularControls) granularControls.classList.add('hidden');
-            if(drumControls) drumControls.classList.add('hidden');
-            if(lfoSection) lfoSection.classList.add('hidden');
             if(autoControls) autoControls.classList.remove('hidden');
-            
             if(typeLabel) {
                 typeLabel.textContent = "AUTO SEQ";
                 typeLabel.className = "text-[10px] text-indigo-400 font-mono uppercase font-bold";
             }
             if(speedSel) speedSel.value = t.clockDivider || 1;
-        } else {
-            if(autoControls) autoControls.classList.add('hidden');
-            // Revert label if not automation (defaulting to granular/synth, 
-            // main.js usually handles the Granular vs Drum switch logic)
+        } 
+        else if (t.type === 'simple-drum') {
+            if(drumControls) drumControls.classList.remove('hidden');
+            // 909 usually doesn't show LFOs in this app design, but if you want them, uncomment next line
+            // if(lfoSection) lfoSection.classList.remove('hidden');
+
+            if(typeLabel) {
+                typeLabel.textContent = "909 " + (t.params.drumType || 'KICK').toUpperCase();
+                typeLabel.className = "text-[10px] text-orange-400 font-mono uppercase truncate max-w-[80px]";
+            }
+             // Update Drum Select Buttons State
+            document.querySelectorAll('.drum-sel-btn').forEach(btn => {
+                if (btn.dataset.drum === t.params.drumType) {
+                    btn.classList.replace('text-neutral-400', 'text-white');
+                    btn.classList.replace('bg-neutral-800', 'bg-orange-700');
+                } else {
+                    btn.classList.replace('text-white', 'text-neutral-400');
+                    btn.classList.replace('bg-orange-700', 'bg-neutral-800');
+                }
+            });
+        }
+        else {
+            // Default: Granular
+            if(granularControls) granularControls.classList.remove('hidden');
+            if(lfoSection) lfoSection.classList.remove('hidden');
+            
+            if(typeLabel) {
+                if (t.customSample) {
+                    typeLabel.textContent = t.customSample.name;
+                    typeLabel.className = "text-[10px] text-sky-400 font-mono uppercase truncate max-w-[80px]";
+                } else {
+                    typeLabel.textContent = "GRANULAR";
+                    typeLabel.className = "text-[10px] text-emerald-400 font-mono uppercase truncate max-w-[80px]";
+                }
+            }
         }
     }
 
@@ -567,7 +602,7 @@ export class UIManager {
                     t.muted = trackData.muted;
                     t.soloed = trackData.soloed;
                     t.stepLock = trackData.stepLock || false;
-                    t.ignoreRandom = trackData.ignoreRandom || false; // Restore Ignore Random
+                    t.ignoreRandom = trackData.ignoreRandom || false; 
                     trackData.lfos.forEach((lData, lIdx) => {
                         if(lIdx < NUM_LFOS) {
                             t.lfos[lIdx].wave = lData.wave;
