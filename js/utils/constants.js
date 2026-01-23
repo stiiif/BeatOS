@@ -1,7 +1,7 @@
 // Constants & Configuration
 export const START_TRACKS = 4;
 export const MAX_TRACKS = 64;
-export const NUM_STEPS = 64;
+export const NUM_STEPS = 32;
 export const NUM_LFOS = 6;
 export const TRACKS_PER_GROUP = 4;
 
