@@ -1,4 +1,4 @@
-// Scheduler Module
+// Scheduler Module - Final (Debug logs removed)
 import { LOOKAHEAD, SCHEDULE_AHEAD_TIME, NUM_STEPS } from '../utils/constants.js';
 
 export class Scheduler {
@@ -8,7 +8,7 @@ export class Scheduler {
         this.isPlaying = false;
         this.bpm = 120;
         this.currentStep = 0;
-        this.totalStepsPlayed = 0; // NEW: Absolute step counter
+        this.totalStepsPlayed = 0; // Absolute counter for polyrhythm
         this.nextNoteTime = 0.0;
         this.schedulerTimerID = null;
         this.tracks = [];
@@ -17,9 +17,6 @@ export class Scheduler {
         
         this.trackManager = null; 
         this.activeSnapshot = null; 
-
-        // DEBUG
-        console.log(`[Scheduler] Init. NUM_STEPS: ${NUM_STEPS}`);
     }
 
     setTracks(tracks) {
@@ -52,9 +49,10 @@ export class Scheduler {
         if (!this.isPlaying) {
             this.isPlaying = true;
             this.currentStep = 0;
-            this.totalStepsPlayed = 0; // Reset absolute counter
+            this.totalStepsPlayed = 0; 
             this.nextNoteTime = audioCtx.currentTime + 0.1;
             
+            // Reset automation state on start
             this.activeSnapshot = null;
             this.tracks.forEach(t => { if(t.type === 'automation') t.lastAutoValue = 0; });
 
@@ -65,10 +63,13 @@ export class Scheduler {
     stop() {
         this.isPlaying = false;
         clearTimeout(this.schedulerTimerID);
+        // Restore snapshot if stopping mid-automation
         if(this.activeSnapshot && this.trackManager) {
             this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
             this.activeSnapshot = null;
         }
+        
+        // Stop all sound
         this.tracks.forEach(t => {
             if(t.stopAllSources) t.stopAllSources();
         });
@@ -99,23 +100,27 @@ export class Scheduler {
     }
 
     scheduleStep(step, time, scheduleVisualDrawCallback) {
+        // Capture totalStepsPlayed locally to avoid race conditions in async callback
         const currentTotal = this.totalStepsPlayed;
 
         if (this.updateMatrixHeadCallback) {
             requestAnimationFrame(() => this.updateMatrixHeadCallback(step, currentTotal));
         }
         
-        // Automation Tracks (Use Absolute Total)
+        // --- AUTOMATION TRACK LOGIC ---
+        // Pass absolute totalStepsPlayed for calculation
         this.tracks.forEach(t => {
             if (t.type === 'automation' && !t.muted) {
                 this.processAutomationTrack(t, currentTotal, time);
             }
         });
 
-        // Audio Tracks (Use Looped Step)
+        // --- AUDIO TRIGGER LOGIC ---
+        // (Audio tracks still use the looped 'step' 0-63)
         const randomChokeInfo = this.randomChokeCallback ? this.randomChokeCallback() : { mode: false, groups: [] };
         
         if (randomChokeInfo.mode) {
+            // Random Choke Mode
             const chokeGroupMap = new Map();
             const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
             
@@ -141,6 +146,7 @@ export class Scheduler {
                 }
             });
         } else {
+            // Normal mode
             const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
             for (let i = 0; i < this.tracks.length; i++) {
                 const t = this.tracks[i];
@@ -171,12 +177,12 @@ export class Scheduler {
     processAutomationTrack(track, totalSteps, time) {
         if (!this.trackManager) return;
 
+        // Use track.steps.length instead of NUM_STEPS constant to ensure it matches the actual track size
         const trackLength = track.steps.length > 0 ? track.steps.length : NUM_STEPS;
+        
+        // Use absolute totalSteps divided by clockDivider
         const effectiveStepIndex = Math.floor(totalSteps / track.clockDivider) % trackLength;
         
-        // Removed spammy logs, kept state change logs if needed
-        // console.log(`[AutoTrack #${track.id}] Index: ${effectiveStepIndex} (Total: ${totalSteps})`);
-
         const currentValue = track.steps[effectiveStepIndex];
         const prevValue = track.lastAutoValue;
 
