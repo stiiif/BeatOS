@@ -19,22 +19,17 @@ export class AudioEngine {
         return this.audioCtx;
     }
 
-    // Helper to map linear slider values to logarithmic/exponential curves
     getMappedFrequency(value, type) {
         let min, max;
-        // Ranges match the sliders in index.html
         if (type === 'hp') { min = 20; max = 5000; }
         else { min = 100; max = 10000; }
 
-        // Normalize linear input to 0..1
         let norm = (value - min) / (max - min);
         norm = Math.max(0, Math.min(1, norm));
 
         if (type === 'lp') {
-            // Low Pass: Precision in lower range (Standard Audio Taper)
             return min + (max - min) * Math.pow(norm, 3);
         } else {
-            // High Pass: Precision in higher range
             return min + (max - min) * (1 - Math.pow(1 - norm, 3));
         }
     }
@@ -48,7 +43,7 @@ export class AudioEngine {
         const lp = ctx.createBiquadFilter();
         const vol = ctx.createGain();
         const pan = ctx.createStereoPanner();
-        const analyser = ctx.createAnalyser(); // NEW: Analyzer node for spectrum
+        const analyser = ctx.createAnalyser();
         
         analyser.fftSize = 2048;
         analyser.smoothingTimeConstant = 0.85;
@@ -66,10 +61,10 @@ export class AudioEngine {
         hp.connect(lp);
         lp.connect(vol);
         vol.connect(pan);
-        pan.connect(analyser); // Connect to analyser
-        analyser.connect(ctx.destination); // Analyser to output
+        pan.connect(analyser);
+        analyser.connect(ctx.destination);
 
-        track.bus = { input, hp, lp, vol, pan, analyser }; // Store analyser in bus
+        track.bus = { input, hp, lp, vol, pan, analyser };
     }
 
     analyzeBuffer(buffer) {
@@ -117,7 +112,6 @@ export class AudioEngine {
         });
     }
 
-    // --- Granular Buffer Generators ---
     generateBufferByType(type) {
         if(!this.audioCtx) return null;
         const makeBuffer = (lenSec) => this.audioCtx.createBuffer(1, this.audioCtx.sampleRate * lenSec, this.audioCtx.sampleRate);
@@ -158,7 +152,6 @@ export class AudioEngine {
                 d[i] = noise * Math.exp(-decay * t);
             }
         } else { 
-            // Texture / FM - Limited to max 1.0s
             const dur = 0.2 + (Math.random() * 0.8);
             buf = makeBuffer(dur);
             const d = buf.getChannelData(0);
@@ -181,14 +174,13 @@ export class AudioEngine {
         return this.generateBufferByType(type);
     }
 
-    // --- 909-style Synth Drum Generator ---
     triggerDrum(track, time) {
         if (!this.audioCtx || !track.bus) return;
         const ctx = this.audioCtx;
         const t = time;
         const type = track.params.drumType || 'kick';
-        const tune = track.params.drumTune || 0.5; // 0 to 1
-        const decayVal = track.params.drumDecay || 0.5; // 0 to 1
+        const tune = track.params.drumTune || 0.5; 
+        const decayVal = track.params.drumDecay || 0.5; 
 
         const out = track.bus.input;
 
@@ -206,6 +198,8 @@ export class AudioEngine {
             osc.frequency.exponentialRampToValueAtTime(30, t + decay);
             gain.gain.setValueAtTime(1, t);
             gain.gain.exponentialRampToValueAtTime(0.01, t + decay);
+            
+            track.addSource(osc); // Track for Choking
             osc.start(t); osc.stop(t + decay + 0.1);
         } 
         else if (type === 'snare') {
@@ -216,6 +210,7 @@ export class AudioEngine {
             osc.type = 'triangle'; osc.frequency.setValueAtTime(toneFreq, t);
             osc.connect(oscGain); oscGain.connect(out);
             oscGain.gain.setValueAtTime(0.5, t); oscGain.gain.exponentialRampToValueAtTime(0.01, t + toneDecay);
+            track.addSource(osc); // Track
             osc.start(t); osc.stop(t + toneDecay + 0.1);
 
             const bufferSize = ctx.sampleRate * (0.2 + decayVal * 0.2);
@@ -229,6 +224,7 @@ export class AudioEngine {
             const noiseGain = ctx.createGain();
             noise.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(out);
             noiseGain.gain.setValueAtTime(0.8, t); noiseGain.gain.exponentialRampToValueAtTime(0.01, t + (0.1 + decayVal * 0.2));
+            track.addSource(noise); // Track
             noise.start(t);
         }
         else if (type === 'closed-hat' || type === 'open-hat') {
@@ -244,6 +240,7 @@ export class AudioEngine {
             const gain = ctx.createGain();
             src.connect(bpf); bpf.connect(hpf); hpf.connect(gain); gain.connect(out);
             gain.gain.setValueAtTime(0.6, t); gain.gain.exponentialRampToValueAtTime(0.01, t + baseDecay);
+            track.addSource(src); // Track
             src.start(t);
         }
         else if (type === 'cymbal') {
@@ -261,6 +258,7 @@ export class AudioEngine {
             const env = ctx.createGain();
             src.connect(hpf); hpf.connect(env); env.connect(out);
             env.gain.setValueAtTime(0.5, t); env.gain.exponentialRampToValueAtTime(0.01, t + decay);
+            track.addSource(src); // Track
             src.start(t);
         }
     }

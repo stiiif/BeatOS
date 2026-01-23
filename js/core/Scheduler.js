@@ -66,6 +66,9 @@ export class Scheduler {
             this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
             this.activeSnapshot = null;
         }
+        
+        // Stop all sound on stop
+        this.tracks.forEach(t => t.stopAllSources());
     }
 
     getIsPlaying() {
@@ -97,7 +100,6 @@ export class Scheduler {
         }
         
         // --- AUTOMATION TRACK LOGIC ---
-        // Process automation BEFORE scheduling notes to ensure params are updated
         this.tracks.forEach(t => {
             if (t.type === 'automation' && !t.muted) {
                 this.processAutomationTrack(t, step, time);
@@ -105,20 +107,17 @@ export class Scheduler {
         });
 
         // --- AUDIO TRIGGER LOGIC ---
-        // Get random choke info if available
         const randomChokeInfo = this.randomChokeCallback ? this.randomChokeCallback() : { mode: false, groups: [] };
         
         if (randomChokeInfo.mode) {
-            // Random choke mode
+            // Random Choke Mode (Visual grouping logic)
             const chokeGroupMap = new Map();
             const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
             
             for (let i = 0; i < this.tracks.length; i++) {
                 const t = this.tracks[i];
                 if (t.type === 'automation') continue; 
-                
                 if (!t.steps[step]) continue;
-                
                 if (isAnySolo && !t.soloed) continue;
                 if (!isAnySolo && t.muted) continue;
                 
@@ -133,7 +132,7 @@ export class Scheduler {
                 if (trackIds.length > 0) {
                     const winnerIdx = Math.floor(Math.random() * trackIds.length);
                     const winnerId = trackIds[winnerIdx];
-                    this.granularSynth.scheduleNote(this.tracks[winnerId], time, scheduleVisualDrawCallback);
+                    this.triggerTrack(this.tracks[winnerId], time, scheduleVisualDrawCallback);
                 }
             });
         } else {
@@ -143,50 +142,54 @@ export class Scheduler {
                 const t = this.tracks[i];
                 if (t.type === 'automation') continue; 
 
-                if (!t.steps[step]) continue; // steps is array of booleans/values. For audio it acts truthy if true.
+                if (!t.steps[step]) continue;
                 
                 if (isAnySolo) {
-                    if (t.soloed) this.granularSynth.scheduleNote(t, time, scheduleVisualDrawCallback);
+                    if (t.soloed) this.triggerTrack(t, time, scheduleVisualDrawCallback);
                 } else {
-                    if (!t.muted) this.granularSynth.scheduleNote(t, time, scheduleVisualDrawCallback);
+                    if (!t.muted) this.triggerTrack(t, time, scheduleVisualDrawCallback);
                 }
             }
         }
     }
 
+    triggerTrack(track, time, scheduleVisualDrawCallback) {
+        // --- REAL CHOKE GROUP LOGIC ---
+        // If this track is in a choke group, cut others in same group
+        if (track.chokeGroup > 0) {
+            this.tracks.forEach(other => {
+                if (other.id !== track.id && other.chokeGroup === track.chokeGroup) {
+                    other.stopAllSources(time);
+                }
+            });
+        }
+
+        this.granularSynth.scheduleNote(track, time, scheduleVisualDrawCallback);
+    }
+
     processAutomationTrack(track, globalStep, time) {
         if (!this.trackManager) return;
 
-        // Clock Division Logic
         const effectiveStepIndex = Math.floor(globalStep / track.clockDivider) % NUM_STEPS;
-        
-        // Get step value (0-5)
         const currentValue = track.steps[effectiveStepIndex];
         const prevValue = track.lastAutoValue;
 
         if (currentValue !== prevValue) {
-            // CASE: Turning ON (0 -> Value)
             if (prevValue === 0 && currentValue > 0) {
-                // Save Snapshot if not already active
                 if (!this.activeSnapshot) {
                     this.activeSnapshot = this.trackManager.saveGlobalSnapshot();
                 }
                 this.trackManager.triggerRandomization(currentValue);
             }
-            // CASE: Changing Value (Value -> Value)
             else if (prevValue > 0 && currentValue > 0) {
-                // Just randomize again, don't update snapshot
                 this.trackManager.triggerRandomization(currentValue);
             }
-            // CASE: Turning OFF (Value -> 0)
             else if (prevValue > 0 && currentValue === 0) {
-                // Restore Snapshot
                 if (this.activeSnapshot) {
                     this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
                     this.activeSnapshot = null;
                 }
             }
-
             track.lastAutoValue = currentValue;
         }
     }

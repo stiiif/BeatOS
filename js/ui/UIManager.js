@@ -1,4 +1,4 @@
-// UI Manager Module - Updated for Real-Time Bus Control & Automation Tracks
+// UI Manager Module - Updated for Choke Groups
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS } from '../utils/constants.js';
 
 export class UIManager {
@@ -35,13 +35,9 @@ export class UIManager {
     initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
         
-        // --- 1. APPLY DYNAMIC CSS FOR STEPS ---
         document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
-
-        // --- 2. GENERATE LFO TABS DYNAMICALLY ---
         this.generateLfoTabs();
 
-        // --- Step Headers ---
         const headerContainer = document.getElementById('stepHeaders');
         headerContainer.className = 'sequencer-grid sticky top-0 bg-neutral-950 z-30 pb-2 border-b border-neutral-800 pt-2';
         headerContainer.innerHTML = '';
@@ -70,7 +66,6 @@ export class UIManager {
         actHeader.innerText = 'ACTIONS';
         headerContainer.appendChild(actHeader);
 
-        // --- Matrix ---
         const container = document.getElementById('matrixContainer');
         container.innerHTML = ''; 
         
@@ -99,10 +94,9 @@ export class UIManager {
             this.appendTrackRow(t.id, visualizerCallback);
         });
 
-        // Initialize Automation Control Listeners
         this.bindAutomationControls();
+        this.bindChokeGroupControl(); // NEW
 
-        // Visualizer Click Selection
         const vis = document.getElementById('visualizer');
         if(vis) {
             vis.addEventListener('click', (e) => {
@@ -115,7 +109,6 @@ export class UIManager {
             });
         }
 
-        // Handle Wheel
         document.body.addEventListener('wheel', (e) => {
             if (e.target.type === 'range') {
                 e.preventDefault();
@@ -129,7 +122,6 @@ export class UIManager {
                 const stepIndex = this.keyMapping[e.code];
                 const currentTrackId = this.selectedTrackIndex;
                 if (currentTrackId >= 0 && currentTrackId < this.tracks.length) {
-                    // Safety check if NUM_STEPS changed but keymap didn't
                     if(stepIndex < NUM_STEPS) {
                         this.toggleStep(currentTrackId, stepIndex);
                     }
@@ -141,28 +133,16 @@ export class UIManager {
     generateLfoTabs() {
         const container = document.getElementById('lfoTabsContainer');
         if (!container) return;
-        
         container.innerHTML = '';
         for(let i=0; i<NUM_LFOS; i++) {
             const btn = document.createElement('button');
             btn.className = 'lfo-tab flex-1 text-[10px] font-bold py-1 rounded transition text-neutral-400 hover:bg-neutral-700 min-w-[40px]';
             btn.dataset.lfo = i;
             btn.innerText = `LFO ${i+1}`;
-            
-            // Re-bind click event directly here or delegate later. 
-            // Delegating is cleaner, but existing main.js binds to .lfo-tab querySelectorAll.
-            // We need to make sure main.js binds AFTER this is generated. 
-            // NOTE: initUI is called in main.js, so these exist. 
-            // But main.js binds events *before* initUI in the previous code structure? 
-            // Actually, main.js binds: document.querySelectorAll('.lfo-tab').forEach...
-            // If main.js runs that before initUI, these buttons won't have events.
-            // **FIX:** We must attach the listener here directly to ensure it works.
-            
             btn.addEventListener('click', (e) => {
                 this.setSelectedLfoIndex(parseInt(e.target.dataset.lfo));
                 this.updateLfoUI();
             });
-
             container.appendChild(btn);
         }
     }
@@ -174,6 +154,19 @@ export class UIManager {
                 const t = this.tracks[this.selectedTrackIndex];
                 if(t && t.type === 'automation') {
                     t.clockDivider = parseInt(e.target.value);
+                }
+            });
+        }
+    }
+
+    // New: Choke Group Dropdown Listener
+    bindChokeGroupControl() {
+        const sel = document.getElementById('chokeGroupSelect');
+        if(sel) {
+            sel.addEventListener('change', (e) => {
+                const t = this.tracks[this.selectedTrackIndex];
+                if(t) {
+                    t.chokeGroup = parseInt(e.target.value);
                 }
             });
         }
@@ -197,7 +190,6 @@ export class UIManager {
     appendTrackRow(trk, visualizerCallback = null) {
         const container = document.getElementById('matrixContainer');
         const buttonRow = document.getElementById('matrixButtonRow');
-        
         const trackObj = this.tracks[trk];
         const groupIdx = Math.floor(trk / TRACKS_PER_GROUP);
         if (this.randomChokeMode && this.randomChokeGroups.length === trk) {
@@ -234,7 +226,6 @@ export class UIManager {
             btn.style.setProperty('--step-group-color-glow', groupColorGlow);
             if ((step + 1) % 4 === 0 && step !== NUM_STEPS - 1) btn.classList.add('beat-divider');
             
-            // Check state logic based on track type
             if (trackObj.type === 'automation') {
                 const val = trackObj.steps[step];
                 if (val > 0) {
@@ -276,7 +267,6 @@ export class UIManager {
         actionsDiv.appendChild(createAction('C', () => this.clearTrack(trk), 'Clear Track', 'erase'));
         actionsDiv.appendChild(createAction('Cg', () => this.clearGroup(groupIdx), 'Clear Group', 'erase'));
         
-        // NEW EXCLUDE RANDOM BUTTON (X)
         const btnX = createAction('X', (t) => this.toggleIgnoreRandom(t), 'Exclude from Auto Randomization (Rand Prms)');
         btnX.id = `btnX_${trk}`;
         if(trackObj.ignoreRandom) btnX.classList.add('exclude-active');
@@ -325,11 +315,10 @@ export class UIManager {
         
         this.updateKnobs();
         this.updateLfoUI();
-        this.updateTrackControlsVisibility(); // Ensure UI matches track type
+        this.updateTrackControlsVisibility(); 
         if (visualizerCallback) visualizerCallback();
     }
 
-    // Comprehensive visibility logic to ensure controls reappear
     updateTrackControlsVisibility() {
         const t = this.tracks[this.selectedTrackIndex];
         if (!t) return;
@@ -340,14 +329,16 @@ export class UIManager {
         const lfoSection = document.getElementById('lfoSection');
         const typeLabel = document.getElementById('trackTypeLabel');
         const speedSel = document.getElementById('autoSpeedSelect');
+        const chokeSel = document.getElementById('chokeGroupSelect'); // NEW
 
-        // 1. Reset: Hide everything first
         if(granularControls) granularControls.classList.add('hidden');
         if(drumControls) drumControls.classList.add('hidden');
         if(lfoSection) lfoSection.classList.add('hidden');
         if(autoControls) autoControls.classList.add('hidden');
 
-        // 2. Show based on Type
+        // Update Choke Selector (Available for all types except maybe Auto, but we can leave it)
+        if(chokeSel) chokeSel.value = t.chokeGroup || 0;
+
         if (t.type === 'automation') {
             if(autoControls) autoControls.classList.remove('hidden');
             if(typeLabel) {
@@ -358,14 +349,10 @@ export class UIManager {
         } 
         else if (t.type === 'simple-drum') {
             if(drumControls) drumControls.classList.remove('hidden');
-            // 909 usually doesn't show LFOs in this app design, but if you want them, uncomment next line
-            // if(lfoSection) lfoSection.classList.remove('hidden');
-
             if(typeLabel) {
                 typeLabel.textContent = "909 " + (t.params.drumType || 'KICK').toUpperCase();
                 typeLabel.className = "text-[10px] text-orange-400 font-mono uppercase truncate max-w-[80px]";
             }
-             // Update Drum Select Buttons State
             document.querySelectorAll('.drum-sel-btn').forEach(btn => {
                 if (btn.dataset.drum === t.params.drumType) {
                     btn.classList.replace('text-neutral-400', 'text-white');
@@ -377,13 +364,11 @@ export class UIManager {
             });
         }
         else {
-            // Default: Granular
             const wasHidden = granularControls && granularControls.classList.contains('hidden');
             
             if(granularControls) granularControls.classList.remove('hidden');
             if(lfoSection) lfoSection.classList.remove('hidden');
             
-            // Force resize if we just unhid the controls to fix 0-width canvas issue
             if(wasHidden) {
                 setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
             }
@@ -440,7 +425,6 @@ export class UIManager {
     toggleSolo(trk) { this.tracks[trk].soloed = !this.tracks[trk].soloed; this.updateTrackStateUI(trk); }
     toggleSoloGroup(grpIdx) { const start = grpIdx * TRACKS_PER_GROUP; const end = start + TRACKS_PER_GROUP; const newState = !this.tracks[start]?.soloed; for(let i=start; i<end; i++) { if(this.tracks[i]) { this.tracks[i].soloed = newState; this.updateTrackStateUI(i); } } }
     
-    // Toggle Ignore Random property
     toggleIgnoreRandom(trk) {
         this.tracks[trk].ignoreRandom = !this.tracks[trk].ignoreRandom;
         const btn = document.getElementById(`btnX_${trk}`);
@@ -479,25 +463,19 @@ export class UIManager {
         const track = this.tracks[trk];
         const btn = this.matrixStepElements[trk][step];
 
-        // --- AUTOMATION TRACK LOGIC ---
         if (track.type === 'automation') {
              let val = track.steps[step];
-             // Cycle 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0
              val = (val + 1) % 6;
              track.steps[step] = val;
-             
-             // Cleanup old classes
              btn.className = btn.className.replace(/auto-level-\d/g, '').trim();
              btn.classList.remove('active');
-             
              if (val > 0) {
                  btn.classList.add('active');
                  btn.classList.add(`auto-level-${val}`);
              }
-             return; // Skip normal group logic for automation
+             return; 
         }
 
-        // --- NORMAL AUDIO TRACK LOGIC ---
         const newState = !this.tracks[trk].steps[step]; 
         if (newState) { 
             const groupStart = Math.floor(trk / TRACKS_PER_GROUP) * TRACKS_PER_GROUP; 
@@ -520,10 +498,8 @@ export class UIManager {
 
     randomizeTrackPattern(trkIdx) { 
         const t = this.tracks[trkIdx]; 
-        // Logic variation for automation
         if(t.type === 'automation') {
              for(let i=0; i<NUM_STEPS; i++) {
-                 // 30% chance of a value, weighted towards lower numbers
                  const roll = Math.random();
                  let val = 0;
                  if (roll < 0.3) {

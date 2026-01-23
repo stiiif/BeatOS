@@ -1,4 +1,4 @@
-// Granular Synthesis Engine - Restructured (Ideas 1-5 Implemented)
+// Granular Synthesis Engine
 export class GranularSynth {
     constructor(audioEngine) {
         this.audioEngine = audioEngine;
@@ -56,9 +56,9 @@ export class GranularSynth {
         const dur = Math.max(0.01, p.grainSize + mod.grainSize);
         const pitch = Math.max(0.1, p.pitch + mod.pitch);
 
-        // Update Track Bus (Global Params)
-        if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(Math.max(20, p.hpFilter + mod.hpFilter), time);
-        if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(Math.max(100, p.filter + mod.filter), time);
+        // Update Track Bus
+        if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.audioEngine.getMappedFrequency(Math.max(20, p.hpFilter + mod.hpFilter), 'hp'), time);
+        if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(this.audioEngine.getMappedFrequency(Math.max(100, p.filter + mod.filter), 'lp'), time);
         if(track.bus.vol) track.bus.vol.gain.setValueAtTime(p.volume, time);
         if(track.bus.pan) track.bus.pan.pan.setValueAtTime(p.pan, time);
 
@@ -72,6 +72,9 @@ export class GranularSynth {
         src.connect(grainWindow);
         grainWindow.connect(track.bus.input); 
 
+        // --- TRACK SOURCE MANAGEMENT (For Choking) ---
+        track.addSource(src);
+
         const bufDur = track.buffer.duration;
         let offset = gPos * bufDur;
         if (offset + dur > bufDur) offset = 0;
@@ -84,6 +87,8 @@ export class GranularSynth {
         src.start(time, offset, dur);
         src.onended = () => { 
             this.activeGrains--;
+            // Track source cleanup handled in Track.js addSource listener, 
+            // but we need to disconnect nodes here
             src.disconnect();
             grainWindow.disconnect();
         };
@@ -94,18 +99,17 @@ export class GranularSynth {
     scheduleNote(track, time, scheduleVisualDrawCallback) {
         // --- 1. HANDLE 909 DRUM TYPE ---
         if (track.type === 'simple-drum') {
-            // Update Bus Params for Drum Track
-            if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(Math.max(20, track.params.hpFilter), time);
-            if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(Math.max(100, track.params.filter), time);
+            if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.audioEngine.getMappedFrequency(Math.max(20, track.params.hpFilter), 'hp'), time);
+            if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(this.audioEngine.getMappedFrequency(Math.max(100, track.params.filter), 'lp'), time);
             if(track.bus.vol) track.bus.vol.gain.setValueAtTime(track.params.volume, time);
             if(track.bus.pan) track.bus.pan.pan.setValueAtTime(track.params.pan, time);
 
             this.audioEngine.triggerDrum(track, time);
             scheduleVisualDrawCallback(time, track.id);
-            return; // Skip granular logic
+            return;
         }
 
-        // --- 2. HANDLE GRANULAR TYPE (Original Logic) ---
+        // --- 2. HANDLE GRANULAR TYPE ---
         const p = track.params;
         
         let density = Math.max(1, p.density);

@@ -14,9 +14,8 @@ export class Track {
         this.buffer = null;
         this.rmsMap = []; 
         // For automation, steps will hold integers 0-5
-        this.steps = new Array(NUM_STEPS).fill(0); // 0 = Off/False
+        this.steps = new Array(NUM_STEPS).fill(0); 
         
-        // Dynamically create LFOs based on constant
         this.lfos = Array.from({ length: NUM_LFOS }, () => new LFO());
         
         this.playhead = 0; 
@@ -24,7 +23,11 @@ export class Track {
         this.muted = false;
         this.soloed = false;
         this.stepLock = false; 
-        this.ignoreRandom = false; // New property: Exclude from global/auto randomization
+        this.ignoreRandom = false; 
+        
+        // --- NEW: Choke Group Logic ---
+        this.chokeGroup = 0; // 0 = None, 1-8 = Shared Choke Groups
+        this.activeSources = new Set(); // Store active WebAudio nodes to stop them
 
         this.bus = {
             input: null,
@@ -46,9 +49,9 @@ export class Track {
             relGrain: 0.4,
             
             // --- 909 / Simple Drum Params ---
-            drumType: 'kick', // kick, snare, closed-hat, open-hat, cymbal
-            drumTune: 0.5,    // Simple tuning parameter (0-1)
-            drumDecay: 0.5,   // Simple decay parameter (0-1)
+            drumType: 'kick', 
+            drumTune: 0.5,    
+            drumDecay: 0.5,   
             
             // --- Amp Envelope ---
             ampAttack: 0.01,
@@ -61,5 +64,25 @@ export class Track {
             volume: 0.8, 
             pan: 0 
         };
+    }
+
+    addSource(source) {
+        this.activeSources.add(source);
+        source.onended = () => {
+            this.activeSources.delete(source);
+        };
+    }
+
+    stopAllSources(time = 0) {
+        this.activeSources.forEach(src => {
+            try {
+                // Schedule stop if time is provided, otherwise stop immediately
+                if (time > 0) src.stop(time);
+                else src.stop();
+            } catch(e) {
+                // Ignore errors if source already stopped
+            }
+        });
+        this.activeSources.clear();
     }
 }
