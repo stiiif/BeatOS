@@ -340,8 +340,15 @@ export class UIManager {
         }
         else {
             // Default: Granular
+            const wasHidden = granularControls && granularControls.classList.contains('hidden');
+            
             if(granularControls) granularControls.classList.remove('hidden');
             if(lfoSection) lfoSection.classList.remove('hidden');
+            
+            // Force resize if we just unhid the controls to fix 0-width canvas issue
+            if(wasHidden) {
+                setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
+            }
             
             if(typeLabel) {
                 if (t.customSample) {
