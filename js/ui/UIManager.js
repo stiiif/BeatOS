@@ -398,7 +398,7 @@ export class UIManager {
         const lfoSection = document.getElementById('lfoSection');
         const typeLabel = document.getElementById('trackTypeLabel');
         const speedSel = document.getElementById('autoSpeedSelect');
-        // const chokeSel = document.getElementById('chokeGroupSelect'); // REMOVED
+        const chokeSel = document.getElementById('chokeGroupSelect'); 
 
         if(granularControls) granularControls.classList.add('hidden');
         if(drumControls) drumControls.classList.add('hidden');
@@ -406,7 +406,7 @@ export class UIManager {
         if(autoControls) autoControls.classList.add('hidden');
 
         // Update Choke Buttons in Header
-        this.updateChokeButtonsState(); // NEW
+        this.updateChokeButtonsState(); 
 
         if (t.type === 'automation') {
             if(autoControls) autoControls.classList.remove('hidden');
@@ -454,27 +454,29 @@ export class UIManager {
         }
     }
 
-    updateMatrixHead(current) {
-        // Calculate the previous step based on the global constant
-        const prev = (current - 1 + NUM_STEPS) % NUM_STEPS;
+    // UPDATE MATRIX HEAD with absolute step support
+    updateMatrixHead(currentStep, totalStepsPlayed) {
+        // Fallback if totalStepsPlayed is undefined (e.g. init)
+        if(typeof totalStepsPlayed === 'undefined') {
+            totalStepsPlayed = currentStep;
+        }
+
+        const prevTotal = totalStepsPlayed - 1;
         
         for(let t=0; t<this.tracks.length; t++) {
             const track = this.tracks[t];
             const div = track.clockDivider || 1;
             
-            // Calculate effective steps for this track (speed adjusted)
-            const currentEffective = Math.floor(current / div) % NUM_STEPS;
-            const prevEffective = Math.floor(prev / div) % NUM_STEPS;
+            // Calculate effective steps for this track (using absolute counter)
+            const currentEffective = Math.floor(totalStepsPlayed / div) % NUM_STEPS;
+            const prevEffective = Math.floor(prevTotal / div) % NUM_STEPS;
             
-            // Note: When dividing clock, multiple global steps map to the same track step.
-            // We should only clear the previous if it is DIFFERENT from the current effective step.
             if (currentEffective !== prevEffective) {
                 if(this.matrixStepElements[t] && this.matrixStepElements[t][prevEffective]) {
                     this.matrixStepElements[t][prevEffective].classList.remove('step-playing');
                 }
             }
             
-            // Always highlight current
             if(this.matrixStepElements[t] && this.matrixStepElements[t][currentEffective]) {
                 this.matrixStepElements[t][currentEffective].classList.add('step-playing');
             }
