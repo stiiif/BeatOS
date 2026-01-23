@@ -1,3 +1,4 @@
+// Track Module
 import { LFO } from './LFO.js';
 import { NUM_STEPS } from '../utils/constants.js';
 
@@ -12,8 +13,8 @@ export class Track {
         
         this.buffer = null;
         this.rmsMap = []; 
-        // For automation, steps will hold integers 0-5
-        this.steps = new Array(NUM_STEPS).fill(0); // 0 = Off/False
+        // For automation, steps will hold integers 0-5. For audio, booleans.
+        this.steps = new Array(NUM_STEPS).fill(0); 
         this.lfos = [new LFO(), new LFO(), new LFO()];
         
         this.playhead = 0; 

@@ -13,16 +13,17 @@ export class Scheduler {
         this.tracks = [];
         this.updateMatrixHeadCallback = null;
         this.randomChokeCallback = null;
-        this.trackManager = null; // Need reference to TrackManager
-        this.activeSnapshot = null; // Snapshot specifically for automation
-    }
-
-    setTrackManager(tm) {
-        this.trackManager = tm;
+        
+        this.trackManager = null; 
+        this.activeSnapshot = null; 
     }
 
     setTracks(tracks) {
         this.tracks = tracks;
+    }
+
+    setTrackManager(tm) {
+        this.trackManager = tm;
     }
 
     setBPM(bpm) {
@@ -48,6 +49,11 @@ export class Scheduler {
             this.isPlaying = true;
             this.currentStep = 0;
             this.nextNoteTime = audioCtx.currentTime + 0.1;
+            
+            // Reset automation state on start
+            this.activeSnapshot = null;
+            this.tracks.forEach(t => { if(t.type === 'automation') t.lastAutoValue = 0; });
+
             this.schedule(scheduleVisualDrawCallback);
         }
     }
@@ -55,6 +61,11 @@ export class Scheduler {
     stop() {
         this.isPlaying = false;
         clearTimeout(this.schedulerTimerID);
+        // Restore snapshot if stopping mid-automation
+        if(this.activeSnapshot && this.trackManager) {
+            this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
+            this.activeSnapshot = null;
+        }
     }
 
     getIsPlaying() {
@@ -84,39 +95,40 @@ export class Scheduler {
         if (this.updateMatrixHeadCallback) {
             requestAnimationFrame(() => this.updateMatrixHeadCallback(step));
         }
-
+        
         // --- AUTOMATION TRACK LOGIC ---
+        // Process automation BEFORE scheduling notes to ensure params are updated
         this.tracks.forEach(t => {
             if (t.type === 'automation' && !t.muted) {
                 this.processAutomationTrack(t, step, time);
             }
         });
 
+        // --- AUDIO TRIGGER LOGIC ---
         // Get random choke info if available
         const randomChokeInfo = this.randomChokeCallback ? this.randomChokeCallback() : { mode: false, groups: [] };
-
+        
         if (randomChokeInfo.mode) {
-            // Random choke mode - determine which tracks to play based on random groups
+            // Random choke mode
             const chokeGroupMap = new Map();
-            const isAnySolo = this.tracks.some(t => t.soloed);
-
-            // Group tracks by their random choke group
+            const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
+            
             for (let i = 0; i < this.tracks.length; i++) {
                 const t = this.tracks[i];
+                if (t.type === 'automation') continue; 
+                
                 if (!t.steps[step]) continue;
-
-                // Check solo/mute
+                
                 if (isAnySolo && !t.soloed) continue;
                 if (!isAnySolo && t.muted) continue;
-
+                
                 const randomGroup = randomChokeInfo.groups[i];
                 if (!chokeGroupMap.has(randomGroup)) {
                     chokeGroupMap.set(randomGroup, []);
                 }
                 chokeGroupMap.get(randomGroup).push(i);
             }
-
-            // For each choke group, randomly pick one track to play
+            
             chokeGroupMap.forEach((trackIds) => {
                 if (trackIds.length > 0) {
                     const winnerIdx = Math.floor(Math.random() * trackIds.length);
@@ -127,13 +139,12 @@ export class Scheduler {
         } else {
             // Normal mode
             const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
-
             for (let i = 0; i < this.tracks.length; i++) {
                 const t = this.tracks[i];
-                if (t.type === 'automation') continue; // Skip audio scheduling for automation tracks
+                if (t.type === 'automation') continue; 
 
-                if (!t.steps[step]) continue; // Note: For audio tracks steps is boolean array
-
+                if (!t.steps[step]) continue; // steps is array of booleans/values. For audio it acts truthy if true.
+                
                 if (isAnySolo) {
                     if (t.soloed) this.granularSynth.scheduleNote(t, time, scheduleVisualDrawCallback);
                 } else {
@@ -144,48 +155,39 @@ export class Scheduler {
     }
 
     processAutomationTrack(track, globalStep, time) {
-        // 1. Calculate Effective Step based on Clock Divider
-        // If divider is 2, we stay on the same step for 2 global steps.
-        const effectiveStepIndex = Math.floor(globalStep / track.clockDivider) % NUM_STEPS;
+        if (!this.trackManager) return;
 
-        // 2. Get Value
-        // Note: steps array now holds integers 0-5
+        // Clock Division Logic
+        const effectiveStepIndex = Math.floor(globalStep / track.clockDivider) % NUM_STEPS;
+        
+        // Get step value (0-5)
         const currentValue = track.steps[effectiveStepIndex];
         const prevValue = track.lastAutoValue;
 
-        // 3. Compare State
         if (currentValue !== prevValue) {
-
-            // CASE A: Turning ON (0 -> X)
+            // CASE: Turning ON (0 -> Value)
             if (prevValue === 0 && currentValue > 0) {
-                // 1. SNAP: Save state BEFORE randomizing
-                this.activeSnapshot = this.trackManager.saveGlobalSnapshot();
-                // 2. Trigger Random
+                // Save Snapshot if not already active
+                if (!this.activeSnapshot) {
+                    this.activeSnapshot = this.trackManager.saveGlobalSnapshot();
+                }
                 this.trackManager.triggerRandomization(currentValue);
             }
-            // CASE B: Changing Value (X -> Y)
+            // CASE: Changing Value (Value -> Value)
             else if (prevValue > 0 && currentValue > 0) {
-                // Just trigger new random (do not overwrite snapshot)
+                // Just randomize again, don't update snapshot
                 this.trackManager.triggerRandomization(currentValue);
             }
-            // CASE C: Turning OFF (X -> 0)
+            // CASE: Turning OFF (Value -> 0)
             else if (prevValue > 0 && currentValue === 0) {
-                // UN-SNAP: Restore state
+                // Restore Snapshot
                 if (this.activeSnapshot) {
                     this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
                     this.activeSnapshot = null;
                 }
             }
 
-            // Update state tracker
             track.lastAutoValue = currentValue;
-
-            // Visual feedback update (optional, but good for UI knobs to jump)
-            requestAnimationFrame(() => {
-                // Dispatch event or call UI update if UIManager is accessible
-                // For now, main loop updates visuals often enough or on interaction
-            });
         }
     }
-
 }
