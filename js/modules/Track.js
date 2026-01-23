@@ -38,7 +38,7 @@ export class Track {
             spray: 0.00, 
             scanSpeed: 0.0,
             density: 15, 
-            overlap: 0, 
+            overlap: 0.5, 
             grainSize: 0.05,
             pitch: 1.0, 
             relGrain: 0.4,
