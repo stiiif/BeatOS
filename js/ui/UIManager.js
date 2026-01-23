@@ -1,4 +1,4 @@
-// UI Manager Module - Updated for Real-Time Bus Control
+// UI Manager Module - Updated for Real-Time Bus Control & Automation Tracks
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS } from '../utils/constants.js';
 
 export class UIManager {
@@ -32,7 +32,6 @@ export class UIManager {
         this.tracks = tracks;
     }
 
-    // ... (InitUI and other existing methods preserved but omitted for brevity if unchanged) ...
     initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
         
@@ -94,6 +93,9 @@ export class UIManager {
             this.appendTrackRow(t.id, visualizerCallback);
         });
 
+        // Initialize Automation Control Listeners
+        this.bindAutomationControls();
+
         // Visualizer Click Selection
         const vis = document.getElementById('visualizer');
         if(vis) {
@@ -127,6 +129,18 @@ export class UIManager {
         });
     }
 
+    bindAutomationControls() {
+        const sel = document.getElementById('autoSpeedSelect');
+        if(sel) {
+            sel.addEventListener('change', (e) => {
+                const t = this.tracks[this.selectedTrackIndex];
+                if(t && t.type === 'automation') {
+                    t.clockDivider = parseInt(e.target.value);
+                }
+            });
+        }
+    }
+
     handleSliderWheel(e) {
         const el = e.target;
         const step = parseFloat(el.step) || 0.01;
@@ -146,6 +160,7 @@ export class UIManager {
         const container = document.getElementById('matrixContainer');
         const buttonRow = document.getElementById('matrixButtonRow');
         
+        const trackObj = this.tracks[trk];
         const groupIdx = Math.floor(trk / TRACKS_PER_GROUP);
         if (this.randomChokeMode && this.randomChokeGroups.length === trk) {
             this.randomChokeGroups.push(Math.floor(Math.random() * 8));
@@ -174,10 +189,24 @@ export class UIManager {
         for(let step=0; step<NUM_STEPS; step++) {
             const btn = document.createElement('div');
             btn.className = 'step-btn';
+            btn.dataset.step = step;
+            btn.dataset.track = trk;
             btn.onclick = () => this.toggleStep(trk, step);
             btn.style.setProperty('--step-group-color', groupColor);
             btn.style.setProperty('--step-group-color-glow', groupColorGlow);
             if ((step + 1) % 4 === 0 && step !== NUM_STEPS - 1) btn.classList.add('beat-divider');
+            
+            // Check state logic based on track type
+            if (trackObj.type === 'automation') {
+                const val = trackObj.steps[step];
+                if (val > 0) {
+                    btn.classList.add('active');
+                    btn.classList.add(`auto-level-${val}`);
+                }
+            } else {
+                if (trackObj.steps[step]) btn.classList.add('active');
+            }
+
             rowDiv.appendChild(btn);
             this.matrixStepElements[trk][step] = btn;
             rowElements.push(btn);
@@ -215,8 +244,6 @@ export class UIManager {
         this.trackRowElements[trk] = rowElements;
     }
 
-    // ... (Selection and other logic logic preserved) ...
-
     selectTrack(idx, visualizerCallback = null) {
         if(this.trackLabelElements[this.selectedTrackIndex])
             this.trackLabelElements[this.selectedTrackIndex].classList.remove('selected');
@@ -253,10 +280,38 @@ export class UIManager {
         
         this.updateKnobs();
         this.updateLfoUI();
+        this.updateTrackControlsVisibility(); // Ensure UI matches track type
         if (visualizerCallback) visualizerCallback();
     }
 
-    // ... (Randomization and other methods preserved) ...
+    updateTrackControlsVisibility() {
+        const t = this.tracks[this.selectedTrackIndex];
+        if (!t) return;
+
+        const autoControls = document.getElementById('automationControls');
+        const granularControls = document.getElementById('granularControls');
+        const drumControls = document.getElementById('simpleDrumControls');
+        const lfoSection = document.getElementById('lfoSection');
+        const typeLabel = document.getElementById('trackTypeLabel');
+        const speedSel = document.getElementById('autoSpeedSelect');
+
+        if (t.type === 'automation') {
+            if(granularControls) granularControls.classList.add('hidden');
+            if(drumControls) drumControls.classList.add('hidden');
+            if(lfoSection) lfoSection.classList.add('hidden');
+            if(autoControls) autoControls.classList.remove('hidden');
+            
+            if(typeLabel) {
+                typeLabel.textContent = "AUTO SEQ";
+                typeLabel.className = "text-[10px] text-indigo-400 font-mono uppercase font-bold";
+            }
+            if(speedSel) speedSel.value = t.clockDivider || 1;
+        } else {
+            if(autoControls) autoControls.classList.add('hidden');
+            // Revert label if not automation (defaulting to granular/synth, 
+            // main.js usually handles the Granular vs Drum switch logic)
+        }
+    }
 
     updateMatrixHead(current) {
         const prev = (current - 1 + NUM_STEPS) % NUM_STEPS;
@@ -266,7 +321,6 @@ export class UIManager {
         }
     }
 
-    // ... (Snapshot, Pan, Mute logic preserved) ...
     getSelectedTrackIndex() { return this.selectedTrackIndex; }
     getSelectedLfoIndex() { return this.selectedLfoIndex; }
     setSelectedLfoIndex(index) { this.selectedLfoIndex = index; }
@@ -293,21 +347,117 @@ export class UIManager {
     clearRandomChokeDimming() { for (let t = 0; t < this.tracks.length; t++) { for (let step = 0; step < NUM_STEPS; step++) { this.matrixStepElements[t][step].classList.remove('step-dimmed'); } } }
     savePanBaseline() { this.basePanValues = this.tracks.map(t => t.params.pan); }
     applyPanShift(shiftAmount) { this.globalPanShift = shiftAmount; if (this.basePanValues.length === 0) this.savePanBaseline(); const numGroups = 8; for (let i = 0; i < this.tracks.length; i++) { const groupIdx = Math.floor(i / TRACKS_PER_GROUP); const basePan = this.basePanValues[i] || 0; const shiftInGroups = shiftAmount * numGroups; const newGroupPosition = (groupIdx + shiftInGroups) % numGroups; const newGroupCenter = -1 + (newGroupPosition / (numGroups - 1)) * 2; const originalGroupCenter = -1 + (groupIdx / (numGroups - 1)) * 2; const offsetFromCenter = basePan - originalGroupCenter; let newPan = newGroupCenter + offsetFromCenter; newPan = Math.max(-1, Math.min(1, newPan)); this.tracks[i].params.pan = parseFloat(newPan.toFixed(3)); 
-    // IMPORTANT: Live update bus if it exists
     if(this.tracks[i].bus && this.tracks[i].bus.pan) { this.tracks[i].bus.pan.pan.value = newPan; } } }
     toggleMute(trk) { this.tracks[trk].muted = !this.tracks[trk].muted; this.updateTrackStateUI(trk); }
     toggleMuteGroup(grpIdx) { const start = grpIdx * TRACKS_PER_GROUP; const end = start + TRACKS_PER_GROUP; const newState = !this.tracks[start]?.muted; for(let i=start; i<end; i++) { if(this.tracks[i]) { this.tracks[i].muted = newState; this.updateTrackStateUI(i); } } }
     toggleSolo(trk) { this.tracks[trk].soloed = !this.tracks[trk].soloed; this.updateTrackStateUI(trk); }
     toggleSoloGroup(grpIdx) { const start = grpIdx * TRACKS_PER_GROUP; const end = start + TRACKS_PER_GROUP; const newState = !this.tracks[start]?.soloed; for(let i=start; i<end; i++) { if(this.tracks[i]) { this.tracks[i].soloed = newState; this.updateTrackStateUI(i); } } }
-    updateTrackStateUI(trk) { const t = this.tracks[trk]; const btnM = document.getElementById(`btnM_${trk}`); const btnS = document.getElementById(`btnS_${trk}`); const btnL = document.getElementById(`btnL_${trk}`); if(t.muted) btnM.classList.add('mute-active'); else btnM.classList.remove('mute-active'); if(t.soloed) btnS.classList.add('solo-active'); else btnS.classList.remove('solo-active'); if(t.stepLock) btnL.classList.add('lock-active'); else btnL.classList.remove('lock-active'); if(this.trackRowElements[trk]) this.trackRowElements[trk].forEach(el => el.style.opacity = t.muted ? '0.4' : '1.0'); 
-    // IMPORTANT: Update Bus Volume for Mute/Solo
-    // Note: Solo logic is complex in mixing, usually done by muting others. 
-    // For simplicity, we just rely on scheduler to not schedule grains if muted.
+    updateTrackStateUI(trk) { const t = this.tracks[trk]; const btnM = document.getElementById(`btnM_${trk}`); const btnS = document.getElementById(`btnS_${trk}`); const btnL = document.getElementById(`btnL_${trk}`); if(t.muted) btnM.classList.add('mute-active'); else btnM.classList.remove('mute-active'); if(t.soloed) btnS.classList.add('solo-active'); else btnS.classList.remove('solo-active'); if(t.stepLock) btnL.classList.add('lock-active'); else btnL.classList.remove('lock-active'); if(this.trackRowElements[trk]) this.trackRowElements[trk].forEach(el => el.style.opacity = t.muted ? '0.4' : '1.0'); }
+    
+    clearTrack(trk) { 
+        if(this.tracks[trk].type === 'automation') {
+             this.tracks[trk].steps.fill(0);
+        } else {
+             this.tracks[trk].steps.fill(false); 
+        }
+        for(let s=0; s<NUM_STEPS; s++) if(this.matrixStepElements[trk] && this.matrixStepElements[trk][s]) {
+             this.matrixStepElements[trk][s].classList.remove('active', 'auto-level-1', 'auto-level-2', 'auto-level-3', 'auto-level-4', 'auto-level-5'); 
+        }
     }
-    clearTrack(trk) { this.tracks[trk].steps.fill(false); for(let s=0; s<NUM_STEPS; s++) if(this.matrixStepElements[trk] && this.matrixStepElements[trk][s]) this.matrixStepElements[trk][s].classList.remove('active'); }
     clearGroup(grp) { const start = grp * TRACKS_PER_GROUP; const end = start + TRACKS_PER_GROUP; for(let i=start; i<end; i++) if(this.tracks[i]) this.clearTrack(i); }
-    toggleStep(trk, step) { const newState = !this.tracks[trk].steps[step]; if (newState) { const groupStart = Math.floor(trk / TRACKS_PER_GROUP) * TRACKS_PER_GROUP; const groupEnd = groupStart + TRACKS_PER_GROUP; for(let i=groupStart; i<groupEnd; i++) { if (this.tracks[i] && i !== trk && this.tracks[i].steps[step]) { if (!this.tracks[i].stepLock) { this.tracks[i].steps[step] = false; this.matrixStepElements[i][step].classList.remove('active'); } else { return; } } } } this.tracks[trk].steps[step] = newState; const btn = this.matrixStepElements[trk][step]; if(newState) btn.classList.add('active'); else btn.classList.remove('active'); if (this.randomChokeMode) this.applyRandomChokeDimming(); }
-    randomizeTrackPattern(trkIdx) { const t = this.tracks[trkIdx]; const groupStart = Math.floor(trkIdx / TRACKS_PER_GROUP) * TRACKS_PER_GROUP; const groupEnd = groupStart + TRACKS_PER_GROUP; for(let i=0; i<NUM_STEPS; i++) { const active = Math.random() < 0.25; if (active) { let isStepLocked = false; for(let sib=groupStart; sib<groupEnd; sib++) { if(this.tracks[sib] && sib !== trkIdx && this.tracks[sib].steps[i] && this.tracks[sib].stepLock) { isStepLocked = true; break; } } if (!isStepLocked) { for(let sib=groupStart; sib<groupEnd; sib++) { if(this.tracks[sib] && sib !== trkIdx && this.tracks[sib].steps[i] && !this.tracks[sib].stepLock) { this.tracks[sib].steps[i] = false; this.matrixStepElements[sib][i].classList.remove('active'); } } t.steps[i] = active; } else { t.steps[i] = false; } } else { t.steps[i] = false; } const btn = this.matrixStepElements[trkIdx][i]; if(t.steps[i]) btn.classList.add('active'); else btn.classList.remove('active'); } if (this.randomChokeMode) this.applyRandomChokeDimming(); }
+    
+    toggleStep(trk, step) { 
+        const track = this.tracks[trk];
+        const btn = this.matrixStepElements[trk][step];
+
+        // --- AUTOMATION TRACK LOGIC ---
+        if (track.type === 'automation') {
+             let val = track.steps[step];
+             // Cycle 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0
+             val = (val + 1) % 6;
+             track.steps[step] = val;
+             
+             // Cleanup old classes
+             btn.className = btn.className.replace(/auto-level-\d/g, '').trim();
+             btn.classList.remove('active');
+             
+             if (val > 0) {
+                 btn.classList.add('active');
+                 btn.classList.add(`auto-level-${val}`);
+             }
+             return; // Skip normal group logic for automation
+        }
+
+        // --- NORMAL AUDIO TRACK LOGIC ---
+        const newState = !this.tracks[trk].steps[step]; 
+        if (newState) { 
+            const groupStart = Math.floor(trk / TRACKS_PER_GROUP) * TRACKS_PER_GROUP; 
+            const groupEnd = groupStart + TRACKS_PER_GROUP; 
+            for(let i=groupStart; i<groupEnd; i++) { 
+                if (this.tracks[i] && i !== trk && this.tracks[i].steps[step] && this.tracks[i].type !== 'automation') { 
+                    if (!this.tracks[i].stepLock) { 
+                        this.tracks[i].steps[step] = false; 
+                        this.matrixStepElements[i][step].classList.remove('active'); 
+                    } else { 
+                        return; 
+                    } 
+                } 
+            } 
+        } 
+        this.tracks[trk].steps[step] = newState; 
+        if(newState) btn.classList.add('active'); else btn.classList.remove('active'); 
+        if (this.randomChokeMode) this.applyRandomChokeDimming(); 
+    }
+
+    randomizeTrackPattern(trkIdx) { 
+        const t = this.tracks[trkIdx]; 
+        // Logic variation for automation
+        if(t.type === 'automation') {
+             for(let i=0; i<NUM_STEPS; i++) {
+                 // 30% chance of a value, weighted towards lower numbers
+                 const roll = Math.random();
+                 let val = 0;
+                 if (roll < 0.3) {
+                      val = Math.floor(Math.random() * 5) + 1;
+                 }
+                 t.steps[i] = val;
+                 const btn = this.matrixStepElements[trkIdx][i];
+                 btn.className = btn.className.replace(/auto-level-\d/g, '').trim();
+                 btn.classList.remove('active');
+                 if(val > 0) {
+                     btn.classList.add('active', `auto-level-${val}`);
+                 }
+             }
+             return;
+        }
+
+        const groupStart = Math.floor(trkIdx / TRACKS_PER_GROUP) * TRACKS_PER_GROUP; 
+        const groupEnd = groupStart + TRACKS_PER_GROUP; 
+        for(let i=0; i<NUM_STEPS; i++) { 
+            const active = Math.random() < 0.25; 
+            if (active) { 
+                let isStepLocked = false; 
+                for(let sib=groupStart; sib<groupEnd; sib++) { 
+                    if(this.tracks[sib] && sib !== trkIdx && this.tracks[sib].steps[i] && this.tracks[sib].stepLock) { 
+                        isStepLocked = true; break; 
+                    } 
+                } 
+                if (!isStepLocked) { 
+                    for(let sib=groupStart; sib<groupEnd; sib++) { 
+                        if(this.tracks[sib] && sib !== trkIdx && this.tracks[sib].steps[i] && !this.tracks[sib].stepLock && this.tracks[sib].type !== 'automation') { 
+                            this.tracks[sib].steps[i] = false; 
+                            this.matrixStepElements[sib][i].classList.remove('active'); 
+                        } 
+                    } 
+                    t.steps[i] = active; 
+                } else { t.steps[i] = false; } 
+            } else { t.steps[i] = false; } 
+            const btn = this.matrixStepElements[trkIdx][i]; 
+            if(t.steps[i]) btn.classList.add('active'); else btn.classList.remove('active'); 
+        } 
+        if (this.randomChokeMode) this.applyRandomChokeDimming(); 
+    }
+
     randomizeAllPatterns() { for (let step = 0; step < NUM_STEPS; step++) { const numGroups = Math.ceil(this.tracks.length / TRACKS_PER_GROUP); for (let g = 0; g < numGroups; g++) { const groupStart = g * TRACKS_PER_GROUP; const plays = Math.random() < 0.4; const activeTrackOffset = Math.floor(Math.random() * TRACKS_PER_GROUP); const activeTrackId = groupStart + activeTrackOffset; for (let i = 0; i < TRACKS_PER_GROUP; i++) { const trkId = groupStart + i; if (!this.tracks[trkId]) continue; const shouldBeActive = plays && (trkId === activeTrackId); this.tracks[trkId].steps[step] = shouldBeActive; const btn = this.matrixStepElements[trkId][step]; if(shouldBeActive) btn.classList.add('active'); else btn.classList.remove('active'); } } } if (this.randomChokeMode) this.applyRandomChokeDimming(); }
 
     updateKnobs() {
@@ -352,8 +502,6 @@ export class UIManager {
         
         const rateVal = document.getElementById('lfoRateVal');
         const amtVal = document.getElementById('lfoAmtVal');
-        // if(rateVal) rateVal.style.color = groupColor; // handled by knob container?
-        // if(amtVal) amtVal.style.color = groupColor;
         
         document.getElementById('lfoTarget').value = lfo.target;
         document.getElementById('lfoWave').value = lfo.wave;
@@ -400,10 +548,17 @@ export class UIManager {
                     this.updateTrackStateUI(i);
                     for(let s=0; s<NUM_STEPS; s++) {
                          const btn = this.matrixStepElements[i][s];
-                         if(t.steps[s]) btn.classList.add('active'); else btn.classList.remove('active');
+                         // Reset classes
+                         btn.className = btn.className.replace(/auto-level-\d/g, '').trim();
+                         btn.classList.remove('active');
+                         
+                         if(t.type === 'automation') {
+                             if(t.steps[s] > 0) btn.classList.add('active', `auto-level-${t.steps[s]}`);
+                         } else {
+                             if(t.steps[s]) btn.classList.add('active');
+                         }
                     }
                     
-                    // UPDATE BUS LIVE (IMPORTANT for Snapshot Restore)
                     if(t.bus.hp) t.bus.hp.frequency.value = t.params.hpFilter;
                     if(t.bus.lp) t.bus.lp.frequency.value = t.params.filter;
                     if(t.bus.vol) t.bus.vol.gain.value = t.params.volume;

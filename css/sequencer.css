@@ -78,6 +78,15 @@
     box-shadow: none !important;
 }
 
+/* Automation Levels (Indigo/Purple Palette) */
+/* Note: Opacity is handled, but colors must be distinct to show levels */
+.auto-level-1 { background-color: #818cf8 !important; border-color: #c7d2fe !important; opacity: 0.4; } /* Very Short */
+.auto-level-2 { background-color: #6366f1 !important; border-color: #a5b4fc !important; opacity: 0.55; }
+.auto-level-3 { background-color: #4f46e5 !important; border-color: #818cf8 !important; opacity: 0.7; }
+.auto-level-4 { background-color: #4338ca !important; border-color: #6366f1 !important; opacity: 0.85; }
+.auto-level-5 { background-color: #312e81 !important; border-color: #4f46e5 !important; opacity: 1.0; }
+
+
 /* Choke Group Colors */
 .track-group-0 .track-label { border-right: 2px solid #3b82f6; }
 .track-group-1 .track-label { border-right: 2px solid #8b5cf6; }

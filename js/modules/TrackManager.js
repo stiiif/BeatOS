@@ -6,6 +6,7 @@ export class TrackManager {
     constructor(audioEngine) {
         this.audioEngine = audioEngine;
         this.tracks = [];
+        this.globalSnapshot = null; // Store snapshot here
     }
 
     getTracks() {
@@ -24,7 +25,7 @@ export class TrackManager {
         const newId = this.tracks.length;
         const t = new Track(newId);
         this.tracks.push(t);
-        
+
         // Generate buffer
         const audioCtx = this.audioEngine.getContext();
         if (audioCtx) {
@@ -45,17 +46,17 @@ export class TrackManager {
         this.tracks[1].params = { ...this.tracks[1].params, density: 4, position: 0.5, filter: 4000, hpFilter: 100 };
         // Track 2: Hat
         this.tracks[2].params = { ...this.tracks[2].params, density: 40, grainSize: 0.02, pitch: 2.0, filter: 9000, hpFilter: 1000 };
-        
-        for(let i=3; i<this.tracks.length; i++) {
-             this.tracks[i].params.position = Math.random();
-             this.tracks[i].params.density = 2 + Math.floor(Math.random() * 20);
-             this.tracks[i].params.grainSize = 0.05 + Math.random() * 0.2;
-             this.tracks[i].params.pitch = 0.5 + Math.random() * 1.5;
+
+        for (let i = 3; i < this.tracks.length; i++) {
+            this.tracks[i].params.position = Math.random();
+            this.tracks[i].params.density = 2 + Math.floor(Math.random() * 20);
+            this.tracks[i].params.grainSize = 0.05 + Math.random() * 0.2;
+            this.tracks[i].params.pitch = 0.5 + Math.random() * 1.5;
         }
     }
 
     createBuffersForAllTracks() {
-        for(let i=0; i<this.tracks.length; i++) {
+        for (let i = 0; i < this.tracks.length; i++) {
             this.tracks[i].buffer = this.audioEngine.generateBufferForTrack(i);
             this.tracks[i].rmsMap = this.audioEngine.analyzeBuffer(this.tracks[i].buffer);
             this.audioEngine.initTrackBus(this.tracks[i]);
@@ -70,7 +71,7 @@ export class TrackManager {
         t.params.filter = 2000 + Math.random() * 10000;
         t.params.hpFilter = 20 + Math.random() * 500;
         t.params.pitch = 0.5 + Math.random() * 1.5;
-        
+
         if (releaseMin !== null && releaseMax !== null) {
             t.params.relGrain = releaseMin + Math.random() * (releaseMax - releaseMin);
         } else {
@@ -82,9 +83,9 @@ export class TrackManager {
         const targets = ['none', 'position', 'spray', 'density', 'grainSize', 'pitch', 'filter', 'hpFilter'];
         const waves = ['sine', 'square', 'sawtooth', 'random'];
         t.lfos.forEach(lfo => {
-            if(Math.random() < 0.7) {
-                lfo.target = targets[Math.floor(Math.random() * (targets.length - 1)) + 1]; 
-                lfo.amount = parseFloat((0.1 + Math.random() * 0.9).toFixed(2)); 
+            if (Math.random() < 0.7) {
+                lfo.target = targets[Math.floor(Math.random() * (targets.length - 1)) + 1];
+                lfo.amount = parseFloat((0.1 + Math.random() * 0.9).toFixed(2));
             } else { lfo.target = 'none'; lfo.amount = 0; }
             lfo.wave = waves[Math.floor(Math.random() * waves.length)];
             lfo.rate = parseFloat((0.1 + Math.random() * 19.9).toFixed(1));
@@ -94,11 +95,71 @@ export class TrackManager {
     randomizePanning() {
         const numGroups = 8;
         for (let i = 0; i < this.tracks.length; i++) {
-            const groupIdx = Math.floor(i / 4); 
+            const groupIdx = Math.floor(i / 4);
             const groupCenter = -1 + (groupIdx / (numGroups - 1)) * 2;
             const variation = (Math.random() - 0.5) * 0.2;
             const pan = Math.max(-1, Math.min(1, groupCenter + variation));
             this.tracks[i].params.pan = parseFloat(pan.toFixed(3));
         }
     }
+
+    // --- Snapshot Helpers for Automation ---
+
+    saveGlobalSnapshot() {
+        // Only save if we don't already have one (handled by "Snap/Un-snap" logic)
+        // But for this feature, the Scheduler manages when to save/restore.
+        // We just return the data object.
+        return this.tracks.map(t => ({
+            params: { ...t.params },
+            lfos: t.lfos.map(l => ({ ...l })) // shallow copy is likely enough for simple props
+        }));
+    }
+
+    restoreGlobalSnapshot(snapshotData) {
+        if (!snapshotData) return;
+        snapshotData.forEach((data, i) => {
+            if (this.tracks[i]) {
+                const t = this.tracks[i];
+                // Only restore params that get randomized
+                t.params.position = data.params.position;
+                t.params.spray = data.params.spray;
+                t.params.grainSize = data.params.grainSize;
+                t.params.filter = data.params.filter;
+                t.params.hpFilter = data.params.hpFilter;
+                t.params.pitch = data.params.pitch;
+                t.params.relGrain = data.params.relGrain;
+                t.params.drumTune = data.params.drumTune;
+                t.params.drumDecay = data.params.drumDecay;
+
+                // Restore Modulators
+                t.lfos.forEach((lfo, idx) => {
+                    if (data.lfos[idx]) {
+                        lfo.target = data.lfos[idx].target;
+                        lfo.amount = data.lfos[idx].amount;
+                        lfo.rate = data.lfos[idx].rate;
+                        lfo.wave = data.lfos[idx].wave;
+                    }
+                });
+            }
+        });
+    }
+
+    // Triggers the Randomization logic for ALL tracks based on intensity
+    triggerRandomization(intensityLevel) {
+        const zone = AUTOMATION_INTENSITIES[intensityLevel];
+        if (!zone) return;
+
+        this.tracks.forEach(t => {
+            if (t.type === 'automation') return; // Don't randomize the automation track itself
+
+            if (t.type === 'granular') {
+                this.randomizeTrackParams(t, zone.min, zone.max);
+                this.randomizeTrackModulators(t);
+            } else if (t.type === 'simple-drum') {
+                t.params.drumTune = Math.random();
+                t.params.drumDecay = Math.random();
+            }
+        });
+    }
+
 }
