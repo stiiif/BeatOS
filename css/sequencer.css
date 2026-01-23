@@ -5,7 +5,7 @@
     display: grid;
     /* TRK | Dynamic Steps | RND | ACTIONS */
     /* Remove fixed min-width (20px) and use minmax(0, 1fr) to allow steps to shrink */
-    grid-template-columns: 40px repeat(var(--num-steps, 32), minmax(0, 1fr)) 25px 125px;
+    grid-template-columns: 40px repeat(var(--num-steps, 64), minmax(0, 1fr)) 25px 125px;
     gap: 1px;
     width: 100%;
     padding-left: 4px;
