@@ -95,7 +95,9 @@ export class UIManager {
         });
 
         this.bindAutomationControls();
-        this.bindChokeGroupControl(); // NEW
+        
+        // --- NEW: Add Choke Selector to Header next to AUTO button ---
+        this.addChokeSelectorToHeader();
 
         const vis = document.getElementById('visualizer');
         if(vis) {
@@ -159,17 +161,48 @@ export class UIManager {
         }
     }
 
-    // New: Choke Group Dropdown Listener
-    bindChokeGroupControl() {
-        const sel = document.getElementById('chokeGroupSelect');
-        if(sel) {
-            sel.addEventListener('change', (e) => {
-                const t = this.tracks[this.selectedTrackIndex];
-                if(t) {
-                    t.chokeGroup = parseInt(e.target.value);
-                }
-            });
-        }
+    // New: Inject Choke Group Selector into the Header
+    addChokeSelectorToHeader() {
+        // Find the container where Sound Gen buttons are
+        // Assuming they are in a div.flex.gap-1.ml-2
+        const headerControls = document.querySelector('.right-pane .p-3 .flex.gap-1.ml-2');
+        if(!headerControls) return;
+
+        // Check if already exists to prevent dupes
+        if(document.getElementById('headerChokeContainer')) return;
+
+        const container = document.createElement('div');
+        container.id = 'headerChokeContainer';
+        container.className = 'flex items-center gap-1 ml-2 border-l border-neutral-700 pl-2';
+        
+        const label = document.createElement('span');
+        label.innerText = 'CHK';
+        label.className = 'text-[9px] font-bold text-neutral-500';
+        
+        const select = document.createElement('select');
+        select.id = 'chokeGroupSelect';
+        select.className = 'bg-neutral-800 text-neutral-300 text-[9px] border border-neutral-700 rounded px-1 py-1 outline-none hover:border-neutral-500 transition cursor-pointer w-10';
+        
+        // Options
+        const opts = ['-', '1', '2', '3', '4', '5', '6', '7', '8'];
+        opts.forEach((val, idx) => {
+            const opt = document.createElement('option');
+            opt.value = idx;
+            opt.innerText = val;
+            select.appendChild(opt);
+        });
+
+        select.addEventListener('change', (e) => {
+            const t = this.tracks[this.selectedTrackIndex];
+            if(t) {
+                t.chokeGroup = parseInt(e.target.value);
+            }
+        });
+
+        container.appendChild(label);
+        container.appendChild(select);
+        
+        headerControls.appendChild(container);
     }
 
     handleSliderWheel(e) {
@@ -329,14 +362,14 @@ export class UIManager {
         const lfoSection = document.getElementById('lfoSection');
         const typeLabel = document.getElementById('trackTypeLabel');
         const speedSel = document.getElementById('autoSpeedSelect');
-        const chokeSel = document.getElementById('chokeGroupSelect'); // NEW
+        const chokeSel = document.getElementById('chokeGroupSelect'); 
 
         if(granularControls) granularControls.classList.add('hidden');
         if(drumControls) drumControls.classList.add('hidden');
         if(lfoSection) lfoSection.classList.add('hidden');
         if(autoControls) autoControls.classList.add('hidden');
 
-        // Update Choke Selector (Available for all types except maybe Auto, but we can leave it)
+        // Update Choke Selector in Header
         if(chokeSel) chokeSel.value = t.chokeGroup || 0;
 
         if (t.type === 'automation') {
