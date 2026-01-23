@@ -13,8 +13,8 @@ export class Track {
         
         this.buffer = null;
         this.rmsMap = []; 
-        // For automation, steps will hold integers 0-5. For audio, booleans.
-        this.steps = new Array(NUM_STEPS).fill(0); 
+        // For automation, steps will hold integers 0-5
+        this.steps = new Array(NUM_STEPS).fill(0); // 0 = Off/False
         this.lfos = [new LFO(), new LFO(), new LFO()];
         
         this.playhead = 0; 
@@ -22,6 +22,7 @@ export class Track {
         this.muted = false;
         this.soloed = false;
         this.stepLock = false; 
+        this.ignoreRandom = false; // New property: Exclude from global/auto randomization
 
         this.bus = {
             input: null,

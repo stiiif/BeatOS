@@ -237,6 +237,13 @@ export class UIManager {
         actionsDiv.appendChild(createAction('Sg', () => this.toggleSoloGroup(groupIdx), 'Solo Group'));
         actionsDiv.appendChild(createAction('C', () => this.clearTrack(trk), 'Clear Track', 'erase'));
         actionsDiv.appendChild(createAction('Cg', () => this.clearGroup(groupIdx), 'Clear Group', 'erase'));
+        
+        // NEW EXCLUDE RANDOM BUTTON (X)
+        const btnX = createAction('X', (t) => this.toggleIgnoreRandom(t), 'Exclude from Auto Randomization (Rand Prms)');
+        btnX.id = `btnX_${trk}`;
+        if(trackObj.ignoreRandom) btnX.classList.add('exclude-active');
+        actionsDiv.appendChild(btnX);
+
         rowDiv.appendChild(actionsDiv);
         rowElements.push(actionsDiv);
         
@@ -352,7 +359,29 @@ export class UIManager {
     toggleMuteGroup(grpIdx) { const start = grpIdx * TRACKS_PER_GROUP; const end = start + TRACKS_PER_GROUP; const newState = !this.tracks[start]?.muted; for(let i=start; i<end; i++) { if(this.tracks[i]) { this.tracks[i].muted = newState; this.updateTrackStateUI(i); } } }
     toggleSolo(trk) { this.tracks[trk].soloed = !this.tracks[trk].soloed; this.updateTrackStateUI(trk); }
     toggleSoloGroup(grpIdx) { const start = grpIdx * TRACKS_PER_GROUP; const end = start + TRACKS_PER_GROUP; const newState = !this.tracks[start]?.soloed; for(let i=start; i<end; i++) { if(this.tracks[i]) { this.tracks[i].soloed = newState; this.updateTrackStateUI(i); } } }
-    updateTrackStateUI(trk) { const t = this.tracks[trk]; const btnM = document.getElementById(`btnM_${trk}`); const btnS = document.getElementById(`btnS_${trk}`); const btnL = document.getElementById(`btnL_${trk}`); if(t.muted) btnM.classList.add('mute-active'); else btnM.classList.remove('mute-active'); if(t.soloed) btnS.classList.add('solo-active'); else btnS.classList.remove('solo-active'); if(t.stepLock) btnL.classList.add('lock-active'); else btnL.classList.remove('lock-active'); if(this.trackRowElements[trk]) this.trackRowElements[trk].forEach(el => el.style.opacity = t.muted ? '0.4' : '1.0'); }
+    
+    // Toggle Ignore Random property
+    toggleIgnoreRandom(trk) {
+        this.tracks[trk].ignoreRandom = !this.tracks[trk].ignoreRandom;
+        const btn = document.getElementById(`btnX_${trk}`);
+        if(this.tracks[trk].ignoreRandom) btn.classList.add('exclude-active');
+        else btn.classList.remove('exclude-active');
+    }
+
+    updateTrackStateUI(trk) { 
+        const t = this.tracks[trk]; 
+        const btnM = document.getElementById(`btnM_${trk}`); 
+        const btnS = document.getElementById(`btnS_${trk}`); 
+        const btnL = document.getElementById(`btnL_${trk}`); 
+        const btnX = document.getElementById(`btnX_${trk}`);
+        
+        if(t.muted) btnM.classList.add('mute-active'); else btnM.classList.remove('mute-active'); 
+        if(t.soloed) btnS.classList.add('solo-active'); else btnS.classList.remove('solo-active'); 
+        if(t.stepLock) btnL.classList.add('lock-active'); else btnL.classList.remove('lock-active'); 
+        if(btnX) { if(t.ignoreRandom) btnX.classList.add('exclude-active'); else btnX.classList.remove('exclude-active'); }
+        
+        if(this.trackRowElements[trk]) this.trackRowElements[trk].forEach(el => el.style.opacity = t.muted ? '0.4' : '1.0'); 
+    }
     
     clearTrack(trk) { 
         if(this.tracks[trk].type === 'automation') {
@@ -521,6 +550,7 @@ export class UIManager {
                     muted: t.muted,
                     soloed: t.soloed,
                     stepLock: t.stepLock,
+                    ignoreRandom: t.ignoreRandom,
                     lfos: t.lfos.map(l => ({ wave: l.wave, rate: l.rate, amount: l.amount, target: l.target }))
                 }))
             });
@@ -537,6 +567,7 @@ export class UIManager {
                     t.muted = trackData.muted;
                     t.soloed = trackData.soloed;
                     t.stepLock = trackData.stepLock || false;
+                    t.ignoreRandom = trackData.ignoreRandom || false; // Restore Ignore Random
                     trackData.lfos.forEach((lData, lIdx) => {
                         if(lIdx < NUM_LFOS) {
                             t.lfos[lIdx].wave = lData.wave;

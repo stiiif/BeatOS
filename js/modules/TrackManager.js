@@ -110,8 +110,9 @@ export class TrackManager {
         snapshotData.forEach((data, i) => {
             if (this.tracks[i]) {
                 const t = this.tracks[i];
-                // Only restore params that get randomized to avoid overwriting volume/pan/mix decisions if not intended
-                // But user snapshot restores everything. Logic suggests reverting random changes.
+                // Check if track is excluded from randomization
+                if (t.ignoreRandom) return;
+
                 t.params.position = data.params.position;
                 t.params.spray = data.params.spray;
                 t.params.grainSize = data.params.grainSize;
@@ -140,6 +141,9 @@ export class TrackManager {
 
         this.tracks.forEach(t => {
             if (t.type === 'automation') return; 
+            
+            // Protect track if "Exclude Random" is enabled
+            if (t.ignoreRandom) return;
 
             if (t.type === 'granular') {
                 this.randomizeTrackParams(t, zone.min, zone.max);

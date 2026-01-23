@@ -130,6 +130,7 @@
 .action-btn.mute-active { color: #ef4444; background: #450a0a; }
 .action-btn.solo-active { color: #eab308; background: #422006; }
 .action-btn.lock-active { color: #06b6d4; background: #164e63; }
+.action-btn.exclude-active { color: #f472b6; background: #831843; }
 .action-btn.erase:hover { color: #ef4444; }
 
 .row-muted .step-btn { opacity: 0.3; }
