@@ -1,4 +1,4 @@
-// UI Manager Module - Updated for Bar Dividers (16 steps)
+// UI Manager Module - Updated for Choke Groups
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS } from '../utils/constants.js';
 
 export class UIManager {
@@ -181,30 +181,67 @@ export class UIManager {
         
         const label = document.createElement('span');
         label.innerText = 'CHK';
-        label.className = 'text-[9px] font-bold text-neutral-500';
-        
-        const select = document.createElement('select');
-        select.id = 'chokeGroupSelect';
-        select.className = 'bg-neutral-800 text-neutral-300 text-[9px] border border-neutral-700 rounded px-1 py-1 outline-none hover:border-neutral-500 transition cursor-pointer w-10';
-        
-        const opts = ['-', '1', '2', '3', '4', '5', '6', '7', '8'];
-        opts.forEach((val, idx) => {
-            const opt = document.createElement('option');
-            opt.value = idx;
-            opt.innerText = val;
-            select.appendChild(opt);
-        });
+        label.className = 'text-[9px] font-bold text-neutral-500 mr-1';
+        container.appendChild(label);
 
-        select.addEventListener('change', (e) => {
-            const t = this.tracks[this.selectedTrackIndex];
-            if(t) {
-                t.chokeGroup = parseInt(e.target.value);
+        // Create 8 small buttons instead of a select
+        const btnGroup = document.createElement('div');
+        btnGroup.className = 'flex gap-0.5';
+        
+        // Option 0 (Off) button - Optional, or just toggle active one off.
+        // Let's make 1-8 buttons. Clicking active one turns it off.
+        for(let i=1; i<=8; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'choke-btn w-4 h-4 text-[8px] bg-neutral-800 text-neutral-400 border border-neutral-700 rounded flex items-center justify-center hover:bg-neutral-700 transition';
+            btn.innerText = i;
+            btn.dataset.group = i;
+            btn.title = `Choke Group ${i}`;
+            
+            btn.addEventListener('click', () => {
+                const t = this.tracks[this.selectedTrackIndex];
+                if(!t) return;
+                
+                const group = parseInt(btn.dataset.group);
+                
+                if (t.chokeGroup === group) {
+                    // Toggle Off
+                    t.chokeGroup = 0;
+                } else {
+                    // Set New Group
+                    t.chokeGroup = group;
+                }
+                
+                // Update UI state for all buttons
+                this.updateChokeButtonsState();
+            });
+            
+            btnGroup.appendChild(btn);
+        }
+        
+        container.appendChild(btnGroup);
+        headerControls.appendChild(container);
+    }
+
+    // Helper to update the visual state of choke buttons
+    updateChokeButtonsState() {
+        const t = this.tracks[this.selectedTrackIndex];
+        if(!t) return;
+        
+        const currentGroup = t.chokeGroup;
+        const btns = document.querySelectorAll('.choke-btn');
+        
+        btns.forEach(btn => {
+            const group = parseInt(btn.dataset.group);
+            if (group === currentGroup) {
+                // Active Style
+                btn.classList.remove('bg-neutral-800', 'text-neutral-400');
+                btn.classList.add('bg-red-900', 'text-white', 'border-red-700');
+            } else {
+                // Inactive Style
+                btn.classList.add('bg-neutral-800', 'text-neutral-400');
+                btn.classList.remove('bg-red-900', 'text-white', 'border-red-700');
             }
         });
-
-        container.appendChild(label);
-        container.appendChild(select);
-        headerControls.appendChild(container);
     }
 
     handleSliderWheel(e) {
@@ -356,7 +393,7 @@ export class UIManager {
         
         this.updateKnobs();
         this.updateLfoUI();
-        this.updateTrackControlsVisibility(); 
+        this.updateTrackControlsVisibility(); // Ensure UI matches track type
         if (visualizerCallback) visualizerCallback();
     }
 
@@ -370,15 +407,15 @@ export class UIManager {
         const lfoSection = document.getElementById('lfoSection');
         const typeLabel = document.getElementById('trackTypeLabel');
         const speedSel = document.getElementById('autoSpeedSelect');
-        const chokeSel = document.getElementById('chokeGroupSelect'); 
+        // const chokeSel = document.getElementById('chokeGroupSelect'); // REMOVED (No longer used as select)
 
         if(granularControls) granularControls.classList.add('hidden');
         if(drumControls) drumControls.classList.add('hidden');
         if(lfoSection) lfoSection.classList.add('hidden');
         if(autoControls) autoControls.classList.add('hidden');
 
-        // Update Choke Selector in Header
-        if(chokeSel) chokeSel.value = t.chokeGroup || 0;
+        // Update Choke Buttons in Header
+        this.updateChokeButtonsState(); // NEW
 
         if (t.type === 'automation') {
             if(autoControls) autoControls.classList.remove('hidden');
