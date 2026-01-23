@@ -17,6 +17,9 @@ export class Scheduler {
         
         this.trackManager = null; 
         this.activeSnapshot = null; 
+
+        // DEBUG: Verify imported constant
+        console.log(`[Scheduler] Initialized. NUM_STEPS constant is: ${NUM_STEPS}`);
     }
 
     setTracks(tracks) {
@@ -56,6 +59,7 @@ export class Scheduler {
             this.activeSnapshot = null;
             this.tracks.forEach(t => { if(t.type === 'automation') t.lastAutoValue = 0; });
 
+            console.log("[Scheduler] Started playback.");
             this.schedule(scheduleVisualDrawCallback);
         }
     }
@@ -73,6 +77,8 @@ export class Scheduler {
         this.tracks.forEach(t => {
             if(t.stopAllSources) t.stopAllSources();
         });
+        
+        console.log("[Scheduler] Stopped playback.");
     }
 
     getIsPlaying() {
@@ -181,8 +187,25 @@ export class Scheduler {
         const trackLength = track.steps.length > 0 ? track.steps.length : NUM_STEPS;
         
         // Use absolute totalSteps divided by clockDivider
+        // Formula: Index = floor(Total / Divider) % Length
         const effectiveStepIndex = Math.floor(totalSteps / track.clockDivider) % trackLength;
         
+        // --- DEBUG LOGGING ---
+        // Only log when effective step changes to reduce spam, or if it wraps
+        const prevEffectiveStep = Math.floor((totalSteps - 1) / track.clockDivider) % trackLength;
+        
+        if (effectiveStepIndex !== prevEffectiveStep || totalSteps === 0) {
+            console.log(`[AutoTrack #${track.id}] Update:`, {
+                totalSteps: totalSteps,
+                clockDivider: track.clockDivider,
+                trackLength: trackLength,
+                calc: `Math.floor(${totalSteps} / ${track.clockDivider}) % ${trackLength}`,
+                effectiveIndex: effectiveStepIndex,
+                wrapsAt: trackLength * track.clockDivider
+            });
+        }
+        // ---------------------
+
         const currentValue = track.steps[effectiveStepIndex];
         const prevValue = track.lastAutoValue;
 
