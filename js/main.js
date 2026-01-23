@@ -39,43 +39,9 @@ visualizer.setTracks(tracks);
 scheduler.setUpdateMatrixHeadCallback((step) => uiManager.updateMatrixHead(step));
 scheduler.setRandomChokeCallback(() => uiManager.getRandomChokeInfo());
 
-// === HELPER: Update UI Visibility based on Track Type ===
+// Helper to refresh UI via UIManager
 function updateTrackControlsVisibility() {
-    const idx = uiManager.getSelectedTrackIndex();
-    const track = tracks[idx];
-    if (!track) return;
-
-    // Use UIManager's centralized logic for visibility
     uiManager.updateTrackControlsVisibility();
-    
-    // Update labels manually if needed, though UIManager handles most
-    const typeLabel = document.getElementById('trackTypeLabel');
-    if (track.type === 'simple-drum') {
-        typeLabel.textContent = "909 " + (track.params.drumType || 'KICK').toUpperCase();
-        typeLabel.className = "text-[10px] text-orange-400 font-mono uppercase truncate max-w-[80px]";
-        
-        // Update Drum Select Buttons State
-        document.querySelectorAll('.drum-sel-btn').forEach(btn => {
-            if (btn.dataset.drum === track.params.drumType) {
-                btn.classList.replace('text-neutral-400', 'text-white');
-                btn.classList.replace('bg-neutral-800', 'bg-orange-700');
-            } else {
-                btn.classList.replace('text-white', 'text-neutral-400');
-                btn.classList.replace('bg-orange-700', 'bg-neutral-800');
-            }
-        });
-    } else if (track.type === 'automation') {
-         // Handled by UIManager
-    } else {
-        // Granular
-        if (track.customSample) {
-            typeLabel.textContent = track.customSample.name;
-            typeLabel.className = "text-[10px] text-sky-400 font-mono uppercase truncate max-w-[80px]";
-        } else {
-            typeLabel.textContent = "GRANULAR";
-            typeLabel.className = "text-[10px] text-emerald-400 font-mono uppercase truncate max-w-[80px]";
-        }
-    }
 }
 
 // Override UIManager selectTrack to trigger our visibility update
@@ -84,7 +50,6 @@ uiManager.selectTrack = (idx, cb) => {
     originalSelectTrack(idx, cb);
     updateTrackControlsVisibility();
 };
-
 
 // Add track functionality
 function addTrack() {
@@ -156,6 +121,35 @@ document.getElementById('bpmInput').addEventListener('change', e => {
     scheduler.setBPM(e.target.value);
 });
 
+// Scope Mode Toggle Buttons
+document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
+    visualizer.setScopeMode('wave');
+    const btnWave = e.target;
+    const btnSpec = document.getElementById('scopeBtnSpec');
+    
+    btnWave.classList.replace('text-neutral-400', 'bg-neutral-600');
+    btnWave.classList.replace('hover:text-white', 'text-white');
+    btnWave.classList.add('rounded-sm');
+    
+    btnSpec.classList.replace('bg-neutral-600', 'text-neutral-400');
+    btnSpec.classList.replace('text-white', 'hover:text-white');
+    btnSpec.classList.remove('rounded-sm');
+});
+
+document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
+    visualizer.setScopeMode('spectrum');
+    const btnSpec = e.target;
+    const btnWave = document.getElementById('scopeBtnWave');
+    
+    btnSpec.classList.replace('text-neutral-400', 'bg-neutral-600');
+    btnSpec.classList.replace('hover:text-white', 'text-white');
+    btnSpec.classList.add('rounded-sm');
+    
+    btnWave.classList.replace('bg-neutral-600', 'text-neutral-400');
+    btnWave.classList.replace('text-white', 'hover:text-white');
+    btnWave.classList.remove('rounded-sm');
+});
+
 // Pattern Randomization
 document.getElementById('randomizeAllPatternsBtn').addEventListener('click', () => {
     uiManager.randomizeAllPatterns();
@@ -196,6 +190,9 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
     }, 300);
     
     tracks.forEach(t => {
+        // Exclude tracks set to ignore random
+        if(t.ignoreRandom) return;
+
         if(t.type === 'granular') {
             trackManager.randomizeTrackParams(t, releaseMin, releaseMax);
             trackManager.randomizeTrackModulators(t);
@@ -330,20 +327,6 @@ document.getElementById('load909Btn').addEventListener('click', () => {
     ctx.fillStyle = '#f97316'; // orange
     ctx.fillText("909 ENGINE ACTIVE", 10, 40);
 });
-
-// --- NEW: AUTOMATION TRACK BUTTON (ADD THIS IF MISSING IN HTML) ---
-// Since we don't have a button in HTML yet, let's assume we might add one or hijack one.
-// But wait, the user wants a "new sequencer lane".
-// Let's add a button to the controls area or similar. 
-// Actually, let's convert the current track to automation if user clicks a button.
-// But better: Add a button to the Sound Gen area.
-
-// Create/Convert to Automation Track
-// We'll create a button dynamically if it doesn't exist, or you can add it to index.html
-// For now, let's create a "Load Auto" button logic similar to Load 909
-// Check if button exists first (it doesn't in provided HTML).
-// Let's rely on the user adding a button with id="loadAutoBtn" to index.html
-// OR we can add it to the DOM dynamically here for convenience.
 
 // Dynamic insertion of "Auto" button next to 909 button
 const btnContainer = document.querySelector('.flex.gap-1.ml-2');

@@ -9,6 +9,7 @@ export class Visualizer {
         this.drawQueue = [];
         this.tracks = [];
         this.selectedTrackIndex = 0;
+        this.scopeMode = 'wave'; // 'wave' or 'spectrum'
     }
 
     setTracks(tracks) {
@@ -17,6 +18,10 @@ export class Visualizer {
 
     setSelectedTrackIndex(index) {
         this.selectedTrackIndex = index;
+    }
+
+    setScopeMode(mode) {
+        this.scopeMode = mode;
     }
 
     resizeCanvas() {
@@ -52,26 +57,71 @@ export class Visualizer {
             }
         }
         
-        // Continuous animate buffer scope to show LFOs
+        // Continuous animate buffer scope to show LFOs or Spectrum
         this.drawBufferDisplay();
         
         requestAnimationFrame(() => this.drawVisuals());
     }
 
     drawBufferDisplay() {
-        const audioCtx = this.audioEngine.getContext();
-        if (!audioCtx || !this.tracks[this.selectedTrackIndex] || !this.tracks[this.selectedTrackIndex].buffer) {
-            this.bufCtx.fillStyle = '#111';
-            this.bufCtx.fillRect(0,0,this.bufCanvas.width, this.bufCanvas.height);
-            this.bufCtx.fillStyle = '#444';
-            this.bufCtx.font = '10px monospace';
-            this.bufCtx.fillText("No Buffer Data", 10, 40);
-            return;
-        }
-
         const w = this.bufCanvas.width;
         const h = this.bufCanvas.height;
         const t = this.tracks[this.selectedTrackIndex];
+        const audioCtx = this.audioEngine.getContext();
+
+        // --- SPECTRUM MODE ---
+        if (this.scopeMode === 'spectrum') {
+            this.bufCtx.fillStyle = '#111';
+            this.bufCtx.fillRect(0, 0, w, h);
+
+            if (!audioCtx || !t || !t.bus || !t.bus.analyser) {
+                this.bufCtx.fillStyle = '#444';
+                this.bufCtx.font = '10px monospace';
+                this.bufCtx.fillText("No Signal", 10, 40);
+                return;
+            }
+
+            const analyser = t.bus.analyser;
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            const barWidth = (w / bufferLength) * 2.5; 
+            let x = 0;
+
+            for(let i = 0; i < bufferLength; i++) {
+                const barHeight = (dataArray[i] / 255) * h;
+                
+                // Color based on frequency/height (Red/Orange/Yellow/Green/Blue/Purple)
+                const hue = 240 - ((i / bufferLength) * 240); 
+                this.bufCtx.fillStyle = `hsl(${hue}, 80%, 50%)`;
+                this.bufCtx.fillRect(x, h - barHeight, barWidth, barHeight);
+
+                x += barWidth + 1;
+                if (x > w) break; 
+            }
+            return;
+        }
+
+        // --- WAVEFORM MODE (Default) ---
+        if (!audioCtx || !t || !t.buffer) {
+            this.bufCtx.fillStyle = '#111';
+            this.bufCtx.fillRect(0,0,w,h);
+            this.bufCtx.fillStyle = '#444';
+            this.bufCtx.font = '10px monospace';
+            
+            if (t && t.type === 'simple-drum') {
+                this.bufCtx.fillStyle = '#f97316'; // orange
+                this.bufCtx.fillText("909 ENGINE ACTIVE", 10, 40);
+            } else if (t && t.type === 'automation') {
+                this.bufCtx.fillStyle = '#818cf8'; // indigo
+                this.bufCtx.fillText("AUTOMATION TRACK", 10, 40);
+            } else {
+                this.bufCtx.fillText("No Buffer Data", 10, 40);
+            }
+            return;
+        }
+
         const data = t.buffer.getChannelData(0);
         
         // Clear

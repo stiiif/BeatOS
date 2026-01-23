@@ -32,12 +32,9 @@ export class AudioEngine {
 
         if (type === 'lp') {
             // Low Pass: Precision in lower range (Standard Audio Taper)
-            // y = x^3 stays low for longer, giving fine control over low frequencies
             return min + (max - min) * Math.pow(norm, 3);
         } else {
             // High Pass: Precision in higher range
-            // y = 1 - (1-x)^3 rises quickly and flattens at the top,
-            // giving fine control over high frequencies
             return min + (max - min) * (1 - Math.pow(1 - norm, 3));
         }
     }
@@ -51,13 +48,15 @@ export class AudioEngine {
         const lp = ctx.createBiquadFilter();
         const vol = ctx.createGain();
         const pan = ctx.createStereoPanner();
+        const analyser = ctx.createAnalyser(); // NEW: Analyzer node for spectrum
+        
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.85;
 
         hp.type = 'highpass';
-        // Apply mapping for High Pass
         hp.frequency.value = this.getMappedFrequency(track.params.hpFilter, 'hp');
         
         lp.type = 'lowpass';
-        // Apply mapping for Low Pass
         lp.frequency.value = this.getMappedFrequency(track.params.filter, 'lp');
         
         vol.gain.value = track.params.volume;
@@ -67,9 +66,10 @@ export class AudioEngine {
         hp.connect(lp);
         lp.connect(vol);
         vol.connect(pan);
-        pan.connect(ctx.destination);
+        pan.connect(analyser); // Connect to analyser
+        analyser.connect(ctx.destination); // Analyser to output
 
-        track.bus = { input, hp, lp, vol, pan };
+        track.bus = { input, hp, lp, vol, pan, analyser }; // Store analyser in bus
     }
 
     analyzeBuffer(buffer) {
@@ -159,7 +159,7 @@ export class AudioEngine {
             }
         } else { 
             // Texture / FM - Limited to max 1.0s
-            const dur = 0.2 + (Math.random() * 0.8); // Random duration between 0.2s and 1.0s
+            const dur = 0.2 + (Math.random() * 0.8);
             buf = makeBuffer(dur);
             const d = buf.getChannelData(0);
             const modFreq = 10 + Math.random() * 400;
@@ -190,110 +190,60 @@ export class AudioEngine {
         const tune = track.params.drumTune || 0.5; // 0 to 1
         const decayVal = track.params.drumDecay || 0.5; // 0 to 1
 
-        // Output node (connected to track bus)
         const out = track.bus.input;
 
-        // Ensure filter params are mapped correctly for drums
-        // Note: For granular synth, params are updated in playGrain/scheduleNote.
-        // For drums, we apply the bus filter update here if needed, or assume track.bus is already set.
-        // track.bus.hp and lp frequencies were set in initTrackBus, but might be updated by modulation?
-        // Let's force update them here to be safe and responsive to slider changes
         if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.getMappedFrequency(track.params.hpFilter, 'hp'), t);
         if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(this.getMappedFrequency(track.params.filter, 'lp'), t);
 
         if (type === 'kick') {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
-            
             const baseFreq = 50 + (tune * 100);
             const decay = 0.1 + (decayVal * 0.5);
-
-            osc.connect(gain);
-            gain.connect(out);
-
+            osc.connect(gain); gain.connect(out);
             osc.frequency.setValueAtTime(150 + (tune * 200), t);
             osc.frequency.exponentialRampToValueAtTime(baseFreq, t + 0.02);
-            osc.frequency.exponentialRampToValueAtTime(30, t + decay); // Drop to sub
-
+            osc.frequency.exponentialRampToValueAtTime(30, t + decay);
             gain.gain.setValueAtTime(1, t);
             gain.gain.exponentialRampToValueAtTime(0.01, t + decay);
-
-            osc.start(t);
-            osc.stop(t + decay + 0.1);
+            osc.start(t); osc.stop(t + decay + 0.1);
         } 
         else if (type === 'snare') {
-            // Tone
             const osc = ctx.createOscillator();
             const oscGain = ctx.createGain();
             const toneFreq = 180 + (tune * 100);
             const toneDecay = 0.1 + (decayVal * 0.2);
-            
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(toneFreq, t);
-            osc.connect(oscGain);
-            oscGain.connect(out);
-            
-            oscGain.gain.setValueAtTime(0.5, t);
-            oscGain.gain.exponentialRampToValueAtTime(0.01, t + toneDecay);
-            osc.start(t);
-            osc.stop(t + toneDecay + 0.1);
+            osc.type = 'triangle'; osc.frequency.setValueAtTime(toneFreq, t);
+            osc.connect(oscGain); oscGain.connect(out);
+            oscGain.gain.setValueAtTime(0.5, t); oscGain.gain.exponentialRampToValueAtTime(0.01, t + toneDecay);
+            osc.start(t); osc.stop(t + toneDecay + 0.1);
 
-            // Noise (Snappy)
             const bufferSize = ctx.sampleRate * (0.2 + decayVal * 0.2);
             const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
             const data = buffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) {
-                data[i] = Math.random() * 2 - 1;
-            }
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
             const noise = ctx.createBufferSource();
             noise.buffer = buffer;
             const noiseFilter = ctx.createBiquadFilter();
-            noiseFilter.type = 'highpass';
-            noiseFilter.frequency.value = 1000;
+            noiseFilter.type = 'highpass'; noiseFilter.frequency.value = 1000;
             const noiseGain = ctx.createGain();
-            
-            noise.connect(noiseFilter);
-            noiseFilter.connect(noiseGain);
-            noiseGain.connect(out);
-            
-            noiseGain.gain.setValueAtTime(0.8, t);
-            noiseGain.gain.exponentialRampToValueAtTime(0.01, t + (0.1 + decayVal * 0.2));
+            noise.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(out);
+            noiseGain.gain.setValueAtTime(0.8, t); noiseGain.gain.exponentialRampToValueAtTime(0.01, t + (0.1 + decayVal * 0.2));
             noise.start(t);
         }
         else if (type === 'closed-hat' || type === 'open-hat') {
             const isOpen = type === 'open-hat';
             const baseDecay = isOpen ? (0.3 + decayVal * 0.5) : (0.05 + decayVal * 0.05);
-            
-            // Metallic Noise (Multiple Square Waves logic simplified to filtered noise for code brevity)
             const bufferSize = ctx.sampleRate * baseDecay;
             const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
             const data = buffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) {
-                data[i] = (Math.random() * 2 - 1); // White noise base
-            }
-            
-            const src = ctx.createBufferSource();
-            src.buffer = buffer;
-            
-            const bpf = ctx.createBiquadFilter();
-            bpf.type = 'bandpass';
-            bpf.frequency.value = 8000 + (tune * 4000);
-            bpf.Q.value = 1;
-
-            const hpf = ctx.createBiquadFilter();
-            hpf.type = 'highpass';
-            hpf.frequency.value = 5000;
-
+            for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1);
+            const src = ctx.createBufferSource(); src.buffer = buffer;
+            const bpf = ctx.createBiquadFilter(); bpf.type = 'bandpass'; bpf.frequency.value = 8000 + (tune * 4000); bpf.Q.value = 1;
+            const hpf = ctx.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 5000;
             const gain = ctx.createGain();
-            
-            src.connect(bpf);
-            bpf.connect(hpf);
-            hpf.connect(gain);
-            gain.connect(out);
-
-            gain.gain.setValueAtTime(0.6, t);
-            gain.gain.exponentialRampToValueAtTime(0.01, t + baseDecay);
-            
+            src.connect(bpf); bpf.connect(hpf); hpf.connect(gain); gain.connect(out);
+            gain.gain.setValueAtTime(0.6, t); gain.gain.exponentialRampToValueAtTime(0.01, t + baseDecay);
             src.start(t);
         }
         else if (type === 'cymbal') {
@@ -301,34 +251,16 @@ export class AudioEngine {
             const bufferSize = ctx.sampleRate * decay;
             const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
             const data = buffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) {
-                data[i] = (Math.random() * 2 - 1);
-            }
-            const src = ctx.createBufferSource();
-            src.buffer = buffer;
-            
-            // Cymbal filtering
+            for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1);
+            const src = ctx.createBufferSource(); src.buffer = buffer;
             const bpf1 = ctx.createBiquadFilter(); bpf1.type = 'bandpass'; bpf1.frequency.value = 300;
             const bpf2 = ctx.createBiquadFilter(); bpf2.type = 'bandpass'; bpf2.frequency.value = 8000;
             const mixGain = ctx.createGain();
-            
             src.connect(mixGain);
-            
-            // Parallel filtering structure is complex in one block, let's do simple metallic noise
-            // Simpler approach: Highpassed noisy array
-            const hpf = ctx.createBiquadFilter();
-            hpf.type = 'highpass';
-            hpf.frequency.value = 4000 + (tune * 2000);
-            
+            const hpf = ctx.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 4000 + (tune * 2000);
             const env = ctx.createGain();
-            
-            src.connect(hpf);
-            hpf.connect(env);
-            env.connect(out);
-            
-            env.gain.setValueAtTime(0.5, t);
-            env.gain.exponentialRampToValueAtTime(0.01, t + decay);
-            
+            src.connect(hpf); hpf.connect(env); env.connect(out);
+            env.gain.setValueAtTime(0.5, t); env.gain.exponentialRampToValueAtTime(0.01, t + decay);
             src.start(t);
         }
     }
