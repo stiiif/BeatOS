@@ -210,16 +210,21 @@ export class Scheduler {
         const prevValue = track.lastAutoValue;
 
         if (currentValue !== prevValue) {
+            console.log(`[AutoTrack #${track.id}] CHANGE DETECTED: ${prevValue} -> ${currentValue}`);
+
             if (prevValue === 0 && currentValue > 0) {
+                console.log(`   -> SNAPSHOT & RANDOMIZE (Level ${currentValue})`);
                 if (!this.activeSnapshot) {
                     this.activeSnapshot = this.trackManager.saveGlobalSnapshot();
                 }
                 this.trackManager.triggerRandomization(currentValue);
             }
             else if (prevValue > 0 && currentValue > 0) {
+                console.log(`   -> RE-RANDOMIZE (Level ${currentValue})`);
                 this.trackManager.triggerRandomization(currentValue);
             }
             else if (prevValue > 0 && currentValue === 0) {
+                console.log(`   -> RESTORE SNAPSHOT`);
                 if (this.activeSnapshot) {
                     this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
                     this.activeSnapshot = null;
