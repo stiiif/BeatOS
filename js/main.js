@@ -8,7 +8,7 @@ import { TrackLibrary } from './modules/TrackLibrary.js';
 import { UIManager } from './ui/UIManager.js';
 import { Visualizer } from './ui/Visualizer.js';
 import { LayoutManager } from './ui/LayoutManager.js';
-import { NUM_LFOS } from './utils/constants.js';
+import { NUM_LFOS, TRACKS_PER_GROUP } from './utils/constants.js';
 
 // Initialize all systems
 const audioEngine = new AudioEngine();
@@ -33,10 +33,10 @@ const tracks = trackManager.getTracks();
 
 // Wire up UI/Visualizer dependencies
 uiManager.setTracks(tracks);
+uiManager.setTrackManager(trackManager); // NEW: Pass track manager for pattern logic
 visualizer.setTracks(tracks);
 
 // Setup UI callbacks
-// FIX: Pass 'total' (totalStepsPlayed) to UIManager so the playhead doesn't loop prematurely on slow tracks
 scheduler.setUpdateMatrixHeadCallback((step, total) => uiManager.updateMatrixHead(step, total));
 scheduler.setRandomChokeCallback(() => uiManager.getRandomChokeInfo());
 
@@ -68,7 +68,7 @@ function addTrack() {
 // Add group functionality
 function addGroup() {
     const tracksAdded = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < TRACKS_PER_GROUP; i++) {
         const newId = trackManager.addTrack();
         if (newId !== null) {
             tracksAdded.push(newId);
@@ -120,6 +120,14 @@ document.getElementById('stopBtn').addEventListener('click', () => {
 document.getElementById('bpmInput').addEventListener('change', e => {
     scheduler.setBPM(e.target.value);
 });
+
+// Apply Groove Button - NEW CONNECTION
+const applyGrooveBtn = document.getElementById('applyGrooveBtn');
+if (applyGrooveBtn) {
+    applyGrooveBtn.addEventListener('click', () => {
+        uiManager.applyGroove();
+    });
+}
 
 // Scope Mode Toggle Buttons
 document.getElementById('scopeBtnWave').addEventListener('click', (e) => {

@@ -266,6 +266,33 @@
                     </div>
                 </div>
 
+                <!-- NEW: GROOVE GENERATOR CONTROLS -->
+                <div class="pt-2 border-t border-neutral-800">
+                    <div class="flex justify-between items-end mb-1">
+                        <label class="text-[10px] text-neutral-500 uppercase font-bold"><i class="fas fa-music mr-1"></i> Groove Generator</label>
+                    </div>
+                    <div class="bg-neutral-800/50 p-2 rounded border border-neutral-800 space-y-2">
+                        <div class="flex gap-2">
+                             <select id="patternSelect" class="flex-1 bg-neutral-900 text-neutral-300 text-[10px] rounded border border-neutral-700 p-1 outline-none">
+                                <option value="">Select Pattern...</option>
+                                <!-- Populated by JS -->
+                             </select>
+                             <select id="targetGroupSelect" class="w-20 bg-neutral-900 text-neutral-300 text-[10px] rounded border border-neutral-700 p-1 outline-none">
+                                <!-- Populated by JS -->
+                             </select>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[9px] text-neutral-500 font-bold w-8">RND %</span>
+                            <input type="range" id="patternInfluence" min="0" max="100" value="100" class="flex-1 h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer">
+                            <span id="patternInfluenceVal" class="text-[9px] text-emerald-400 font-mono w-6 text-right">100</span>
+                        </div>
+                        <button id="applyGrooveBtn" class="w-full text-[10px] bg-emerald-900/40 hover:bg-emerald-800 text-emerald-300 py-1 rounded transition border border-emerald-900/50 font-bold">
+                            APPLY GROOVE
+                        </button>
+                    </div>
+                </div>
+
+
                 <!-- Global Track Effects (Bus) - Always Visible -->
                 <div class="pt-2 border-t border-neutral-800">
                     <div class="flex justify-between items-end mb-1">

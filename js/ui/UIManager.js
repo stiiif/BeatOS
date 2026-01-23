@@ -1,9 +1,11 @@
-// UI Manager Module - Updated for Choke Groups & Debugging
-import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS } from '../utils/constants.js';
+// UI Manager Module - Updated for Refinement & Polish
+import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS, MAX_TRACKS } from '../utils/constants.js';
+import { PatternLibrary } from '../modules/PatternLibrary.js';
 
 export class UIManager {
     constructor() {
         this.tracks = [];
+        this.trackManager = null; 
         this.selectedTrackIndex = 0;
         this.selectedLfoIndex = 0;
         this.matrixStepElements = [];
@@ -14,7 +16,9 @@ export class UIManager {
         this.randomChokeGroups = [];
         this.basePanValues = [];
         this.globalPanShift = 0;
+        this.patternLibrary = new PatternLibrary();
         
+        // Define Keyboard Mapping
         this.keyMapping = {
             'Digit1': 0, 'KeyQ': 1, 'KeyA': 2, 'KeyZ': 3,
             'Digit2': 4, 'KeyW': 5, 'KeyS': 6, 'KeyX': 7,
@@ -26,7 +30,7 @@ export class UIManager {
             'Digit8': 28, 'KeyI': 29, 'KeyK': 30, 'Comma': 31
         };
         
-        console.log(`[UIManager] Init. NUM_STEPS: ${NUM_STEPS}`);
+        // IMMEDIATE CSS UPDATE in Constructor
         document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
     }
 
@@ -34,9 +38,14 @@ export class UIManager {
         this.tracks = tracks;
     }
 
+    setTrackManager(tm) {
+        this.trackManager = tm;
+    }
+
     initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
         
+        // Ensure CSS var is set again
         document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
         this.generateLfoTabs();
 
@@ -53,12 +62,16 @@ export class UIManager {
             const div = document.createElement('div');
             div.className = 'header-cell';
             div.innerText = i+1;
+            div.id = `header-step-${i}`; // ADDED ID for dynamic styling updates
             if (i % 4 === 0) div.classList.add('text-neutral-400', 'font-bold');
+            
+            // Dividers logic: 16-step (Bar) takes precedence over 4-step (Beat)
             if ((i + 1) % 16 === 0 && i !== NUM_STEPS - 1) {
                 div.classList.add('bar-divider');
             } else if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) {
                 div.classList.add('beat-divider');
             }
+            
             headerContainer.appendChild(div);
         }
 
@@ -102,6 +115,9 @@ export class UIManager {
 
         this.bindAutomationControls();
         this.addChokeSelectorToHeader();
+        
+        // --- Initialize Groove Controls ---
+        this.initGrooveControls();
 
         const vis = document.getElementById('visualizer');
         if(vis) {
@@ -153,6 +169,156 @@ export class UIManager {
         }
     }
 
+    initGrooveControls() {
+        const patternSelect = document.getElementById('patternSelect');
+        const targetGroupSelect = document.getElementById('targetGroupSelect');
+        const patternInfluence = document.getElementById('patternInfluence');
+        const patternInfluenceVal = document.getElementById('patternInfluenceVal');
+
+        if(patternSelect) {
+            patternSelect.innerHTML = '<option value="">Select Pattern...</option>';
+            const patterns = this.patternLibrary.getPatterns();
+            patterns.sort((a,b) => a.name.localeCompare(b.name));
+            patterns.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.innerText = `${p.name} (${p.region || 'World'})`;
+                patternSelect.appendChild(opt);
+            });
+        }
+
+        if(targetGroupSelect) {
+            targetGroupSelect.innerHTML = '';
+            const maxGroups = Math.ceil(MAX_TRACKS / TRACKS_PER_GROUP);
+            for(let i=0; i<maxGroups; i++) {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.innerText = `Group ${i+1} (Trk ${i*4+1}-${(i+1)*4})`;
+                targetGroupSelect.appendChild(opt);
+            }
+        }
+
+        if(patternInfluence) {
+            patternInfluence.addEventListener('input', (e) => {
+                if(patternInfluenceVal) patternInfluenceVal.innerText = e.target.value;
+            });
+        }
+    }
+
+    // --- APPLY GROOVE LOGIC ---
+    applyGroove() {
+        const patId = parseInt(document.getElementById('patternSelect').value);
+        const grpId = parseInt(document.getElementById('targetGroupSelect').value);
+        const influence = parseInt(document.getElementById('patternInfluence').value) / 100.0;
+
+        if (isNaN(patId)) { alert("Please select a pattern first."); return; }
+        if (isNaN(grpId)) { alert("Please select a target group."); return; }
+
+        const pattern = this.patternLibrary.getPatternById(patId);
+        if (!pattern) return;
+
+        const startTrack = grpId * TRACKS_PER_GROUP;
+        const patternTrackKeys = Object.keys(pattern.tracks);
+        
+        // Update Grid Visuals based on Time Signature
+        this.updateGridVisuals(pattern.time_sig);
+
+        // Loop through the 4 tracks in the group
+        for (let i = 0; i < TRACKS_PER_GROUP; i++) {
+            const targetTrackId = startTrack + i;
+            
+            // Check if track exists and isn't locked/automation
+            if (this.tracks[targetTrackId] && !this.tracks[targetTrackId].stepLock && this.tracks[targetTrackId].type !== 'automation') {
+                
+                const key = patternTrackKeys[i % patternTrackKeys.length];
+                const binaryString = pattern.tracks[key]; // "10010..."
+                const instrumentName = key; // "kick", "bell", etc.
+
+                const targetTrack = this.tracks[targetTrackId];
+
+                // 1. Auto-Configure Sound (Smart Mapping)
+                if (this.trackManager) {
+                    this.trackManager.autoConfigureTrack(targetTrack, instrumentName);
+                }
+
+                // 2. Populate Steps (Weighted Random)
+                for (let s = 0; s < NUM_STEPS; s++) {
+                    // Safety check: binaryString might be shorter than NUM_STEPS
+                    // If shorter, we wrap (loop) the pattern
+                    // If longer, we cut it off (NUM_STEPS loop limit)
+                    // binaryString usually 64. NUM_STEPS usually 64.
+                    
+                    const charIndex = s % binaryString.length;
+                    const char = binaryString[charIndex];
+                    
+                    // Interpret '1' as hit, '0' or undefined as empty
+                    const targetStep = char === '1';
+                    
+                    const roll = Math.random();
+                    
+                    if (roll < influence) {
+                        // Adhere to pattern
+                        targetTrack.steps[s] = targetStep;
+                    } else {
+                        // Random deviation
+                        // 20% chance of hit
+                        targetTrack.steps[s] = Math.random() < 0.2; 
+                    }
+                    
+                    // Update UI Button Class
+                    const btn = this.matrixStepElements[targetTrackId][s];
+                    if (btn) {
+                        if (targetTrack.steps[s]) btn.classList.add('active');
+                        else btn.classList.remove('active');
+                    }
+                }
+            }
+        }
+        
+        // Update selection to first track of group to show new sound settings
+        this.selectTrack(startTrack, this.visualizerCallback);
+    }
+
+    // NEW: Visual Grid Update for Time Sigs
+    updateGridVisuals(timeSig) {
+        // Reset all dividers first
+        for(let i=0; i<NUM_STEPS; i++) {
+            const div = document.getElementById(`header-step-${i}`);
+            // Also need to update the BUTTONS in the grid rows
+            if(div) {
+                div.classList.remove('beat-divider', 'bar-divider', 'triplet-divider');
+                // Re-apply default logic if needed, or apply new logic
+                if (timeSig === '12/8' || timeSig === '6/8') {
+                     // Triplet feel: Every 3 steps = 1 beat?
+                     // 12/8 = 4 beats of 3 notes. 
+                     // Bar lines every 12 steps?
+                     // Let's mark every 3rd step
+                     if ((i + 1) % 12 === 0 && i !== NUM_STEPS - 1) div.classList.add('bar-divider');
+                     else if ((i + 1) % 3 === 0 && i !== NUM_STEPS - 1) div.classList.add('triplet-divider');
+                } else {
+                    // Standard 4/4
+                    if ((i + 1) % 16 === 0 && i !== NUM_STEPS - 1) div.classList.add('bar-divider');
+                    else if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) div.classList.add('beat-divider');
+                }
+            }
+            
+            // Now update the rows buttons
+            this.tracks.forEach((t, tIdx) => {
+                const btn = this.matrixStepElements[tIdx][i];
+                if(btn) {
+                    btn.classList.remove('beat-divider', 'bar-divider', 'triplet-divider');
+                    if (timeSig === '12/8' || timeSig === '6/8') {
+                        if ((i + 1) % 12 === 0 && i !== NUM_STEPS - 1) btn.classList.add('bar-divider');
+                        else if ((i + 1) % 3 === 0 && i !== NUM_STEPS - 1) btn.classList.add('triplet-divider');
+                    } else {
+                        if ((i + 1) % 16 === 0 && i !== NUM_STEPS - 1) btn.classList.add('bar-divider');
+                        else if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) btn.classList.add('beat-divider');
+                    }
+                }
+            });
+        }
+    }
+
     bindAutomationControls() {
         const sel = document.getElementById('autoSpeedSelect');
         if(sel) {
@@ -179,6 +345,7 @@ export class UIManager {
         label.className = 'text-[9px] font-bold text-neutral-500 mr-1';
         container.appendChild(label);
 
+        // Create 8 small buttons instead of a select
         const btnGroup = document.createElement('div');
         btnGroup.className = 'flex gap-0.5';
         
@@ -282,6 +449,7 @@ export class UIManager {
             btn.style.setProperty('--step-group-color', groupColor);
             btn.style.setProperty('--step-group-color-glow', groupColorGlow);
             
+            // Dividers Logic: Bar (16) vs Beat (4)
             if ((step + 1) % 16 === 0 && step !== NUM_STEPS - 1) {
                 btn.classList.add('bar-divider');
             } else if ((step + 1) % 4 === 0 && step !== NUM_STEPS - 1) {
@@ -391,7 +559,7 @@ export class UIManager {
         const lfoSection = document.getElementById('lfoSection');
         const typeLabel = document.getElementById('trackTypeLabel');
         const speedSel = document.getElementById('autoSpeedSelect');
-        // chokeSel REMOVED from here
+        const chokeSel = document.getElementById('chokeGroupSelect'); 
 
         if(granularControls) granularControls.classList.add('hidden');
         if(drumControls) drumControls.classList.add('hidden');
@@ -447,7 +615,6 @@ export class UIManager {
         }
     }
 
-    // UPDATE MATRIX HEAD with absolute step support
     updateMatrixHead(currentStep, totalStepsPlayed) {
         // Use totalStepsPlayed if available, otherwise fallback to currentStep
         const masterStep = (typeof totalStepsPlayed !== 'undefined') ? totalStepsPlayed : currentStep;

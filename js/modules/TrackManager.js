@@ -154,4 +154,106 @@ export class TrackManager {
             }
         });
     }
+
+    // --- INSTRUMENT AUTO-CONFIGURATION (GROOVE GEN) ---
+    autoConfigureTrack(track, instrumentName) {
+        if (track.stepLock || track.type === 'automation') return; // Safety check
+
+        const name = instrumentName.toLowerCase();
+        let targetType = 'granular';
+        let params = { ...track.params };
+        let bufferType = 'texture';
+
+        // Heuristic Mapping
+        if (name.includes('kick') || name.includes('surdo') || name.includes('bombo') || 
+            name.includes('tambora') || name.includes('manman') || name.includes('boula') || 
+            name.includes('barril') || name.includes('atumpan')) {
+            
+            targetType = 'simple-drum';
+            params.drumType = 'kick';
+            params.drumTune = 0.3; // Lower pitch
+            params.drumDecay = 0.6; // Longer decay
+            params.filter = 5000;
+            params.hpFilter = 20;
+
+        } else if (name.includes('snare') || name.includes('caixa') || name.includes('repinique') || 
+                   name.includes('kidi') || name.includes('sabar') || name.includes('djembe') || 
+                   name.includes('conga') || name.includes('bongo') || name.includes('kaganu')) {
+            
+            targetType = 'simple-drum';
+            params.drumType = 'snare';
+            params.drumTune = 0.6;
+            params.drumDecay = 0.4;
+            params.filter = 12000;
+            params.hpFilter = 100;
+
+        } else if (name.includes('hat') || name.includes('shaker') || name.includes('maraca') || 
+                   name.includes('ganza') || name.includes('cascabeles') || name.includes('kata') || 
+                   name.includes('guiro') || name.includes('shekere')) {
+            
+            targetType = 'simple-drum';
+            params.drumType = 'closed-hat'; // Or open based on string density? Default closed
+            params.drumTune = 0.7;
+            params.drumDecay = 0.3; // Short
+            params.filter = 20000;
+            params.hpFilter = 2000;
+
+        } else if (name.includes('bell') || name.includes('agogo') || name.includes('ogan') || 
+                   name.includes('clave') || name.includes('wood') || name.includes('triangle') || 
+                   name.includes('gong') || name.includes('chico') || name.includes('cowbell')) {
+            
+            // Use Granular engine with FM texture buffer
+            targetType = 'granular';
+            bufferType = 'texture'; 
+            params.position = Math.random(); // Random FM spot
+            params.spray = 0;
+            params.grainSize = 0.05; // Perussive
+            params.density = 20;
+            params.pitch = 2.0; // Higher pitch
+            params.relGrain = 0.3;
+            params.ampAttack = 0.001;
+            params.ampDecay = 0.15;
+            params.ampRelease = 0.1;
+            params.filter = 15000;
+            params.hpFilter = 500;
+
+        } else if (name.includes('guitar') || name.includes('cuatro') || name.includes('charango') || 
+                   name.includes('harp') || name.includes('piano') || name.includes('kora') || 
+                   name.includes('ngoma')) {
+            
+            // Melodic texture
+            targetType = 'granular';
+            bufferType = 'texture';
+            params.position = Math.random();
+            params.spray = 0.02;
+            params.grainSize = 0.15; // Longer grains
+            params.density = 10;
+            params.pitch = 1.0;
+            params.relGrain = 0.8;
+            params.filter = 10000;
+            params.hpFilter = 100;
+        } else {
+            // Default Fallback (Percussion/Misc)
+            targetType = 'simple-drum';
+            params.drumType = 'cymbal'; // Generic metallic/noise
+            params.drumTune = 0.5;
+            params.drumDecay = 0.4;
+        }
+
+        // Apply Configuration
+        track.type = targetType;
+        track.params = params;
+        
+        // Update Name/Label (handled by UI, but we can store it for reference)
+        if (!track.customSample) { // Don't rename if user loaded custom sample
+            track.autoName = instrumentName; 
+        }
+
+        // Regenerate Buffer if switching back to Granular (or if it was a specific texture type)
+        // Note: For simple-drum, buffer isn't used, but good to have if we switch types later.
+        if (targetType === 'granular' && this.audioEngine) {
+            track.buffer = this.audioEngine.generateBufferByType(bufferType);
+            track.rmsMap = this.audioEngine.analyzeBuffer(track.buffer);
+        }
+    }
 }

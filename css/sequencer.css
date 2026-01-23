@@ -24,7 +24,7 @@
     min-width: max-content;
 }
 
-/* Divider for every 4th step (Beat Markers) */
+/* Divider for every 4th step (Beat Markers - Default 4/4) */
 .beat-divider {
     border-right: 1px solid #444 !important;
     margin-right: 1px; 
@@ -33,6 +33,13 @@
 /* Divider for every 16th step (Bar Markers) */
 .bar-divider {
     border-right: 2px solid #737373 !important; /* neutral-500 approx */
+    margin-right: 1px;
+}
+
+/* NEW: Divider for 12/8 Time Signature (Triplets) */
+/* Applied dynamically by UIManager when a 12/8 pattern is loaded */
+.triplet-divider {
+    border-right: 1px solid #d946ef !important; /* Fuchsia-500 for visibility */
     margin-right: 1px;
 }
 
@@ -110,14 +117,13 @@
 .track-group-6 .track-label { border-right: 2px solid #84cc16; }
 .track-group-7 .track-label { border-right: 2px solid #14b8a6; }
 
-/* Playhead Style - Suggestion 1: Dimmed Grey Outline */
 .step-playing {
     border-color: #666 !important;     /* Grey border instead of white */
     background-color: #333; /* Slightly lighter background */
 }
 .step-btn.active.step-playing {
     background-color: #34d399; /* Maintain active color */
-    border-color: #fff; /* Keep active steps bright or maybe dim slightly too? Let's keep bright for active note visibility */
+    border-color: #fff; /* Keep active steps bright */
 }
 
 .track-rnd-btn {
