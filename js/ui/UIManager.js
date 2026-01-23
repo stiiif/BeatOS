@@ -1,4 +1,4 @@
-// UI Manager Module - Updated for Playhead Speed
+// UI Manager Module - Updated for Robust Playhead
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS } from '../utils/constants.js';
 
 export class UIManager {
@@ -454,29 +454,27 @@ export class UIManager {
         }
     }
 
-    // UPDATE MATRIX HEAD with absolute step support
     updateMatrixHead(currentStep, totalStepsPlayed) {
-        // Fallback if totalStepsPlayed is undefined (e.g. init)
-        if(typeof totalStepsPlayed === 'undefined') {
-            totalStepsPlayed = currentStep;
-        }
+        // Use totalStepsPlayed if available, otherwise fallback to currentStep
+        // This decouples the UI head from the global loop length for polyrhythmic/dividing tracks
+        const masterStep = (typeof totalStepsPlayed !== 'undefined') ? totalStepsPlayed : currentStep;
 
-        const prevTotal = totalStepsPlayed - 1;
-        
         for(let t=0; t<this.tracks.length; t++) {
             const track = this.tracks[t];
             const div = track.clockDivider || 1;
             
-            // Calculate effective steps for this track (using absolute counter)
-            const currentEffective = Math.floor(totalStepsPlayed / div) % NUM_STEPS;
-            const prevEffective = Math.floor(prevTotal / div) % NUM_STEPS;
+            // ROBUST CLEARING:
+            // Instead of trying to calculate "prev", which is prone to errors if divider/total changes,
+            // we simply find any currently playing step for this track and clear it.
+            // This is O(N) where N=Steps but ensures perfect visual state.
+            const currentLit = this.matrixStepElements[t].filter(el => el.classList.contains('step-playing'));
+            currentLit.forEach(el => el.classList.remove('step-playing'));
             
-            if (currentEffective !== prevEffective) {
-                if(this.matrixStepElements[t] && this.matrixStepElements[t][prevEffective]) {
-                    this.matrixStepElements[t][prevEffective].classList.remove('step-playing');
-                }
-            }
+            // Calculate effective step using track's own length (fallback to NUM_STEPS if array not ready)
+            const trackLength = track.steps.length > 0 ? track.steps.length : NUM_STEPS;
+            const currentEffective = Math.floor(masterStep / div) % trackLength;
             
+            // Light up the new one
             if(this.matrixStepElements[t] && this.matrixStepElements[t][currentEffective]) {
                 this.matrixStepElements[t][currentEffective].classList.add('step-playing');
             }
