@@ -10,6 +10,10 @@ import { Visualizer } from './ui/Visualizer.js';
 import { LayoutManager } from './ui/LayoutManager.js';
 import { NUM_LFOS, TRACKS_PER_GROUP } from './utils/constants.js';
 
+// --- PHASE 1 INTEGRATION: Import Event System ---
+import { globalBus } from './events/EventBus.js';
+import { EVENTS } from './events/Events.js';
+
 // Initialize all systems
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
@@ -33,7 +37,7 @@ const tracks = trackManager.getTracks();
 
 // Wire up UI/Visualizer dependencies
 uiManager.setTracks(tracks);
-uiManager.setTrackManager(trackManager); // NEW: Pass track manager for pattern logic
+uiManager.setTrackManager(trackManager); 
 visualizer.setTracks(tracks);
 
 // Setup UI callbacks
@@ -50,6 +54,7 @@ const originalSelectTrack = uiManager.selectTrack.bind(uiManager);
 uiManager.selectTrack = (idx, cb) => {
     originalSelectTrack(idx, cb);
     updateTrackControlsVisibility();
+    // Future: globalBus.emit(EVENTS.TRACK_SELECTED, idx);
 };
 
 // Add track functionality
@@ -98,6 +103,8 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     visualizer.drawBufferDisplay();
     updateTrackControlsVisibility();
     uiManager.updateLfoUI();
+    
+    globalBus.emit(EVENTS.AUDIO_INITIALIZED);
 });
 
 // Play Button
@@ -106,6 +113,7 @@ document.getElementById('playBtn').addEventListener('click', () => {
     if (!scheduler.getIsPlaying()) {
         scheduler.start((time, trackId) => visualizer.scheduleVisualDraw(time, trackId));
         document.getElementById('playBtn').classList.add('text-emerald-500');
+        globalBus.emit(EVENTS.PLAYBACK_START);
     }
 });
 
@@ -114,11 +122,13 @@ document.getElementById('stopBtn').addEventListener('click', () => {
     scheduler.stop();
     document.getElementById('playBtn').classList.remove('text-emerald-500');
     uiManager.clearPlayheadForStop();
+    globalBus.emit(EVENTS.PLAYBACK_STOP);
 });
 
 // BPM Control
 document.getElementById('bpmInput').addEventListener('change', e => {
     scheduler.setBPM(e.target.value);
+    globalBus.emit(EVENTS.BPM_CHANGED, e.target.value);
 });
 
 // Apply Groove Button - NEW CONNECTION
