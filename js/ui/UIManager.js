@@ -392,6 +392,15 @@ export class UIManager {
                         const url = sound.previews['preview-hq-mp3'];
                         await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
                         
+                        // FORCE TRACK TYPE TO GRANULAR to avoid 909 override
+                        trackObj.type = 'granular';
+                        // Reset Granular Params for standard playback
+                        trackObj.params.position = 0;
+                        trackObj.params.grainSize = 0.2; // Moderate grain size
+                        trackObj.params.density = 20;    // High density for continuous sound
+                        trackObj.params.spray = 0;
+                        trackObj.params.pitch = 1.0;
+
                         // Update Name
                         trackObj.customSample.name = sound.name;
                     }
