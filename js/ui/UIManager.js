@@ -18,7 +18,6 @@ export class UIManager {
         this.globalPanShift = 0;
         this.patternLibrary = new PatternLibrary();
         
-        // Define Keyboard Mapping
         this.keyMapping = {
             'Digit1': 0, 'KeyQ': 1, 'KeyA': 2, 'KeyZ': 3,
             'Digit2': 4, 'KeyW': 5, 'KeyS': 6, 'KeyX': 7,
@@ -30,7 +29,6 @@ export class UIManager {
             'Digit8': 28, 'KeyI': 29, 'KeyK': 30, 'Comma': 31
         };
         
-        // IMMEDIATE CSS UPDATE in Constructor
         document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
     }
 
@@ -45,7 +43,6 @@ export class UIManager {
     initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
         
-        // Ensure CSS var is set again
         document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
         this.generateLfoTabs();
 
@@ -62,10 +59,9 @@ export class UIManager {
             const div = document.createElement('div');
             div.className = 'header-cell';
             div.innerText = i+1;
-            div.id = `header-step-${i}`; // ADDED ID for dynamic styling updates
+            div.id = `header-step-${i}`; 
             if (i % 4 === 0) div.classList.add('text-neutral-400', 'font-bold');
             
-            // Dividers logic: 16-step (Bar) takes precedence over 4-step (Beat)
             if ((i + 1) % 16 === 0 && i !== NUM_STEPS - 1) {
                 div.classList.add('bar-divider');
             } else if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) {
@@ -85,7 +81,6 @@ export class UIManager {
         actHeader.innerText = 'ACTIONS';
         headerContainer.appendChild(actHeader);
 
-        // Visualizer Header
         const visHeader = document.createElement('div');
         visHeader.className = 'header-cell';
         visHeader.innerText = 'VIS';
@@ -120,13 +115,8 @@ export class UIManager {
         });
 
         this.bindAutomationControls();
-        // Removed old choke selector init
         
-        // --- Initialize Groove Controls ---
         this.initGrooveControls();
-
-        // NOTE: Old global visualizer click listener removed as element doesn't exist.
-        // Per-track visualizer clicks are handled in appendTrackRow.
 
         document.body.addEventListener('wheel', (e) => {
             if (e.target.type === 'range') {
@@ -179,7 +169,7 @@ export class UIManager {
             patterns.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
-                opt.innerText = `${p.name} (${p.region || 'World'})`;
+                opt.innerText = `${p.name} (${p.genre || 'World'})`;
                 patternSelect.appendChild(opt);
             });
         }
@@ -190,7 +180,7 @@ export class UIManager {
             for(let i=0; i<maxGroups; i++) {
                 const opt = document.createElement('option');
                 opt.value = i;
-                opt.innerText = `Group ${i+1} (Trk ${i*4+1}-${(i+1)*4})`;
+                opt.innerText = `Group ${i+1} (Trk ${i*TRACKS_PER_GROUP+1}-${(i+1)*TRACKS_PER_GROUP})`;
                 targetGroupSelect.appendChild(opt);
             }
         }
@@ -202,7 +192,6 @@ export class UIManager {
         }
     }
 
-    // --- APPLY GROOVE LOGIC ---
     applyGroove() {
         const patId = parseInt(document.getElementById('patternSelect').value);
         const grpId = parseInt(document.getElementById('targetGroupSelect').value);
@@ -215,91 +204,84 @@ export class UIManager {
         if (!pattern) return;
 
         const startTrack = grpId * TRACKS_PER_GROUP;
-        const patternTrackKeys = Object.keys(pattern.tracks);
         
-        // Update Grid Visuals based on Time Signature
         this.updateGridVisuals(pattern.time_sig);
 
-        // Loop through the 4 tracks in the group
         for (let i = 0; i < TRACKS_PER_GROUP; i++) {
             const targetTrackId = startTrack + i;
+            const patternTrack = pattern.tracks[i];
             
-            // Check if track exists and isn't locked/automation
             if (this.tracks[targetTrackId] && !this.tracks[targetTrackId].stepLock && this.tracks[targetTrackId].type !== 'automation') {
                 
-                const key = patternTrackKeys[i % patternTrackKeys.length];
-                const binaryString = pattern.tracks[key]; // "10010..."
-                const instrumentName = key; // "kick", "bell", etc.
+                const targetTrackObj = this.tracks[targetTrackId];
 
-                const targetTrack = this.tracks[targetTrackId];
+                targetTrackObj.steps.fill(0);
+                targetTrackObj.microtiming.fill(0);
 
-                // 1. Auto-Configure Sound (Smart Mapping)
-                if (this.trackManager) {
-                    this.trackManager.autoConfigureTrack(targetTrack, instrumentName);
-                }
-
-                // 2. Populate Steps (Weighted Random)
-                for (let s = 0; s < NUM_STEPS; s++) {
-                    // Safety check: binaryString might be shorter than NUM_STEPS
-                    // If shorter, we wrap (loop) the pattern
-                    // If longer, we cut it off (NUM_STEPS loop limit)
-                    // binaryString usually 64. NUM_STEPS usually 64.
-                    
-                    const charIndex = s % binaryString.length;
-                    const char = binaryString[charIndex];
-                    
-                    // Interpret '1' as hit, '0' or undefined as empty
-                    const targetStep = char === '1';
-                    
-                    const roll = Math.random();
-                    
-                    if (roll < influence) {
-                        // Adhere to pattern
-                        targetTrack.steps[s] = targetStep;
-                    } else {
-                        // Random deviation
-                        // 20% chance of hit
-                        targetTrack.steps[s] = Math.random() < 0.2; 
+                if (patternTrack) {
+                    if (this.trackManager) {
+                        this.trackManager.autoConfigureTrack(targetTrackObj, patternTrack.instrument_type || patternTrack.instrument);
                     }
-                    
-                    // Update UI Button Class
-                    const btn = this.matrixStepElements[targetTrackId][s];
-                    if (btn) {
-                        if (targetTrack.steps[s]) btn.classList.add('active');
-                        else btn.classList.remove('active');
+
+                    const stepString = patternTrack.steps; // "3002..."
+                    const microtimingArray = patternTrack.microtiming; // [0, 3, ...]
+
+                    for (let s = 0; s < NUM_STEPS; s++) {
+                        const charIndex = s % stepString.length;
+                        const char = stepString[charIndex];
+                        const velocity = parseInt(char);
+                        
+                        const roll = Math.random();
+                        
+                        if (roll < influence) {
+                            if (!isNaN(velocity) && velocity > 0) {
+                                targetTrackObj.steps[s] = velocity;
+                                if (microtimingArray && microtimingArray[charIndex] !== undefined) {
+                                    targetTrackObj.microtiming[s] = microtimingArray[charIndex];
+                                }
+                            }
+                        } else {
+                            // Deviation: 5% chance of Ghost note
+                            if (Math.random() < 0.05) {
+                                targetTrackObj.steps[s] = 1; 
+                            }
+                        }
+                        
+                        const btn = this.matrixStepElements[targetTrackId][s];
+                        if (btn) {
+                            btn.classList.remove('active', 'vel-1', 'vel-2', 'vel-3');
+                            const val = targetTrackObj.steps[s];
+                            if (val > 0) {
+                                btn.classList.add(`vel-${val}`);
+                            }
+                        }
+                    }
+                } else {
+                    for (let s = 0; s < NUM_STEPS; s++) {
+                        const btn = this.matrixStepElements[targetTrackId][s];
+                        if(btn) btn.classList.remove('active', 'vel-1', 'vel-2', 'vel-3');
                     }
                 }
             }
         }
         
-        // Update selection to first track of group to show new sound settings
         this.selectTrack(startTrack, this.visualizerCallback);
     }
 
-    // NEW: Visual Grid Update for Time Sigs
     updateGridVisuals(timeSig) {
-        // Reset all dividers first
         for(let i=0; i<NUM_STEPS; i++) {
             const div = document.getElementById(`header-step-${i}`);
-            // Also need to update the BUTTONS in the grid rows
             if(div) {
                 div.classList.remove('beat-divider', 'bar-divider', 'triplet-divider');
-                // Re-apply default logic if needed, or apply new logic
                 if (timeSig === '12/8' || timeSig === '6/8') {
-                     // Triplet feel: Every 3 steps = 1 beat?
-                     // 12/8 = 4 beats of 3 notes. 
-                     // Bar lines every 12 steps?
-                     // Let's mark every 3rd step
                      if ((i + 1) % 12 === 0 && i !== NUM_STEPS - 1) div.classList.add('bar-divider');
                      else if ((i + 1) % 3 === 0 && i !== NUM_STEPS - 1) div.classList.add('triplet-divider');
                 } else {
-                    // Standard 4/4
                     if ((i + 1) % 16 === 0 && i !== NUM_STEPS - 1) div.classList.add('bar-divider');
                     else if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) div.classList.add('beat-divider');
                 }
             }
             
-            // Now update the rows buttons
             this.tracks.forEach((t, tIdx) => {
                 const btn = this.matrixStepElements[tIdx][i];
                 if(btn) {
@@ -327,8 +309,6 @@ export class UIManager {
             });
         }
     }
-
-    // REMOVED addChokeSelectorToHeader and updateChokeButtonsState (replaced by updateCustomTrackHeader)
 
     handleSliderWheel(e) {
         const el = e.target;
@@ -383,7 +363,6 @@ export class UIManager {
             btn.style.setProperty('--step-group-color', groupColor);
             btn.style.setProperty('--step-group-color-glow', groupColorGlow);
             
-            // Dividers Logic: Bar (16) vs Beat (4)
             if ((step + 1) % 16 === 0 && step !== NUM_STEPS - 1) {
                 btn.classList.add('bar-divider');
             } else if ((step + 1) % 4 === 0 && step !== NUM_STEPS - 1) {
@@ -397,7 +376,10 @@ export class UIManager {
                     btn.classList.add(`auto-level-${val}`);
                 }
             } else {
-                if (trackObj.steps[step]) btn.classList.add('active');
+                const val = trackObj.steps[step];
+                if (val > 0) {
+                    btn.classList.add(`vel-${val}`);
+                }
             }
 
             rowDiv.appendChild(btn);
@@ -439,15 +421,12 @@ export class UIManager {
         rowDiv.appendChild(actionsDiv);
         rowElements.push(actionsDiv);
 
-        // Per-Track Visualizer Canvas
         const visCanvas = document.createElement('canvas');
         visCanvas.className = 'track-vis-canvas';
         visCanvas.id = `vis-canvas-${trk}`;
-        // Needs a fixed size for canvas buffer, CSS scales it visually
         visCanvas.width = 40; 
         visCanvas.height = 16;
         
-        // ADDED CLICK LISTENER FOR SELECTION
         visCanvas.style.cursor = 'pointer';
         visCanvas.onclick = () => this.selectTrack(trk, visualizerCallback);
 
@@ -480,10 +459,8 @@ export class UIManager {
             grpLbl.style.color = groupColor;
         }
         
-        // --- NEW: Update Custom Track Header Content ---
         this.updateCustomTrackHeader(idx, grp, groupColor);
 
-        // Update indicator (existing)
         const indicator = document.getElementById('trackIndicator');
         if(indicator) {
             indicator.style.backgroundColor = groupColor;
@@ -528,7 +505,6 @@ export class UIManager {
             trackType = 'Synth';
         }
 
-        // --- ROW 1: Info ---
         const row1 = document.createElement('div');
         row1.className = 'flex items-center gap-2 w-full';
         
@@ -558,7 +534,6 @@ export class UIManager {
 
         container.appendChild(row1);
 
-        // --- ROW 2: Type Buttons ---
         const row2 = document.createElement('div');
         row2.className = 'flex gap-1 w-full justify-between';
         
@@ -594,7 +569,10 @@ export class UIManager {
                     t.steps.fill(0);
                     const stepElements = this.matrixStepElements[t.id];
                     if(stepElements) {
-                         stepElements.forEach(el => { el.className = 'step-btn'; el.classList.remove('active'); });
+                         stepElements.forEach(el => { 
+                             el.className = 'step-btn'; 
+                             el.classList.remove('active', 'vel-1', 'vel-2', 'vel-3'); 
+                         });
                     }
                     this.updateTrackControlsVisibility();
                 } else if (is909) {
@@ -630,7 +608,6 @@ export class UIManager {
 
         container.appendChild(row2);
 
-        // --- ROW 3: Group Selectors (Choke Groups) ---
         const row3 = document.createElement('div');
         row3.className = 'flex gap-0.5 w-full';
         
@@ -651,14 +628,13 @@ export class UIManager {
             btn.style.cssText = style;
             btn.innerText = targetGroup;
             
-            // Toggle Logic: Clicking active group removes assignment
             btn.onclick = () => {
                 if (t.chokeGroup === targetGroup) {
-                    t.chokeGroup = 0; // Unassign
+                    t.chokeGroup = 0; 
                 } else {
-                    t.chokeGroup = targetGroup; // Assign
+                    t.chokeGroup = targetGroup; 
                 }
-                this.selectTrack(this.selectedTrackIndex); // Refresh UI
+                this.selectTrack(this.selectedTrackIndex); 
             };
             
             row3.appendChild(btn);
@@ -684,21 +660,12 @@ export class UIManager {
         if(lfoSection) lfoSection.classList.add('hidden');
         if(autoControls) autoControls.classList.add('hidden');
 
-        // Update Choke Buttons in Header
-        // this.updateChokeButtonsState(); // Removed as we now redraw the header dynamically
-
         if (t.type === 'automation') {
             if(autoControls) autoControls.classList.remove('hidden');
-            if(typeLabel) {
-                // Handled in updateCustomTrackHeader
-            }
             if(speedSel) speedSel.value = t.clockDivider || 1;
         } 
         else if (t.type === 'simple-drum') {
             if(drumControls) drumControls.classList.remove('hidden');
-            if(typeLabel) {
-               // Handled in updateCustomTrackHeader
-            }
             document.querySelectorAll('.drum-sel-btn').forEach(btn => {
                 if (btn.dataset.drum === t.params.drumType) {
                     btn.classList.replace('text-neutral-400', 'text-white');
@@ -711,37 +678,27 @@ export class UIManager {
         }
         else {
             const wasHidden = granularControls && granularControls.classList.contains('hidden');
-            
             if(granularControls) granularControls.classList.remove('hidden');
             if(lfoSection) lfoSection.classList.remove('hidden');
-            
             if(wasHidden) {
                 setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
-            }
-            
-            if(typeLabel) {
-                // Handled in updateCustomTrackHeader
             }
         }
     }
 
     updateMatrixHead(currentStep, totalStepsPlayed) {
-        // Use totalStepsPlayed if available, otherwise fallback to currentStep
         const masterStep = (typeof totalStepsPlayed !== 'undefined') ? totalStepsPlayed : currentStep;
 
         for(let t=0; t<this.tracks.length; t++) {
             const track = this.tracks[t];
             const div = track.clockDivider || 1;
             
-            // ROBUST CLEARING:
             const currentLit = this.matrixStepElements[t].filter(el => el.classList.contains('step-playing'));
             currentLit.forEach(el => el.classList.remove('step-playing'));
             
-            // Calculate effective step using track's own length (fallback to NUM_STEPS if array not ready)
             const trackLength = track.steps.length > 0 ? track.steps.length : NUM_STEPS;
             const currentEffective = Math.floor(masterStep / div) % trackLength;
             
-            // Light up the new one
             if(this.matrixStepElements[t] && this.matrixStepElements[t][currentEffective]) {
                 this.matrixStepElements[t][currentEffective].classList.add('step-playing');
             }
@@ -806,10 +763,10 @@ export class UIManager {
         if(this.tracks[trk].type === 'automation') {
              this.tracks[trk].steps.fill(0);
         } else {
-             this.tracks[trk].steps.fill(false); 
+             this.tracks[trk].steps.fill(0); 
         }
         for(let s=0; s<NUM_STEPS; s++) if(this.matrixStepElements[trk] && this.matrixStepElements[trk][s]) {
-             this.matrixStepElements[trk][s].classList.remove('active', 'auto-level-1', 'auto-level-2', 'auto-level-3', 'auto-level-4', 'auto-level-5'); 
+             this.matrixStepElements[trk][s].className = 'step-btn';
         }
     }
     clearGroup(grp) { const start = grp * TRACKS_PER_GROUP; const end = start + TRACKS_PER_GROUP; for(let i=start; i<end; i++) if(this.tracks[i]) this.clearTrack(i); }
@@ -831,23 +788,21 @@ export class UIManager {
              return; 
         }
 
-        const newState = !this.tracks[trk].steps[step]; 
-        if (newState) { 
-            const groupStart = Math.floor(trk / TRACKS_PER_GROUP) * TRACKS_PER_GROUP; 
-            const groupEnd = groupStart + TRACKS_PER_GROUP; 
-            for(let i=groupStart; i<groupEnd; i++) { 
-                if (this.tracks[i] && i !== trk && this.tracks[i].steps[step] && this.tracks[i].type !== 'automation') { 
-                    if (!this.tracks[i].stepLock) { 
-                        this.tracks[i].steps[step] = false; 
-                        this.matrixStepElements[i][step].classList.remove('active'); 
-                    } else { 
-                        return; 
-                    } 
-                } 
-            } 
-        } 
-        this.tracks[trk].steps[step] = newState; 
-        if(newState) btn.classList.add('active'); else btn.classList.remove('active'); 
+        let val = track.steps[step];
+        let nextVal = 0;
+        
+        if (val === 0) nextVal = 2; // Off -> Normal
+        else if (val === 2) nextVal = 3; // Normal -> Accent
+        else if (val === 3) nextVal = 1; // Accent -> Ghost
+        else if (val === 1) nextVal = 0; // Ghost -> Off
+        
+        track.steps[step] = nextVal;
+        
+        btn.classList.remove('vel-1', 'vel-2', 'vel-3');
+        if (nextVal > 0) {
+            btn.classList.add(`vel-${nextVal}`);
+        }
+        
         if (this.randomChokeMode) this.applyRandomChokeDimming(); 
     }
 
@@ -871,34 +826,29 @@ export class UIManager {
              return;
         }
 
-        const groupStart = Math.floor(trkIdx / TRACKS_PER_GROUP) * TRACKS_PER_GROUP; 
-        const groupEnd = groupStart + TRACKS_PER_GROUP; 
         for(let i=0; i<NUM_STEPS; i++) { 
             const active = Math.random() < 0.25; 
             if (active) { 
-                let isStepLocked = false; 
-                for(let sib=groupStart; sib<groupEnd; sib++) { 
-                    if(this.tracks[sib] && sib !== trkIdx && this.tracks[sib].steps[i] && this.tracks[sib].stepLock) { 
-                        isStepLocked = true; break; 
-                    } 
-                } 
-                if (!isStepLocked) { 
-                    for(let sib=groupStart; sib<groupEnd; sib++) { 
-                        if(this.tracks[sib] && sib !== trkIdx && this.tracks[sib].steps[i] && !this.tracks[sib].stepLock && this.tracks[sib].type !== 'automation') { 
-                            this.tracks[sib].steps[i] = false; 
-                            this.matrixStepElements[sib][i].classList.remove('active'); 
-                        } 
-                    } 
-                    t.steps[i] = active; 
-                } else { t.steps[i] = false; } 
-            } else { t.steps[i] = false; } 
+                if (t.stepLock) continue;
+                
+                const rnd = Math.random();
+                let vel = 2; 
+                if (rnd > 0.8) vel = 3; 
+                else if (rnd < 0.2) vel = 1; 
+                
+                t.steps[i] = vel;
+            } else { 
+                if (!t.stepLock) t.steps[i] = 0; 
+            }
+            
             const btn = this.matrixStepElements[trkIdx][i]; 
-            if(t.steps[i]) btn.classList.add('active'); else btn.classList.remove('active'); 
+            btn.classList.remove('vel-1', 'vel-2', 'vel-3');
+            if(t.steps[i] > 0) btn.classList.add(`vel-${t.steps[i]}`);
         } 
         if (this.randomChokeMode) this.applyRandomChokeDimming(); 
     }
 
-    randomizeAllPatterns() { for (let step = 0; step < NUM_STEPS; step++) { const numGroups = Math.ceil(this.tracks.length / TRACKS_PER_GROUP); for (let g = 0; g < numGroups; g++) { const groupStart = g * TRACKS_PER_GROUP; const plays = Math.random() < 0.4; const activeTrackOffset = Math.floor(Math.random() * TRACKS_PER_GROUP); const activeTrackId = groupStart + activeTrackOffset; for (let i = 0; i < TRACKS_PER_GROUP; i++) { const trkId = groupStart + i; if (!this.tracks[trkId]) continue; const shouldBeActive = plays && (trkId === activeTrackId); this.tracks[trkId].steps[step] = shouldBeActive; const btn = this.matrixStepElements[trkId][step]; if(shouldBeActive) btn.classList.add('active'); else btn.classList.remove('active'); } } } if (this.randomChokeMode) this.applyRandomChokeDimming(); }
+    randomizeAllPatterns() { for (let i = 0; i < this.tracks.length; i++) { this.randomizeTrackPattern(i); } }
 
     updateKnobs() {
         const t = this.tracks[this.selectedTrackIndex];
@@ -957,7 +907,7 @@ export class UIManager {
             this.snapshotData = JSON.stringify({
                 tracks: this.tracks.map(t => ({
                     params: {...t.params},
-                    steps: [...t.steps],
+                    steps: Array.from(t.steps),
                     muted: t.muted,
                     soloed: t.soloed,
                     stepLock: t.stepLock,
@@ -974,7 +924,7 @@ export class UIManager {
                     if (i >= this.tracks.length) return;
                     const t = this.tracks[i];
                     t.params = { ...trackData.params };
-                    t.steps = [...trackData.steps];
+                    t.steps = new Uint8Array(trackData.steps);
                     t.muted = trackData.muted;
                     t.soloed = trackData.soloed;
                     t.stepLock = trackData.stepLock || false;
@@ -990,14 +940,13 @@ export class UIManager {
                     this.updateTrackStateUI(i);
                     for(let s=0; s<NUM_STEPS; s++) {
                          const btn = this.matrixStepElements[i][s];
-                         // Reset classes
-                         btn.className = btn.className.replace(/auto-level-\d/g, '').trim();
-                         btn.classList.remove('active');
+                         btn.className = 'step-btn';
+                         btn.classList.remove('active', 'vel-1', 'vel-2', 'vel-3', 'auto-level-1', 'auto-level-2', 'auto-level-3', 'auto-level-4', 'auto-level-5');
                          
                          if(t.type === 'automation') {
                              if(t.steps[s] > 0) btn.classList.add('active', `auto-level-${t.steps[s]}`);
                          } else {
-                             if(t.steps[s]) btn.classList.add('active');
+                             if(t.steps[s] > 0) btn.classList.add(`vel-${t.steps[s]}`);
                          }
                     }
                     

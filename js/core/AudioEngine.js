@@ -1,4 +1,6 @@
 // Audio Engine Module
+import { VELOCITY_GAINS } from '../utils/constants.js';
+
 export class AudioEngine {
     constructor() {
         this.audioCtx = null;
@@ -174,7 +176,7 @@ export class AudioEngine {
         return this.generateBufferByType(type);
     }
 
-    triggerDrum(track, time) {
+    triggerDrum(track, time, velocityLevel = 2) {
         if (!this.audioCtx || !track.bus) return;
         const ctx = this.audioCtx;
         const t = time;
@@ -182,54 +184,92 @@ export class AudioEngine {
         const tune = track.params.drumTune || 0.5; 
         const decayVal = track.params.drumDecay || 0.5; 
 
+        // --- Velocity & Ghost Note Logic Refinement ---
+        let gainMult = 1.0;
+        let decayMult = 1.0;
+        let pitchModMult = 1.0;
+        let filterOffset = 0; 
+
+        switch(velocityLevel) {
+            case 1: // Ghost - Refined for "Context-Aware Taming"
+                gainMult = 0.3; // Significantly quieter
+                decayMult = 0.4; // Much shorter
+                pitchModMult = 0.1; // Almost flat pitch envelope (no click)
+                filterOffset = -3500; // Even darker
+                break;
+            case 2: // Normal
+                gainMult = 0.7; // Leave headroom for accent
+                break;
+            case 3: // Accent
+                gainMult = 1.0;
+                pitchModMult = 1.2; 
+                filterOffset = 500; // Slightly brighter
+                break;
+            default:
+                if (velocityLevel > 0) gainMult = 0.7;
+                else return;
+        }
+
         const out = track.bus.input;
 
-        if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.getMappedFrequency(track.params.hpFilter, 'hp'), t);
-        if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(this.getMappedFrequency(track.params.filter, 'lp'), t);
+        // Apply Timbre Mods to Bus Filters momentarily
+        if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.getMappedFrequency(Math.max(20, track.params.hpFilter), 'hp'), t);
+        
+        let lpFreq = this.getMappedFrequency(Math.max(100, track.params.filter), 'lp');
+        // Ensure filter offset doesn't crash the value
+        let targetLp = lpFreq + filterOffset;
+        targetLp = Math.max(100, Math.min(22000, targetLp));
+        
+        if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(targetLp, t);
 
         if (type === 'kick') {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             const baseFreq = 50 + (tune * 100);
             
-            // Allow decay to go extremely short (clicky) to full length
-            // 0.01s (click) to 0.6s (full boom)
-            const decay = 0.01 + (decayVal * 0.6); 
-            
+            const baseDecay = 0.01 + (decayVal * 0.6); 
+            const finalDecay = baseDecay * decayMult;
+
             osc.connect(gain); gain.connect(out);
-            osc.frequency.setValueAtTime(150 + (tune * 200), t);
             
-            // Pitch drop speed linked to decay for snappier clicks
-            const pitchDropTime = Math.min(0.02, decay * 0.5); 
-            osc.frequency.exponentialRampToValueAtTime(baseFreq, t + pitchDropTime);
-            osc.frequency.exponentialRampToValueAtTime(30, t + decay);
+            const popFreq = 150 + (tune * 200);
+            osc.frequency.setValueAtTime(popFreq, t);
             
-            gain.gain.setValueAtTime(1, t);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + decay);
+            // Refined pitch envelope for click reduction
+            const pitchDropTime = Math.min(0.02, finalDecay * 0.5); 
+            const modAmount = pitchDropTime * pitchModMult;
+            
+            osc.frequency.exponentialRampToValueAtTime(baseFreq, t + Math.max(0.001, modAmount));
+            osc.frequency.exponentialRampToValueAtTime(30, t + finalDecay);
+            
+            gain.gain.setValueAtTime(gainMult, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + finalDecay);
             
             track.addSource(osc); 
-            osc.start(t); osc.stop(t + decay + 0.1);
+            osc.start(t); osc.stop(t + finalDecay + 0.1);
         } 
         else if (type === 'snare') {
             const osc = ctx.createOscillator();
             const oscGain = ctx.createGain();
             const toneFreq = 180 + (tune * 100);
             
-            // Short: 0.01s, Long: 0.3s
-            const toneDecay = 0.01 + (decayVal * 0.3);
+            const baseToneDecay = 0.01 + (decayVal * 0.3);
+            const finalToneDecay = baseToneDecay * decayMult;
             
             osc.type = 'triangle'; osc.frequency.setValueAtTime(toneFreq, t);
             osc.connect(oscGain); oscGain.connect(out);
             
-            oscGain.gain.setValueAtTime(0.5, t); 
-            oscGain.gain.exponentialRampToValueAtTime(0.001, t + toneDecay);
+            const toneLevel = (velocityLevel === 1 ? 0.2 : 0.5) * gainMult;
+            oscGain.gain.setValueAtTime(toneLevel, t); 
+            oscGain.gain.exponentialRampToValueAtTime(0.001, t + finalToneDecay);
             
             track.addSource(osc); 
-            osc.start(t); osc.stop(t + toneDecay + 0.1);
+            osc.start(t); osc.stop(t + finalToneDecay + 0.1);
 
-            // Noise component decay
-            const noiseDecay = 0.01 + (decayVal * 0.4);
-            const bufferSize = ctx.sampleRate * (noiseDecay + 0.1); 
+            const baseNoiseDecay = 0.01 + (decayVal * 0.4);
+            const finalNoiseDecay = baseNoiseDecay * decayMult;
+            
+            const bufferSize = ctx.sampleRate * (finalNoiseDecay + 0.1); 
             const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
             const data = buffer.getChannelData(0);
             for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
@@ -241,20 +281,20 @@ export class AudioEngine {
             const noiseGain = ctx.createGain();
             
             noise.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(out);
-            noiseGain.gain.setValueAtTime(0.8, t); 
-            noiseGain.gain.exponentialRampToValueAtTime(0.001, t + noiseDecay);
+            
+            const noiseLevel = 0.8 * gainMult;
+            noiseGain.gain.setValueAtTime(noiseLevel, t); 
+            noiseGain.gain.exponentialRampToValueAtTime(0.001, t + finalNoiseDecay);
             
             track.addSource(noise); 
             noise.start(t);
         }
         else if (type === 'closed-hat' || type === 'open-hat') {
             const isOpen = type === 'open-hat';
-            // Adjusted ranges for tighter control
-            // Closed: 0.005s to 0.15s
-            // Open: 0.05s to 0.8s
             const baseDecay = isOpen ? (0.05 + decayVal * 0.75) : (0.005 + decayVal * 0.15);
+            const finalDecay = baseDecay * decayMult;
             
-            const bufferSize = ctx.sampleRate * (baseDecay + 0.1);
+            const bufferSize = ctx.sampleRate * (finalDecay + 0.1);
             const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
             const data = buffer.getChannelData(0);
             for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1);
@@ -265,16 +305,17 @@ export class AudioEngine {
             const gain = ctx.createGain();
             
             src.connect(bpf); bpf.connect(hpf); hpf.connect(gain); gain.connect(out);
-            gain.gain.setValueAtTime(0.6, t); 
-            gain.gain.exponentialRampToValueAtTime(0.001, t + baseDecay);
+            gain.gain.setValueAtTime(0.6 * gainMult, t); 
+            gain.gain.exponentialRampToValueAtTime(0.001, t + finalDecay);
             
             track.addSource(src); 
             src.start(t);
         }
         else if (type === 'cymbal') {
-            // 0.1s (choke) to 3.0s (full crash)
-            const decay = 0.1 + (decayVal * 2.9);
-            const bufferSize = ctx.sampleRate * (decay + 0.1);
+            const baseDecay = 0.1 + (decayVal * 2.9);
+            const finalDecay = baseDecay * decayMult;
+            
+            const bufferSize = ctx.sampleRate * (finalDecay + 0.1);
             const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
             const data = buffer.getChannelData(0);
             for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1);
@@ -289,8 +330,8 @@ export class AudioEngine {
             const env = ctx.createGain();
             src.connect(hpf); hpf.connect(env); env.connect(out);
             
-            env.gain.setValueAtTime(0.5, t); 
-            env.gain.exponentialRampToValueAtTime(0.001, t + decay);
+            env.gain.setValueAtTime(0.5 * gainMult, t); 
+            env.gain.exponentialRampToValueAtTime(0.001, t + finalDecay);
             
             track.addSource(src); 
             src.start(t);

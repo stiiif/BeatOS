@@ -13,8 +13,12 @@ export class Track {
         
         this.buffer = null;
         this.rmsMap = []; 
-        // For automation, steps will hold integers 0-5
-        this.steps = new Array(NUM_STEPS).fill(0); 
+        
+        // V2 Engine: Steps use integers 0-3 (0=Off, 1=Ghost, 2=Normal, 3=Accent)
+        this.steps = new Uint8Array(NUM_STEPS).fill(0);
+        
+        // V2 Engine: Microtiming offsets in milliseconds
+        this.microtiming = new Float32Array(NUM_STEPS).fill(0);
         
         this.lfos = Array.from({ length: NUM_LFOS }, () => new LFO());
         

@@ -83,10 +83,33 @@
     border: 1px solid #222;
     border-radius: 1px;
     cursor: pointer;
-    transition: background 0.1s;
+    transition: background 0.1s, transform 0.1s, opacity 0.1s; /* Added transform/opacity transition */
     min-width: 0; 
 }
 .step-btn:hover { border-color: #444; }
+
+/* Velocity Styles */
+.step-btn.vel-1 { 
+    background: var(--step-group-color, #10b981);
+    border-color: var(--step-group-color, #10b981);
+    opacity: 0.35; 
+    transform: scale(0.8); 
+    box-shadow: none;
+}
+.step-btn.vel-2 { 
+    background: var(--step-group-color, #10b981);
+    border-color: var(--step-group-color, #10b981);
+    opacity: 0.75; 
+    box-shadow: 0 0 2px var(--step-group-color-glow, rgba(16, 185, 129, 0.4));
+}
+.step-btn.vel-3 { 
+    background: var(--step-group-color, #10b981);
+    border-color: #fff; /* Brighter border for accent */
+    opacity: 1.0; 
+    box-shadow: 0 0 6px var(--step-group-color-glow, rgba(16, 185, 129, 0.8));
+}
+
+/* Active class for backward compatibility or general active state */
 .step-btn.active {
     background: var(--step-group-color, #10b981);
     border-color: var(--step-group-color, #10b981);
@@ -119,9 +142,11 @@
     border-color: #666 !important;     /* Grey border instead of white */
     background-color: #333; /* Slightly lighter background */
 }
-.step-btn.active.step-playing {
-    background-color: #34d399; /* Maintain active color */
-    border-color: #fff; /* Keep active steps bright */
+/* Ensure step playing visibility on velocity steps */
+.step-btn.vel-1.step-playing, .step-btn.vel-2.step-playing, .step-btn.vel-3.step-playing {
+    background-color: #34d399; 
+    border-color: #fff;
+    filter: brightness(1.2);
 }
 
 .track-rnd-btn {
@@ -135,8 +160,6 @@
     cursor: pointer;
     font-size: 0.5rem;
     transition: all 0.2s;
-    /* Sticky positioning removed for RND btn as it now sits between columns, needs to flow */
-    /* position: sticky; right: 155px; */
 }
 .track-rnd-btn:hover { background: #262626; color: #10b981; }
 

@@ -8,7 +8,7 @@ export class Scheduler {
         this.isPlaying = false;
         this.bpm = 120;
         this.currentStep = 0;
-        this.totalStepsPlayed = 0; // Absolute counter for polyrhythm
+        this.totalStepsPlayed = 0; 
         this.nextNoteTime = 0.0;
         this.schedulerTimerID = null;
         this.tracks = [];
@@ -52,7 +52,6 @@ export class Scheduler {
             this.totalStepsPlayed = 0; 
             this.nextNoteTime = audioCtx.currentTime + 0.1;
             
-            // Reset automation state on start
             this.activeSnapshot = null;
             this.tracks.forEach(t => { if(t.type === 'automation') t.lastAutoValue = 0; });
 
@@ -63,13 +62,10 @@ export class Scheduler {
     stop() {
         this.isPlaying = false;
         clearTimeout(this.schedulerTimerID);
-        // Restore snapshot if stopping mid-automation
         if(this.activeSnapshot && this.trackManager) {
             this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
             this.activeSnapshot = null;
         }
-        
-        // Stop all sound
         this.tracks.forEach(t => {
             if(t.stopAllSources) t.stopAllSources();
         });
@@ -100,34 +96,29 @@ export class Scheduler {
     }
 
     scheduleStep(step, time, scheduleVisualDrawCallback) {
-        // Capture totalStepsPlayed locally to avoid race conditions in async callback
         const currentTotal = this.totalStepsPlayed;
 
         if (this.updateMatrixHeadCallback) {
             requestAnimationFrame(() => this.updateMatrixHeadCallback(step, currentTotal));
         }
         
-        // --- AUTOMATION TRACK LOGIC ---
-        // Pass absolute totalStepsPlayed for calculation
         this.tracks.forEach(t => {
             if (t.type === 'automation' && !t.muted) {
                 this.processAutomationTrack(t, currentTotal, time);
             }
         });
 
-        // --- AUDIO TRIGGER LOGIC ---
-        // (Audio tracks still use the looped 'step' 0-63)
         const randomChokeInfo = this.randomChokeCallback ? this.randomChokeCallback() : { mode: false, groups: [] };
         
         if (randomChokeInfo.mode) {
-            // Random Choke Mode
             const chokeGroupMap = new Map();
             const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
             
             for (let i = 0; i < this.tracks.length; i++) {
                 const t = this.tracks[i];
                 if (t.type === 'automation') continue; 
-                if (!t.steps[step]) continue;
+                // V2: Velocity Check > 0
+                if (t.steps[step] === 0) continue;
                 if (isAnySolo && !t.soloed) continue;
                 if (!isAnySolo && t.muted) continue;
                 
@@ -142,28 +133,28 @@ export class Scheduler {
                 if (trackIds.length > 0) {
                     const winnerIdx = Math.floor(Math.random() * trackIds.length);
                     const winnerId = trackIds[winnerIdx];
-                    this.triggerTrack(this.tracks[winnerId], time, scheduleVisualDrawCallback);
+                    this.triggerTrack(this.tracks[winnerId], time, scheduleVisualDrawCallback, step);
                 }
             });
         } else {
-            // Normal mode
             const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
             for (let i = 0; i < this.tracks.length; i++) {
                 const t = this.tracks[i];
                 if (t.type === 'automation') continue; 
 
-                if (!t.steps[step]) continue;
+                // V2: Velocity Check > 0
+                if (t.steps[step] === 0) continue;
                 
                 if (isAnySolo) {
-                    if (t.soloed) this.triggerTrack(t, time, scheduleVisualDrawCallback);
+                    if (t.soloed) this.triggerTrack(t, time, scheduleVisualDrawCallback, step);
                 } else {
-                    if (!t.muted) this.triggerTrack(t, time, scheduleVisualDrawCallback);
+                    if (!t.muted) this.triggerTrack(t, time, scheduleVisualDrawCallback, step);
                 }
             }
         }
     }
 
-    triggerTrack(track, time, scheduleVisualDrawCallback) {
+    triggerTrack(track, time, scheduleVisualDrawCallback, stepIndex) {
         if (track.chokeGroup > 0) {
             this.tracks.forEach(other => {
                 if (other.id !== track.id && other.chokeGroup === track.chokeGroup) {
@@ -171,18 +162,30 @@ export class Scheduler {
                 }
             });
         }
-        this.granularSynth.scheduleNote(track, time, scheduleVisualDrawCallback);
+
+        // V2: Get Velocity & Microtiming
+        const velocity = track.steps[stepIndex];
+        const microtimingMs = track.microtiming[stepIndex] || 0;
+        
+        // Convert ms to seconds (e.g., -5ms = -0.005s)
+        const offsetSeconds = microtimingMs / 1000.0;
+        
+        let actualTime = time + offsetSeconds;
+        
+        // Clamp time to now if offset makes it in the past (only if negative offset > lookahead)
+        const audioCtx = this.audioEngine.getContext();
+        if (audioCtx && actualTime < audioCtx.currentTime) {
+            actualTime = audioCtx.currentTime;
+        }
+
+        this.granularSynth.scheduleNote(track, actualTime, scheduleVisualDrawCallback, velocity);
     }
 
     processAutomationTrack(track, totalSteps, time) {
         if (!this.trackManager) return;
 
-        // Use track.steps.length instead of NUM_STEPS constant to ensure it matches the actual track size
         const trackLength = track.steps.length > 0 ? track.steps.length : NUM_STEPS;
-        
-        // Use absolute totalSteps divided by clockDivider
         const effectiveStepIndex = Math.floor(totalSteps / track.clockDivider) % trackLength;
-        
         const currentValue = track.steps[effectiveStepIndex];
         const prevValue = track.lastAutoValue;
 

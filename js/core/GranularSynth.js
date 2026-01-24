@@ -1,4 +1,6 @@
 // Granular Synthesis Engine
+import { VELOCITY_GAINS } from '../utils/constants.js';
+
 export class GranularSynth {
     constructor(audioEngine) {
         this.audioEngine = audioEngine;
@@ -25,11 +27,33 @@ export class GranularSynth {
         return requestedPos; 
     }
 
-    playGrain(track, time, scheduleVisualDrawCallback, ampEnvelope = 1.0) {
+    playGrain(track, time, scheduleVisualDrawCallback, ampEnvelope = 1.0, velocityLevel = 2) {
         if (this.activeGrains >= this.MAX_GRAINS) return;
 
         const audioCtx = this.audioEngine.getContext();
         if (!audioCtx || !track.buffer || !track.bus) return; 
+
+        // Velocity Logic for Granular
+        let gainMult = 1.0;
+        let filterOffset = 0;
+        let sprayMod = 0;
+
+        switch(velocityLevel) {
+            case 1: // Ghost
+                gainMult = 0.4;
+                filterOffset = -3000;
+                sprayMod = 0.05; // More random spray for ghost notes
+                break;
+            case 2: // Normal
+                gainMult = 0.75;
+                break;
+            case 3: // Accent
+                gainMult = 1.0;
+                break;
+            default:
+                if (velocityLevel > 0) gainMult = 0.75;
+                else return;
+        }
 
         // LFO Modulation
         let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, filter:0, hpFilter:0 };
@@ -45,7 +69,7 @@ export class GranularSynth {
         let basePos = (p.scanSpeed > 0.01 || p.scanSpeed < -0.01) ? track.playhead : p.position;
         
         let gPos = Math.max(0, Math.min(1, basePos + mod.position));
-        const spray = Math.max(0, p.spray + mod.spray);
+        const spray = Math.max(0, p.spray + mod.spray + sprayMod);
         gPos += (Math.random()*2-1) * spray;
         gPos = Math.max(0, Math.min(1, gPos));
 
@@ -56,9 +80,16 @@ export class GranularSynth {
         const dur = Math.max(0.01, p.grainSize + mod.grainSize);
         const pitch = Math.max(0.1, p.pitch + mod.pitch);
 
-        // Update Track Bus
+        // Update Track Bus (with velocity mods for filter)
+        // Similar to 909, we modify bus filter momentarily. 
+        // This is a trade-off for polyphony but works for per-step feel.
         if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.audioEngine.getMappedFrequency(Math.max(20, p.hpFilter + mod.hpFilter), 'hp'), time);
-        if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(this.audioEngine.getMappedFrequency(Math.max(100, p.filter + mod.filter), 'lp'), time);
+        
+        // Apply filterOffset to LPF
+        let lpFreq = this.audioEngine.getMappedFrequency(Math.max(100, p.filter + mod.filter), 'lp');
+        if (velocityLevel === 1) lpFreq = Math.max(100, lpFreq + filterOffset);
+        if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(lpFreq, time);
+        
         if(track.bus.vol) track.bus.vol.gain.setValueAtTime(p.volume, time);
         if(track.bus.pan) track.bus.pan.pan.setValueAtTime(p.pan, time);
 
@@ -67,7 +98,8 @@ export class GranularSynth {
         src.playbackRate.value = pitch;
 
         const grainWindow = audioCtx.createGain();
-        grainWindow.gain.value = ampEnvelope;
+        // Apply velocity gain scaling to the individual grain
+        grainWindow.gain.value = ampEnvelope * gainMult;
 
         src.connect(grainWindow);
         grainWindow.connect(track.bus.input); 
@@ -80,7 +112,7 @@ export class GranularSynth {
         if (offset + dur > bufDur) offset = 0;
 
         grainWindow.gain.setValueAtTime(0, time);
-        grainWindow.gain.linearRampToValueAtTime(ampEnvelope, time + (dur * 0.1)); 
+        grainWindow.gain.linearRampToValueAtTime(ampEnvelope * gainMult, time + (dur * 0.1)); 
         grainWindow.gain.linearRampToValueAtTime(0, time + dur);
 
         this.activeGrains++;
@@ -96,15 +128,12 @@ export class GranularSynth {
         scheduleVisualDrawCallback(time, track.id);
     }
 
-    scheduleNote(track, time, scheduleVisualDrawCallback) {
+    scheduleNote(track, time, scheduleVisualDrawCallback, velocityLevel = 2) {
         // --- 1. HANDLE 909 DRUM TYPE ---
         if (track.type === 'simple-drum') {
-            if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.audioEngine.getMappedFrequency(Math.max(20, track.params.hpFilter), 'hp'), time);
-            if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(this.audioEngine.getMappedFrequency(Math.max(100, track.params.filter), 'lp'), time);
-            if(track.bus.vol) track.bus.vol.gain.setValueAtTime(track.params.volume, time);
-            if(track.bus.pan) track.bus.pan.pan.setValueAtTime(track.params.pan, time);
-
-            this.audioEngine.triggerDrum(track, time);
+            // Bus update handled inside triggerDrum now somewhat, but we should ensure baseline is set if no grains playing?
+            // Actually, triggerDrum sets it.
+            this.audioEngine.triggerDrum(track, time, velocityLevel);
             scheduleVisualDrawCallback(time, track.id);
             return;
         }
@@ -157,7 +186,7 @@ export class GranularSynth {
 
             const jitter = Math.random() * 0.005;
             if (ampEnv > 0.001) { 
-                this.playGrain(track, time + grainRelativeTime + jitter, scheduleVisualDrawCallback, ampEnv);
+                this.playGrain(track, time + grainRelativeTime + jitter, scheduleVisualDrawCallback, ampEnv, velocityLevel);
             }
         }
     }
