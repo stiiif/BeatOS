@@ -11,8 +11,6 @@
     width: 100%;
     padding-left: 4px;
     padding-right: 4px;
-    /* IMPORTANT: Force grid to be at least as wide as its content to trigger scroll */
-    min-width: max-content; 
 }
 
 .matrix-container {
@@ -21,7 +19,6 @@
     gap: 1px;
     padding-bottom: 20px;
     width: 100%;
-    min-width: max-content;
 }
 
 /* Divider for every 4th step (Beat Markers - Default 4/4) */
