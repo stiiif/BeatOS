@@ -6,7 +6,7 @@ export class SearchModal {
         this.client = new FreesoundClient();
         // Use a default free API key for demonstration if one isn't provided.
         // In production, this should be handled securely or require user input.
-        this.client.setApiKey("h5b2U1Gg8W8k3M6t5Y5K5L5P5O5R5T5E5S5T"); 
+        this.client.setApiKey("4DbvH6l42zd0JLdxwvSmGiS7UsCz4Qy1QzbvvTVQ"); 
         
         this.loader = new SampleLoader(audioEngine);
         this.activeTrack = null;
