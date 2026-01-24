@@ -7,13 +7,25 @@
     height: calc(100vh - 3rem);
 }
 
-/* --- Left Pane (Sequencer + Future) --- */
-.left-pane {
+/* --- New Left Panel (Future Modules) --- */
+.new-left-panel {
+    width: 300px; /* Default width */
+    min-width: 200px;
+    max-width: 600px;
+    display: flex;
+    flex-direction: column;
+    background-color: #0d0d0d;
+    flex-shrink: 0; /* Prevent auto-shrinking */
+    border-right: 1px solid #222;
+}
+
+/* --- Middle Pane (Sequencer + Future) --- */
+.middle-pane {
     display: flex;
     flex-direction: column;
     flex: 1;
     min-width: 400px; /* Minimum width before breaking */
-    overflow: hidden; 
+    overflow: hidden;
 }
 
 /* Sequencer Panel (Top Left) */
