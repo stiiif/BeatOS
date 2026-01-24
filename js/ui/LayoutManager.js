@@ -1,6 +1,5 @@
 export class LayoutManager {
     constructor() {
-        console.log('[LayoutManager] Initializing...');
         this.container = document.querySelector('.app-container');
         this.newLeftPanel = document.querySelector('.new-left-panel');
         this.middlePane = document.querySelector('.middle-pane');
@@ -8,24 +7,9 @@ export class LayoutManager {
         this.sequencerPanel = document.querySelector('.sequencer-panel');
         this.futurePanel = document.querySelector('.future-panel');
 
-        console.log('[LayoutManager] Elements found:', {
-            container: !!this.container,
-            newLeftPanel: !!this.newLeftPanel,
-            middlePane: !!this.middlePane,
-            rightPane: !!this.rightPane,
-            sequencerPanel: !!this.sequencerPanel,
-            futurePanel: !!this.futurePanel
-        });
-
         this.resizerLeft = document.getElementById('resizer-left');
         this.resizerRight = document.getElementById('resizer-right');
         this.resizerH = document.querySelector('.resizer-h');
-
-        console.log('[LayoutManager] Resizers found:', {
-            resizerLeft: !!this.resizerLeft,
-            resizerRight: !!this.resizerRight,
-            resizerH: !!this.resizerH
-        });
 
         this.isResizingLeft = false;
         this.isResizingRight = false;
@@ -62,7 +46,7 @@ export class LayoutManager {
         }
 
         // Horizontal Resize (Sequencer vs Future)
-        if(this.resizerH && this.sequencerPanel && this.futurePanel) {
+        if(this.resizerH && this.middlePane && this.sequencerPanel && this.futurePanel) {
             this.resizerH.addEventListener('mousedown', (e) => {
                 this.isResizingH = true;
                 this.resizerH.classList.add('resizing');
@@ -80,14 +64,6 @@ export class LayoutManager {
 
     handleMouseMove(e) {
         if (!this.isResizingLeft && !this.isResizingRight && !this.isResizingH) return;
-
-        if (this.isResizingH) {
-            console.log('[LayoutManager] H-Resize active, elements:', {
-                middlePane: !!this.middlePane,
-                sequencerPanel: !!this.sequencerPanel,
-                futurePanel: !!this.futurePanel
-            });
-        }
 
         if (this.isResizingLeft && this.container && this.newLeftPanel) {
             // Calculate new width for new left panel
