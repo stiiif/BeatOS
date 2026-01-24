@@ -58,8 +58,20 @@
     </header>
 
     <div class="app-container">
-        
-        <div class="left-pane">
+
+        <!-- New Left Panel for Future Modules -->
+        <div class="new-left-panel">
+            <div class="text-neutral-600 text-center p-8">
+                <i class="fas fa-cube text-4xl mb-4"></i>
+                <p class="font-bold">Future Module Panel</p>
+                <p class="text-xs text-neutral-700 mt-2">Reserved for new features</p>
+            </div>
+        </div>
+
+        <div class="resizer-v" id="resizer-left"></div>
+
+        <!-- Middle Pane (Sequencer + Bottom Panel) -->
+        <div class="middle-pane">
             <div class="sequencer-panel relative custom-scrollbar">
                 
                 <div id="startOverlay" class="absolute inset-0 bg-neutral-950/95 z-50 flex flex-col items-center justify-center">
@@ -83,9 +95,9 @@
                     <p class="text-xs text-neutral-700 mt-1">Arranger / Mixer / Effects</p>
                 </div>
             </div>
-        </div>
+        </div> <!-- End middle-pane -->
 
-        <div class="resizer-v"></div>
+        <div class="resizer-v" id="resizer-right"></div>
 
         <div class="right-pane border-l border-neutral-800 shadow-2xl">
             

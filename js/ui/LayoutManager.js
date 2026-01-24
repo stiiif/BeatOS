@@ -1,30 +1,45 @@
 export class LayoutManager {
     constructor() {
         this.container = document.querySelector('.app-container');
-        this.leftPane = document.querySelector('.left-pane');
+        this.newLeftPanel = document.querySelector('.new-left-panel');
+        this.middlePane = document.querySelector('.middle-pane');
         this.rightPane = document.querySelector('.right-pane');
         this.sequencerPanel = document.querySelector('.sequencer-panel');
         this.futurePanel = document.querySelector('.future-panel');
-        
-        this.resizerV = document.querySelector('.resizer-v');
+
+        this.resizerLeft = document.getElementById('resizer-left');
+        this.resizerRight = document.getElementById('resizer-right');
         this.resizerH = document.querySelector('.resizer-h');
-        
-        this.isResizingV = false;
+
+        this.isResizingLeft = false;
+        this.isResizingRight = false;
         this.isResizingH = false;
 
         this.init();
     }
 
     init() {
-        if(!this.resizerV || !this.resizerH) return;
+        if(!this.resizerH) return;
 
-        // Vertical Resize (Left vs Right)
-        this.resizerV.addEventListener('mousedown', (e) => {
-            this.isResizingV = true;
-            this.resizerV.classList.add('resizing');
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-        });
+        // Left Vertical Resize (New Left Panel vs Middle)
+        if(this.resizerLeft) {
+            this.resizerLeft.addEventListener('mousedown', (e) => {
+                this.isResizingLeft = true;
+                this.resizerLeft.classList.add('resizing');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+            });
+        }
+
+        // Right Vertical Resize (Middle vs Right Panel)
+        if(this.resizerRight) {
+            this.resizerRight.addEventListener('mousedown', (e) => {
+                this.isResizingRight = true;
+                this.resizerRight.classList.add('resizing');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+            });
+        }
 
         // Horizontal Resize (Sequencer vs Future)
         this.resizerH.addEventListener('mousedown', (e) => {
@@ -36,19 +51,31 @@ export class LayoutManager {
 
         // Global Mouse Move
         document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-        
+
         // Global Mouse Up
         document.addEventListener('mouseup', () => this.stopResizing());
     }
 
     handleMouseMove(e) {
-        if (!this.isResizingV && !this.isResizingH) return;
+        if (!this.isResizingLeft && !this.isResizingRight && !this.isResizingH) return;
 
-        if (this.isResizingV) {
+        if (this.isResizingLeft) {
+            // Calculate new width for new left panel
+            const containerRect = this.container.getBoundingClientRect();
+            const newLeftWidth = e.clientX - containerRect.left;
+
+            // Constrain width
+            if (newLeftWidth > 200 && newLeftWidth < 600) {
+                this.newLeftPanel.style.width = `${newLeftWidth}px`;
+                window.dispatchEvent(new Event('resize'));
+            }
+        }
+
+        if (this.isResizingRight) {
             // Calculate new width for right pane
             const containerRect = this.container.getBoundingClientRect();
             const newRightWidth = containerRect.right - e.clientX;
-            
+
             // Constrain width
             if (newRightWidth > 250 && newRightWidth < 800) {
                 this.rightPane.style.width = `${newRightWidth}px`;
@@ -58,22 +85,24 @@ export class LayoutManager {
 
         if (this.isResizingH) {
             // Calculate relative heights using flex-grow
-            const leftPaneRect = this.leftPane.getBoundingClientRect();
-            const relativeY = e.clientY - leftPaneRect.top;
-            
-            const totalHeight = leftPaneRect.height;
+            const middlePaneRect = this.middlePane.getBoundingClientRect();
+            const relativeY = e.clientY - middlePaneRect.top;
+
+            const totalHeight = middlePaneRect.height;
             const topHeight = Math.max(100, Math.min(totalHeight - 100, relativeY));
             const bottomHeight = totalHeight - topHeight;
-            
+
             this.sequencerPanel.style.flex = `${topHeight}`;
             this.futurePanel.style.flex = `${bottomHeight}`;
         }
     }
 
     stopResizing() {
-        this.isResizingV = false;
+        this.isResizingLeft = false;
+        this.isResizingRight = false;
         this.isResizingH = false;
-        if(this.resizerV) this.resizerV.classList.remove('resizing');
+        if(this.resizerLeft) this.resizerLeft.classList.remove('resizing');
+        if(this.resizerRight) this.resizerRight.classList.remove('resizing');
         if(this.resizerH) this.resizerH.classList.remove('resizing');
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
