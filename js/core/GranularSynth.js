@@ -33,7 +33,6 @@ export class GranularSynth {
         const audioCtx = this.audioEngine.getContext();
         if (!audioCtx || !track.buffer || !track.bus) return; 
 
-        // Velocity Logic for Granular
         let gainMult = 1.0;
         let filterOffset = 0;
         let sprayMod = 0;
@@ -42,7 +41,7 @@ export class GranularSynth {
             case 1: // Ghost
                 gainMult = 0.4;
                 filterOffset = -3000;
-                sprayMod = 0.05; // More random spray for ghost notes
+                sprayMod = 0.05; 
                 break;
             case 2: // Normal
                 gainMult = 0.75;
@@ -55,7 +54,6 @@ export class GranularSynth {
                 else return;
         }
 
-        // LFO Modulation
         let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, filter:0, hpFilter:0 };
         track.lfos.forEach(lfo => {
             const v = lfo.getValue(time);
@@ -80,10 +78,8 @@ export class GranularSynth {
         const dur = Math.max(0.01, p.grainSize + mod.grainSize);
         const pitch = Math.max(0.1, p.pitch + mod.pitch);
 
-        // Update Track Bus (with velocity mods for filter)
         if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.audioEngine.getMappedFrequency(Math.max(20, p.hpFilter + mod.hpFilter), 'hp'), time);
         
-        // Apply filterOffset to LPF
         let lpFreq = this.audioEngine.getMappedFrequency(Math.max(100, p.filter + mod.filter), 'lp');
         if (velocityLevel === 1) lpFreq = Math.max(100, lpFreq + filterOffset);
         if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(lpFreq, time);
@@ -96,25 +92,20 @@ export class GranularSynth {
         src.playbackRate.value = pitch;
 
         const grainWindow = audioCtx.createGain();
-        // Apply velocity gain scaling to the individual grain
         grainWindow.gain.value = ampEnvelope * gainMult;
 
         src.connect(grainWindow);
         grainWindow.connect(track.bus.input); 
 
-        // --- TRACK SOURCE MANAGEMENT (For Choking) ---
         track.addSource(src);
 
         const bufDur = track.buffer.duration;
         let offset = gPos * bufDur;
         if (offset + dur > bufDur) offset = 0;
 
+        // FIXED: Fast attack for individual grains to prevent lag with large grain sizes
         grainWindow.gain.setValueAtTime(0, time);
-        
-        // FIXED: Use a fixed, short attack time (e.g. 2ms) instead of percentage of duration
-        // This prevents larger grains from sounding "late"
         const grainAttack = 0.002; 
-        // Ensure attack doesn't exceed half the duration
         const safeAttack = Math.min(grainAttack, dur * 0.5);
         
         grainWindow.gain.linearRampToValueAtTime(ampEnvelope * gainMult, time + safeAttack); 
@@ -124,8 +115,6 @@ export class GranularSynth {
         src.start(time, offset, dur);
         src.onended = () => { 
             this.activeGrains--;
-            // Track source cleanup handled in Track.js addSource listener, 
-            // but we need to disconnect nodes here
             src.disconnect();
             grainWindow.disconnect();
         };
@@ -134,14 +123,12 @@ export class GranularSynth {
     }
 
     scheduleNote(track, time, scheduleVisualDrawCallback, velocityLevel = 2) {
-        // --- 1. HANDLE 909 DRUM TYPE ---
         if (track.type === 'simple-drum') {
             this.audioEngine.triggerDrum(track, time, velocityLevel);
             scheduleVisualDrawCallback(time, track.id);
             return;
         }
 
-        // --- 2. HANDLE GRANULAR TYPE ---
         const p = track.params;
         
         let density = Math.max(1, p.density);
@@ -175,19 +162,24 @@ export class GranularSynth {
             const grainRelativeTime = i * interval;
             let ampEnv = 0;
 
-            if (grainRelativeTime < atk) {
-                ampEnv = grainRelativeTime / atk;
-            } else if (grainRelativeTime < atk + dec) {
-                const decProgress = (grainRelativeTime - atk) / dec;
-                ampEnv = 1.0 - (decProgress * (1.0 - sustainLevel));
-            } else if (grainRelativeTime < atk + dec + rel) {
-                const relProgress = (grainRelativeTime - (atk + dec)) / rel;
-                ampEnv = sustainLevel * (1.0 - relProgress);
+            // FIX: Ensure first grain starts immediately if attack is short
+            if (i === 0 && atk < 0.01) {
+                ampEnv = 1.0;
             } else {
-                ampEnv = 0;
+                if (grainRelativeTime < atk) {
+                    ampEnv = grainRelativeTime / atk;
+                } else if (grainRelativeTime < atk + dec) {
+                    const decProgress = (grainRelativeTime - atk) / dec;
+                    ampEnv = 1.0 - (decProgress * (1.0 - sustainLevel));
+                } else if (grainRelativeTime < atk + dec + rel) {
+                    const relProgress = (grainRelativeTime - (atk + dec)) / rel;
+                    ampEnv = sustainLevel * (1.0 - relProgress);
+                } else {
+                    ampEnv = 0;
+                }
             }
 
-            // Remove jitter for the first grain to ensure tight timing with 909
+            // Remove jitter for the first grain to ensure tight timing
             const jitter = (i === 0) ? 0 : Math.random() * 0.005;
             
             if (ampEnv > 0.001) { 
