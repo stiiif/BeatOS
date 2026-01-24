@@ -191,74 +191,108 @@ export class AudioEngine {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             const baseFreq = 50 + (tune * 100);
-            const decay = 0.1 + (decayVal * 0.5);
+            
+            // Allow decay to go extremely short (clicky) to full length
+            // 0.01s (click) to 0.6s (full boom)
+            const decay = 0.01 + (decayVal * 0.6); 
+            
             osc.connect(gain); gain.connect(out);
             osc.frequency.setValueAtTime(150 + (tune * 200), t);
-            osc.frequency.exponentialRampToValueAtTime(baseFreq, t + 0.02);
-            osc.frequency.exponentialRampToValueAtTime(30, t + decay);
-            gain.gain.setValueAtTime(1, t);
-            gain.gain.exponentialRampToValueAtTime(0.01, t + decay);
             
-            track.addSource(osc); // Track for Choking
+            // Pitch drop speed linked to decay for snappier clicks
+            const pitchDropTime = Math.min(0.02, decay * 0.5); 
+            osc.frequency.exponentialRampToValueAtTime(baseFreq, t + pitchDropTime);
+            osc.frequency.exponentialRampToValueAtTime(30, t + decay);
+            
+            gain.gain.setValueAtTime(1, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + decay);
+            
+            track.addSource(osc); 
             osc.start(t); osc.stop(t + decay + 0.1);
         } 
         else if (type === 'snare') {
             const osc = ctx.createOscillator();
             const oscGain = ctx.createGain();
             const toneFreq = 180 + (tune * 100);
-            const toneDecay = 0.1 + (decayVal * 0.2);
+            
+            // Short: 0.01s, Long: 0.3s
+            const toneDecay = 0.01 + (decayVal * 0.3);
+            
             osc.type = 'triangle'; osc.frequency.setValueAtTime(toneFreq, t);
             osc.connect(oscGain); oscGain.connect(out);
-            oscGain.gain.setValueAtTime(0.5, t); oscGain.gain.exponentialRampToValueAtTime(0.01, t + toneDecay);
-            track.addSource(osc); // Track
+            
+            oscGain.gain.setValueAtTime(0.5, t); 
+            oscGain.gain.exponentialRampToValueAtTime(0.001, t + toneDecay);
+            
+            track.addSource(osc); 
             osc.start(t); osc.stop(t + toneDecay + 0.1);
 
-            const bufferSize = ctx.sampleRate * (0.2 + decayVal * 0.2);
+            // Noise component decay
+            const noiseDecay = 0.01 + (decayVal * 0.4);
+            const bufferSize = ctx.sampleRate * (noiseDecay + 0.1); 
             const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
             const data = buffer.getChannelData(0);
             for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+            
             const noise = ctx.createBufferSource();
             noise.buffer = buffer;
             const noiseFilter = ctx.createBiquadFilter();
             noiseFilter.type = 'highpass'; noiseFilter.frequency.value = 1000;
             const noiseGain = ctx.createGain();
+            
             noise.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(out);
-            noiseGain.gain.setValueAtTime(0.8, t); noiseGain.gain.exponentialRampToValueAtTime(0.01, t + (0.1 + decayVal * 0.2));
-            track.addSource(noise); // Track
+            noiseGain.gain.setValueAtTime(0.8, t); 
+            noiseGain.gain.exponentialRampToValueAtTime(0.001, t + noiseDecay);
+            
+            track.addSource(noise); 
             noise.start(t);
         }
         else if (type === 'closed-hat' || type === 'open-hat') {
             const isOpen = type === 'open-hat';
-            const baseDecay = isOpen ? (0.3 + decayVal * 0.5) : (0.05 + decayVal * 0.05);
-            const bufferSize = ctx.sampleRate * baseDecay;
+            // Adjusted ranges for tighter control
+            // Closed: 0.005s to 0.15s
+            // Open: 0.05s to 0.8s
+            const baseDecay = isOpen ? (0.05 + decayVal * 0.75) : (0.005 + decayVal * 0.15);
+            
+            const bufferSize = ctx.sampleRate * (baseDecay + 0.1);
             const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
             const data = buffer.getChannelData(0);
             for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1);
+            
             const src = ctx.createBufferSource(); src.buffer = buffer;
             const bpf = ctx.createBiquadFilter(); bpf.type = 'bandpass'; bpf.frequency.value = 8000 + (tune * 4000); bpf.Q.value = 1;
             const hpf = ctx.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 5000;
             const gain = ctx.createGain();
+            
             src.connect(bpf); bpf.connect(hpf); hpf.connect(gain); gain.connect(out);
-            gain.gain.setValueAtTime(0.6, t); gain.gain.exponentialRampToValueAtTime(0.01, t + baseDecay);
-            track.addSource(src); // Track
+            gain.gain.setValueAtTime(0.6, t); 
+            gain.gain.exponentialRampToValueAtTime(0.001, t + baseDecay);
+            
+            track.addSource(src); 
             src.start(t);
         }
         else if (type === 'cymbal') {
-            const decay = 1.0 + (decayVal * 2.0);
-            const bufferSize = ctx.sampleRate * decay;
+            // 0.1s (choke) to 3.0s (full crash)
+            const decay = 0.1 + (decayVal * 2.9);
+            const bufferSize = ctx.sampleRate * (decay + 0.1);
             const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
             const data = buffer.getChannelData(0);
             for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1);
+            
             const src = ctx.createBufferSource(); src.buffer = buffer;
             const bpf1 = ctx.createBiquadFilter(); bpf1.type = 'bandpass'; bpf1.frequency.value = 300;
             const bpf2 = ctx.createBiquadFilter(); bpf2.type = 'bandpass'; bpf2.frequency.value = 8000;
             const mixGain = ctx.createGain();
             src.connect(mixGain);
+            
             const hpf = ctx.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 4000 + (tune * 2000);
             const env = ctx.createGain();
             src.connect(hpf); hpf.connect(env); env.connect(out);
-            env.gain.setValueAtTime(0.5, t); env.gain.exponentialRampToValueAtTime(0.01, t + decay);
-            track.addSource(src); // Track
+            
+            env.gain.setValueAtTime(0.5, t); 
+            env.gain.exponentialRampToValueAtTime(0.001, t + decay);
+            
+            track.addSource(src); 
             src.start(t);
         }
     }
