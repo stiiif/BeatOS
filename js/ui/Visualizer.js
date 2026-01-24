@@ -1,8 +1,7 @@
-import { globalBus } from '../events/EventBus.js';
-import { EVENTS } from '../events/Events.js';
-
+// Visualizer Module
 export class Visualizer {
     constructor(canvasId, bufferCanvasId, audioEngine) {
+        // Main canvas ID ignored now if we move to per-track logic, but kept for compatibility
         this.bufCanvas = document.getElementById(bufferCanvasId);
         if(this.bufCanvas) {
             this.bufCtx = this.bufCanvas.getContext('2d');
@@ -12,20 +11,6 @@ export class Visualizer {
         this.tracks = [];
         this.selectedTrackIndex = 0;
         this.scopeMode = 'wave'; // 'wave' or 'spectrum'
-        
-        // Listen for track selection via EventBus
-        globalBus.on(EVENTS.TRACK_SELECTED, (index) => {
-            this.selectedTrackIndex = index;
-            // Force redraw of buffer display when track changes
-            this.drawBufferDisplay();
-        });
-        
-        // Listen for playback events if needed, or visual updates
-        globalBus.on(EVENTS.TRACK_ADDED, () => {
-            // Might need to update internal track reference if array was replaced
-            // In current architecture, array reference is constant, but length changes.
-            this.resizeCanvas();
-        });
     }
 
     setTracks(tracks) {
@@ -41,6 +26,7 @@ export class Visualizer {
     }
 
     resizeCanvas() {
+        // Only resize buffer canvas here. Track canvases are handled via CSS/Creation
         if (this.bufCanvas) {
             this.bufCanvas.width = this.bufCanvas.parentElement.offsetWidth;
             this.bufCanvas.height = 80;
@@ -125,6 +111,8 @@ export class Visualizer {
 
             for(let i = 0; i < bufferLength; i++) {
                 const barHeight = (dataArray[i] / 255) * h;
+                
+                // Color based on frequency/height (Red/Orange/Yellow/Green/Blue/Purple)
                 const hue = 240 - ((i / bufferLength) * 240); 
                 this.bufCtx.fillStyle = `hsl(${hue}, 80%, 50%)`;
                 this.bufCtx.fillRect(x, h - barHeight, barWidth, barHeight);
