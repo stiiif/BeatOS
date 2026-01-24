@@ -353,6 +353,9 @@ export class UIManager {
 
         const startTrack = grpId * TRACKS_PER_GROUP;
 
+        console.log(`[GrooveFS] Starting Freesound Auto-Kit for Pattern: ${pattern.name}`);
+        console.log(`[GrooveFS] Group ID: ${grpId}, Start Track: ${startTrack}`);
+
         try {
             // 2. Iterate tracks and fetch sounds
             for (let i = 0; i < TRACKS_PER_GROUP; i++) {
@@ -363,6 +366,9 @@ export class UIManager {
                 if (this.tracks[targetTrackId] && !this.tracks[targetTrackId].stepLock && patternTrack) {
                     const trackObj = this.tracks[targetTrackId];
                     
+                    console.log(`[GrooveFS] Processing Track ${targetTrackId} (${patternTrack.instrument_type})`);
+                    console.log(`[GrooveFS] Track type BEFORE: ${trackObj.type}`);
+
                     // Construct search query
                     let query = patternTrack.instrument_type.replace(/_/g, ' ');
                     
@@ -382,6 +388,8 @@ export class UIManager {
                     
                     // Add license filter for safety
                     filters += ' license:"Creative Commons 0"';
+                    
+                    console.log(`[GrooveFS] Query: "${query}", Filters: ${filters}`);
 
                     const results = await this.searchModal.client.textSearch(query, filters);
                     
@@ -390,12 +398,17 @@ export class UIManager {
                         const pickIdx = Math.floor(Math.random() * Math.min(5, results.results.length));
                         const sound = results.results[pickIdx];
                         
+                        console.log(`[GrooveFS] Found sound: ${sound.name} (ID: ${sound.id})`);
+
                         const url = sound.previews['preview-hq-mp3'];
+                        console.log(`[GrooveFS] Loading URL: ${url}`);
+                        
                         await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
                         
                         // FORCE TRACK TYPE TO GRANULAR to avoid 909 override
                         // This fixes the issue where applyGroove() sets it to 'simple-drum'
                         trackObj.type = 'granular';
+                        console.log(`[GrooveFS] Track type FORCED to 'granular'`);
                         
                         // Reset Granular Params for standard playback of a one-shot sample
                         trackObj.params.position = 0;
@@ -407,7 +420,11 @@ export class UIManager {
 
                         // Update Name
                         trackObj.customSample.name = sound.name;
+                    } else {
+                        console.warn(`[GrooveFS] No results found for ${query}`);
                     }
+                    
+                    console.log(`[GrooveFS] Track type AFTER: ${trackObj.type}`);
                 }
             }
             
