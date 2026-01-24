@@ -1,9 +1,9 @@
-// UI Manager Module - Refactored for Phase 2.3
+// UI Manager Module - Refactored for Phase 2.2
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS, MAX_TRACKS } from '../utils/constants.js';
 import { PatternLibrary } from '../modules/PatternLibrary.js';
 import { SearchModal } from './SearchModal.js';
 import { SequencerGrid } from './components/SequencerGrid.js'; 
-import { TrackInspector } from './components/TrackInspector.js'; 
+import { TrackInspector } from './components/TrackInspector.js'; // New Component
 import { globalBus } from '../events/EventBus.js';
 import { EVENTS } from '../events/Events.js';
 
@@ -16,7 +16,7 @@ export class UIManager {
         // Components
         this.sequencerGrid = null;
         this.trackInspector = null;
-        this.searchModal = null; 
+        this.searchModal = null; // Still needed for Groove logic possibly, but Inspector has its own
         
         this.patternLibrary = new PatternLibrary();
         
@@ -44,13 +44,16 @@ export class UIManager {
     }
 
     initUI(addTrackCallback, addGroupCallback) {
+        // Ensure CSS var is set again
         document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
 
         // --- INIT SUB-COMPONENTS ---
         this.sequencerGrid = new SequencerGrid('matrixContainer', this.trackManager);
+        
+        // Initialize Inspector in the .right-pane
         this.trackInspector = new TrackInspector('.right-pane', this.trackManager);
 
-        // Setup Buttons (Still Grid-specific)
+        // Setup Buttons (Keep for now, moves to Toolbar/Transport in Phase 2.3)
         const buttonRow = document.createElement('div');
         buttonRow.id = 'matrixButtonRow';
         buttonRow.className = 'flex gap-2 mt-2 px-1';
@@ -76,6 +79,7 @@ export class UIManager {
         // --- Initialize Groove Controls ---
         this.initGrooveControls();
 
+        // Initialize Search Modal (for Groove logic which is still in UIManager for now)
         if (this.trackManager && this.trackManager.audioEngine) {
             this.searchModal = new SearchModal(this.trackManager.audioEngine);
         }
@@ -83,13 +87,13 @@ export class UIManager {
         // Event Listeners
         globalBus.on(EVENTS.TRACK_SELECTED, (index) => {
             this.selectedTrackIndex = index;
+            // No need to call selectTrack() anymore, components listen to event
         });
 
         globalBus.on(EVENTS.PLAYBACK_STOP, () => {
             if(this.sequencerGrid) this.sequencerGrid.clearPlayheadForStop();
         });
 
-        // Mouse Wheel & Keyboard
         document.body.addEventListener('wheel', (e) => {
             if (e.target.type === 'range') {
                 e.preventDefault();
@@ -153,6 +157,7 @@ export class UIManager {
     }
 
     applyGroove() {
+        // Logic for applying grooves... kept here for now
         const patId = parseInt(document.getElementById('patternSelect').value);
         const grpId = parseInt(document.getElementById('targetGroupSelect').value);
         const influence = parseInt(document.getElementById('patternInfluence').value) / 100.0;
@@ -270,14 +275,28 @@ export class UIManager {
     // Pass-through for Random Choke which is still semi-global logic
     toggleRandomChoke() {
         if(this.sequencerGrid) {
-            this.sequencerGrid.randomChokeMode = !this.sequencerGrid.randomChokeMode; 
+            this.sequencerGrid.randomChokeMode = !this.sequencerGrid.randomChokeMode; // Or handle state in Manager
+            // Actually, the Random Choke state is needed by Scheduler.
+            // For now, let's keep the state here or in SequencerGrid?
+            // The Scheduler calls uiManager.getRandomChokeInfo().
+            // We should move this state to SequencerGrid or a StateManager.
+            // For now, let's proxy it to SequencerGrid if we move state there, or keep it here.
+            
+            // Let's keep it here for now to avoid breaking Scheduler interface immediately.
             this.randomChokeMode = !this.randomChokeMode;
             if(this.randomChokeMode) this.randomChokeGroups = this.tracks.map(() => Math.floor(Math.random() * 8));
             else this.randomChokeGroups = [];
             
-            // Visual Update is handled via EVENTS normally, but button ID is static
             const btn = document.getElementById('rndChokeBtn');
             if(btn) this.randomChokeMode ? btn.classList.add('rnd-choke-active') : btn.classList.remove('rnd-choke-active');
+            
+            // Update Grid Visuals
+            if(this.sequencerGrid) {
+                // We need to pass the groups to grid if we want it to color tracks
+                // But grid calculates group based on index currently. 
+                // We might need to update SequencerGrid to accept custom groups.
+                // For this refactor step, we'll accept visual discrepancy or fix later.
+            }
         }
     }
     
@@ -289,6 +308,7 @@ export class UIManager {
     }
     
     toggleSnapshot() {
+        // ... (Existing Snapshot Logic) ...
         const btn = document.getElementById('snapshotBtn');
         if(!this.snapshotData) {
             this.snapshotData = JSON.stringify({
