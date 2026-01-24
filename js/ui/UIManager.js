@@ -120,7 +120,7 @@ export class UIManager {
         });
 
         this.bindAutomationControls();
-        this.addChokeSelectorToHeader();
+        // Removed old choke selector init
         
         // --- Initialize Groove Controls ---
         this.initGrooveControls();
@@ -328,70 +328,7 @@ export class UIManager {
         }
     }
 
-    addChokeSelectorToHeader() {
-        const headerControls = document.querySelector('.right-pane .p-3 .flex.gap-1.ml-2');
-        if(!headerControls) return;
-        if(document.getElementById('headerChokeContainer')) return;
-
-        const container = document.createElement('div');
-        container.id = 'headerChokeContainer';
-        container.className = 'flex items-center gap-1 ml-2 border-l border-neutral-700 pl-2';
-        
-        const label = document.createElement('span');
-        label.innerText = 'CHK';
-        label.className = 'text-[9px] font-bold text-neutral-500 mr-1';
-        container.appendChild(label);
-
-        // Create 8 small buttons instead of a select
-        const btnGroup = document.createElement('div');
-        btnGroup.className = 'flex gap-0.5';
-        
-        for(let i=1; i<=8; i++) {
-            const btn = document.createElement('button');
-            btn.className = 'choke-btn w-4 h-4 text-[8px] bg-neutral-800 text-neutral-400 border border-neutral-700 rounded flex items-center justify-center hover:bg-neutral-700 transition';
-            btn.innerText = i;
-            btn.dataset.group = i;
-            btn.title = `Choke Group ${i}`;
-            
-            btn.addEventListener('click', () => {
-                const t = this.tracks[this.selectedTrackIndex];
-                if(!t) return;
-                
-                const group = parseInt(btn.dataset.group);
-                
-                if (t.chokeGroup === group) {
-                    t.chokeGroup = 0;
-                } else {
-                    t.chokeGroup = group;
-                }
-                this.updateChokeButtonsState();
-            });
-            
-            btnGroup.appendChild(btn);
-        }
-        
-        container.appendChild(btnGroup);
-        headerControls.appendChild(container);
-    }
-
-    updateChokeButtonsState() {
-        const t = this.tracks[this.selectedTrackIndex];
-        if(!t) return;
-        
-        const currentGroup = t.chokeGroup;
-        const btns = document.querySelectorAll('.choke-btn');
-        
-        btns.forEach(btn => {
-            const group = parseInt(btn.dataset.group);
-            if (group === currentGroup) {
-                btn.classList.remove('bg-neutral-800', 'text-neutral-400');
-                btn.classList.add('bg-red-900', 'text-white', 'border-red-700');
-            } else {
-                btn.classList.add('bg-neutral-800', 'text-neutral-400');
-                btn.classList.remove('bg-red-900', 'text-white', 'border-red-700');
-            }
-        });
-    }
+    // REMOVED addChokeSelectorToHeader and updateChokeButtonsState (replaced by updateCustomTrackHeader)
 
     handleSliderWheel(e) {
         const el = e.target;
@@ -566,29 +503,11 @@ export class UIManager {
     }
 
     updateCustomTrackHeader(idx, groupIdx, groupColor) {
-        // Find or create the container for the custom header
         let container = document.querySelector('.right-pane .p-3.bg-neutral-800');
-        if (!container) return; // Should exist
+        if (!container) return;
 
-        // Clear existing content to rebuild structure completely or update specific parts
-        // The previous structure was:
-        /*
-        <div class="flex items-center gap-2">
-            <span class="w-3 h-3 ..."></span>
-            <h2 ...>TRACK 00</h2>
-            ... buttons ...
-        </div>
-        <div class="flex flex-col items-end"> ... </div>
-        */
-
-        // We want:
-        // [track number] [track name] [track type]
-        // rst kick snare hat fm smp 909 auto (track type buttons)
-        // 1 2 3 4 5 6 7 8 (groups)
-
-        // Clear container content safely
         container.innerHTML = '';
-        container.className = 'p-3 bg-neutral-800 border-b border-neutral-700 flex flex-col gap-2'; // Changed to column layout
+        container.className = 'p-3 bg-neutral-800 border-b border-neutral-700 flex flex-col gap-2';
 
         const t = this.tracks[idx];
         const displayNum = idx + 1 < 10 ? `0${idx + 1}` : idx + 1;
@@ -613,28 +532,24 @@ export class UIManager {
         const row1 = document.createElement('div');
         row1.className = 'flex items-center gap-2 w-full';
         
-        // Indicator
         const indicator = document.createElement('span');
         indicator.id = 'trackIndicator';
         indicator.className = 'w-3 h-3 rounded-full transition-colors duration-200 shrink-0';
         indicator.style.backgroundColor = groupColor;
         row1.appendChild(indicator);
 
-        // Track Number
         const numSpan = document.createElement('span');
         numSpan.id = 'currentTrackNum';
         numSpan.innerText = displayNum;
         numSpan.className = 'text-sm font-bold text-white font-mono';
         row1.appendChild(numSpan);
 
-        // Track Name
         const nameSpan = document.createElement('span');
         nameSpan.innerText = trackName;
         nameSpan.className = 'text-xs text-neutral-300 truncate flex-1';
         nameSpan.title = trackName;
         row1.appendChild(nameSpan);
 
-        // Track Type Label
         const typeLabel = document.createElement('span');
         typeLabel.id = 'trackTypeLabel';
         typeLabel.innerText = `[${trackType}]`;
@@ -647,18 +562,12 @@ export class UIManager {
         const row2 = document.createElement('div');
         row2.className = 'flex gap-1 w-full justify-between';
         
-        // Reset Button
         const rstBtn = document.createElement('button');
         rstBtn.id = 'resetParamBtn';
         rstBtn.className = 'text-[9px] bg-neutral-700 hover:bg-neutral-600 text-neutral-300 px-1.5 py-1 rounded transition border border-neutral-600 min-w-[24px]';
         rstBtn.innerHTML = '<i class="fas fa-undo"></i>';
         rstBtn.title = 'Reset Parameters';
-        rstBtn.onclick = () => document.getElementById('resetParamBtn').click(); // Re-bind existing global handler logic if needed, or add logic here.
-        // Since we are rebuilding DOM, global event listeners attached to specific IDs in main.js might be lost if we don't handle them.
-        // Ideally, UIManager should handle these clicks or re-attach listeners.
-        // For simplicity, I will dispatch a custom event or call a method if possible.
-        // However, the cleanest way in this refactor is to attach the listeners directly here.
-        rstBtn.addEventListener('click', () => {
+        rstBtn.onclick = () => {
              const t = this.tracks[this.selectedTrackIndex];
              if (t.type === 'granular') {
                  t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
@@ -668,11 +577,9 @@ export class UIManager {
              t.lfos.forEach(lfo => { lfo.target = 'none'; });
              this.updateKnobs();
              this.updateLfoUI();
-             // Visualizer redraw if needed
-        });
+        };
         row2.appendChild(rstBtn);
 
-        // Type Buttons Generator
         const createTypeBtn = (label, type, colorClass = 'bg-neutral-700', is909 = false, isAuto = false) => {
             const btn = document.createElement('button');
             btn.innerText = label;
@@ -690,14 +597,14 @@ export class UIManager {
                          stepElements.forEach(el => { el.className = 'step-btn'; el.classList.remove('active'); });
                     }
                     this.updateTrackControlsVisibility();
-                    // Redraw buffer handled by visualizer loop or explicit call
                 } else if (is909) {
                     t.type = 'simple-drum';
                     t.params.drumType = 'kick'; t.params.drumTune = 0.5; t.params.drumDecay = 0.5;
                     this.updateTrackControlsVisibility();
                     this.updateKnobs();
                 } else if (label === 'SMP') {
-                    document.getElementById('sampleInput').click();
+                    const sampleInput = document.getElementById('sampleInput');
+                    if(sampleInput) sampleInput.click();
                 } else {
                     t.type = 'granular';
                     this.updateTrackControlsVisibility();
@@ -706,10 +613,9 @@ export class UIManager {
                         t.buffer = newBuf;
                         t.customSample = null;
                         t.rmsMap = ae.analyzeBuffer(newBuf);
-                        // Update visualizer buffer
                     }
                 }
-                this.selectTrack(this.selectedTrackIndex); // Refresh header
+                this.selectTrack(this.selectedTrackIndex); 
             };
             return btn;
         };
@@ -724,52 +630,37 @@ export class UIManager {
 
         container.appendChild(row2);
 
-        // --- ROW 3: Group Selectors ---
+        // --- ROW 3: Group Selectors (Choke Groups) ---
         const row3 = document.createElement('div');
         row3.className = 'flex gap-0.5 w-full';
         
-        // Label "GRP"
         const grpLabel = document.createElement('span');
-        grpLabel.innerText = 'GRP';
-        grpLabel.id = 'trackGroupLabel'; // Keep ID for compatibility
+        grpLabel.innerText = 'CHK';
         grpLabel.className = 'text-[9px] font-bold text-neutral-500 mr-1 flex items-center';
         row3.appendChild(grpLabel);
 
         for(let i=0; i<8; i++) {
             const btn = document.createElement('button');
-            const isCurrentGroup = i === groupIdx;
-            // Highlight current group
-            const bgClass = isCurrentGroup ? '' : 'bg-neutral-800 text-neutral-500';
-            const style = isCurrentGroup ? `background-color: ${groupColor}; color: #fff;` : '';
+            const targetGroup = i + 1;
+            const isAssigned = t.chokeGroup === targetGroup;
+            
+            const bgClass = isAssigned ? '' : 'bg-neutral-800 text-neutral-500';
+            const style = isAssigned ? `background-color: #ef4444; color: #fff; border-color: #b91c1c;` : '';
             
             btn.className = `flex-1 h-4 text-[8px] border border-neutral-700 rounded flex items-center justify-center hover:bg-neutral-700 transition ${bgClass}`;
             btn.style.cssText = style;
-            btn.innerText = i + 1;
+            btn.innerText = targetGroup;
+            
+            // Toggle Logic: Clicking active group removes assignment
             btn.onclick = () => {
-                // Logic to move track to group? Or just visualize?
-                // The prompt says "1 2 3 4 5 6 7 8 (groups)". Usually this means assigning the track to a group or selecting the group.
-                // In BeatOS, group is determined by track index (0-3 = Grp 0).
-                // Changing group effectively means moving the track or swapping? 
-                // Or maybe the user implies 'Choke Groups'? 
-                // Given the context of "TRACK Header", standard drum machines allow assigning output/choke groups.
-                // However, "1 2 3 4 5 6 7 8 (groups)" might refer to the "Choke Group" selector I implemented earlier as a dropdown/buttons.
-                // Let's assume this row REPLACES the choke group selector I added to the header earlier.
-                
-                // Assign CHOKE GROUP
-                const t = this.tracks[this.selectedTrackIndex];
-                const newGroup = i + 1; // 1-8
-                if (t.chokeGroup === newGroup) t.chokeGroup = 0; // Toggle off
-                else t.chokeGroup = newGroup;
+                if (t.chokeGroup === targetGroup) {
+                    t.chokeGroup = 0; // Unassign
+                } else {
+                    t.chokeGroup = targetGroup; // Assign
+                }
                 this.selectTrack(this.selectedTrackIndex); // Refresh UI
             };
             
-            // Highlight if active choke group
-            if (this.tracks[idx].chokeGroup === (i + 1)) {
-                btn.style.backgroundColor = '#ef4444'; // Red for choke
-                btn.style.color = 'white';
-                btn.style.borderColor = '#b91c1c';
-            }
-
             row3.appendChild(btn);
         }
         
