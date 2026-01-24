@@ -103,12 +103,14 @@ export class GranularSynth {
         let offset = gPos * bufDur;
         if (offset + dur > bufDur) offset = 0;
 
-        // FIXED: Fast attack for individual grains to prevent lag with large grain sizes
+        // FIXED: Force fast attack for immediate onset regardless of duration
         grainWindow.gain.setValueAtTime(0, time);
         const grainAttack = 0.002; 
-        const safeAttack = Math.min(grainAttack, dur * 0.5);
+        // Ensure attack is always fast (2ms) unless duration is extremely short
+        const safeAttack = Math.min(grainAttack, dur * 0.1); 
         
         grainWindow.gain.linearRampToValueAtTime(ampEnvelope * gainMult, time + safeAttack); 
+        // Decay to end
         grainWindow.gain.linearRampToValueAtTime(0, time + dur);
 
         this.activeGrains++;
@@ -162,8 +164,9 @@ export class GranularSynth {
             const grainRelativeTime = i * interval;
             let ampEnv = 0;
 
-            // FIX: Ensure first grain starts immediately if attack is short
-            if (i === 0 && atk < 0.01) {
+            // FIX: Ensure first grain starts immediately with full amplitude
+            // Overriding global attack for the very first grain to ensure transients are preserved
+            if (i === 0) {
                 ampEnv = 1.0;
             } else {
                 if (grainRelativeTime < atk) {
@@ -179,7 +182,7 @@ export class GranularSynth {
                 }
             }
 
-            // Remove jitter for the first grain to ensure tight timing
+            // Remove jitter for the first grain to ensure precise sync with 909 kicks
             const jitter = (i === 0) ? 0 : Math.random() * 0.005;
             
             if (ampEnv > 0.001) { 
