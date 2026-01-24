@@ -1,13 +1,32 @@
+<<<<<<< HEAD
+// UI Manager Module - Refactored for Phase 2.2
+import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS, MAX_TRACKS } from '../utils/constants.js';
+import { PatternLibrary } from '../modules/PatternLibrary.js';
+import { SearchModal } from './SearchModal.js';
+import { SequencerGrid } from './components/SequencerGrid.js'; 
+import { TrackInspector } from './components/TrackInspector.js'; // New Component
+import { globalBus } from '../events/EventBus.js';
+import { EVENTS } from '../events/Events.js';
+=======
 // UI Manager Module - Updated for Refinement & Polish
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS, MAX_TRACKS } from '../utils/constants.js';
 import { PatternLibrary } from '../modules/PatternLibrary.js';
 import { SearchModal } from './SearchModal.js'; // Import the new modal
+>>>>>>> parent of c582013 (iuytre)
 
 export class UIManager {
     constructor() {
         this.tracks = [];
         this.trackManager = null; 
         this.selectedTrackIndex = 0;
+<<<<<<< HEAD
+        
+        // Components
+        this.sequencerGrid = null;
+        this.trackInspector = null;
+        this.searchModal = null; // Still needed for Groove logic possibly, but Inspector has its own
+        
+=======
         this.selectedLfoIndex = 0;
         this.matrixStepElements = [];
         this.trackLabelElements = [];
@@ -17,6 +36,7 @@ export class UIManager {
         this.randomChokeGroups = [];
         this.basePanValues = [];
         this.globalPanShift = 0;
+>>>>>>> parent of c582013 (iuytre)
         this.patternLibrary = new PatternLibrary();
         
         // Define Keyboard Mapping
@@ -49,8 +69,16 @@ export class UIManager {
         
         // Ensure CSS var is set again
         document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
-        this.generateLfoTabs();
 
+<<<<<<< HEAD
+        // --- INIT SUB-COMPONENTS ---
+        this.sequencerGrid = new SequencerGrid('matrixContainer', this.trackManager);
+        
+        // Initialize Inspector in the .right-pane
+        this.trackInspector = new TrackInspector('.right-pane', this.trackManager);
+
+        // Setup Buttons (Keep for now, moves to Toolbar/Transport in Phase 2.3)
+=======
         const headerContainer = document.getElementById('stepHeaders');
         headerContainer.className = 'sequencer-grid sticky top-0 bg-neutral-950 z-30 pb-2 border-b border-neutral-800 pt-2';
         headerContainer.innerHTML = '';
@@ -96,6 +124,7 @@ export class UIManager {
         const container = document.getElementById('matrixContainer');
         container.innerHTML = ''; 
         
+>>>>>>> parent of c582013 (iuytre)
         const buttonRow = document.createElement('div');
         buttonRow.id = 'matrixButtonRow';
         buttonRow.className = 'flex gap-2 mt-2 px-1';
@@ -117,6 +146,12 @@ export class UIManager {
         
         container.appendChild(buttonRow);
 
+<<<<<<< HEAD
+        // --- Initialize Groove Controls ---
+        this.initGrooveControls();
+
+        // Initialize Search Modal (for Groove logic which is still in UIManager for now)
+=======
         this.tracks.forEach(t => {
             this.appendTrackRow(t.id, visualizerCallback);
         });
@@ -128,15 +163,23 @@ export class UIManager {
         this.initGrooveControls();
 
         // Initialize Search Modal (pass audio engine from track manager)
+>>>>>>> parent of c582013 (iuytre)
         if (this.trackManager && this.trackManager.audioEngine) {
             this.searchModal = new SearchModal(this.trackManager.audioEngine);
         }
         
+<<<<<<< HEAD
+        // Event Listeners
+        globalBus.on(EVENTS.TRACK_SELECTED, (index) => {
+            this.selectedTrackIndex = index;
+            // No need to call selectTrack() anymore, components listen to event
+=======
         // Listen for sample load events to refresh header
         window.addEventListener('trackSampleLoaded', (e) => {
             if (e.detail.trackId === this.selectedTrackIndex) {
                 this.selectTrack(this.selectedTrackIndex);
             }
+>>>>>>> parent of c582013 (iuytre)
         });
 
         // NOTE: Old global visualizer click listener removed as element doesn't exist.
@@ -156,28 +199,15 @@ export class UIManager {
                 const currentTrackId = this.selectedTrackIndex;
                 if (currentTrackId >= 0 && currentTrackId < this.tracks.length) {
                     if(stepIndex < NUM_STEPS) {
+<<<<<<< HEAD
+                        this.sequencerGrid.handleStepClick(currentTrackId, stepIndex);
+=======
                         this.toggleStep(currentTrackId, stepIndex);
+>>>>>>> parent of c582013 (iuytre)
                     }
                 }
             }
         });
-    }
-
-    generateLfoTabs() {
-        const container = document.getElementById('lfoTabsContainer');
-        if (!container) return;
-        container.innerHTML = '';
-        for(let i=0; i<NUM_LFOS; i++) {
-            const btn = document.createElement('button');
-            btn.className = 'lfo-tab flex-1 text-[10px] font-bold py-1 rounded transition text-neutral-400 hover:bg-neutral-700 min-w-[40px]';
-            btn.dataset.lfo = i;
-            btn.innerText = `LFO ${i+1}`;
-            btn.addEventListener('click', (e) => {
-                this.setSelectedLfoIndex(parseInt(e.target.dataset.lfo));
-                this.updateLfoUI();
-            });
-            container.appendChild(btn);
-        }
     }
 
     initGrooveControls() {
@@ -235,6 +265,10 @@ export class UIManager {
 
     // --- APPLY GROOVE LOGIC ---
     applyGroove() {
+<<<<<<< HEAD
+        // Logic for applying grooves... kept here for now
+=======
+>>>>>>> parent of c582013 (iuytre)
         const patId = parseInt(document.getElementById('patternSelect').value);
         const grpId = parseInt(document.getElementById('targetGroupSelect').value);
         const influence = parseInt(document.getElementById('patternInfluence').value) / 100.0;
@@ -247,12 +281,15 @@ export class UIManager {
 
         const startTrack = grpId * TRACKS_PER_GROUP;
         
+<<<<<<< HEAD
+=======
         // Update Grid Visuals based on Time Signature
         this.updateGridVisuals(pattern.time_sig);
 
         // V2: Loop through JSON tracks and map to BeatOS tracks
         // Pattern tracks array length might be less than TRACKS_PER_GROUP (8)
         
+>>>>>>> parent of c582013 (iuytre)
         for (let i = 0; i < TRACKS_PER_GROUP; i++) {
             const targetTrackId = startTrack + i;
             // Get corresponding track from pattern if available
@@ -323,6 +360,12 @@ export class UIManager {
             }
         }
         
+<<<<<<< HEAD
+        if(this.sequencerGrid) this.sequencerGrid.refreshGridState();
+        globalBus.emit(EVENTS.TRACK_SELECTED, startTrack);
+    }
+
+=======
         // Update selection to first track of group to show new sound settings
         this.selectTrack(startTrack, this.visualizerCallback);
     }
@@ -496,6 +539,7 @@ export class UIManager {
 
     // REMOVED addChokeSelectorToHeader and updateChokeButtonsState (replaced by updateCustomTrackHeader)
 
+>>>>>>> parent of c582013 (iuytre)
     handleSliderWheel(e) {
         const el = e.target;
         const step = parseFloat(el.step) || 0.01;
@@ -511,6 +555,14 @@ export class UIManager {
         el.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
+<<<<<<< HEAD
+    appendTrackRow(trk) {
+        if (this.sequencerGrid) this.sequencerGrid.appendTrackRow(trk);
+        globalBus.emit(EVENTS.TRACK_ADDED, trk);
+    }
+
+    // --- PROXIES & UTILS ---
+=======
     appendTrackRow(trk, visualizerCallback = null) {
         const container = document.getElementById('matrixContainer');
         const buttonRow = document.getElementById('matrixButtonRow');
@@ -919,6 +971,7 @@ export class UIManager {
         }
     }
 
+>>>>>>> parent of c582013 (iuytre)
     updateMatrixHead(currentStep, totalStepsPlayed) {
         // Use totalStepsPlayed if available, otherwise fallback to currentStep
         const masterStep = (typeof totalStepsPlayed !== 'undefined') ? totalStepsPlayed : currentStep;
@@ -943,6 +996,67 @@ export class UIManager {
     }
 
     getSelectedTrackIndex() { return this.selectedTrackIndex; }
+<<<<<<< HEAD
+    
+    // Pan Shift (Global)
+    savePanBaseline() { this.basePanValues = this.tracks.map(t => t.params.pan); }
+    applyPanShift(shiftAmount) { 
+        this.globalPanShift = shiftAmount; 
+        if (!this.basePanValues || this.basePanValues.length === 0) this.savePanBaseline(); 
+        const numGroups = 8; 
+        for (let i = 0; i < this.tracks.length; i++) { 
+            const groupIdx = Math.floor(i / TRACKS_PER_GROUP); 
+            const basePan = this.basePanValues[i] || 0; 
+            const shiftInGroups = shiftAmount * numGroups; 
+            const newGroupPosition = (groupIdx + shiftInGroups) % numGroups; 
+            const newGroupCenter = -1 + (newGroupPosition / (numGroups - 1)) * 2; 
+            const originalGroupCenter = -1 + (groupIdx / (numGroups - 1)) * 2; 
+            const offsetFromCenter = basePan - originalGroupCenter; 
+            let newPan = newGroupCenter + offsetFromCenter; 
+            newPan = Math.max(-1, Math.min(1, newPan)); 
+            this.tracks[i].params.pan = parseFloat(newPan.toFixed(3)); 
+            if(this.tracks[i].bus && this.tracks[i].bus.pan) { 
+                this.tracks[i].bus.pan.pan.value = newPan; 
+            } 
+        }
+        globalBus.emit(EVENTS.PARAM_CHANGED);
+    }
+    
+    clearPlayheadForStop() {
+        if(this.sequencerGrid) this.sequencerGrid.clearPlayheadForStop();
+    }
+    
+    // --- Helper for Randomization (Global button calls this) ---
+    randomizeAllPatterns() { 
+        this.tracks.forEach((_, i) => this.sequencerGrid.randomizeTrack(i)); 
+        globalBus.emit(EVENTS.PATTERN_RANDOMIZED);
+    }
+    
+    // Pass-through for Random Choke which is still semi-global logic
+    toggleRandomChoke() {
+        if(this.sequencerGrid) {
+            this.sequencerGrid.randomChokeMode = !this.sequencerGrid.randomChokeMode; // Or handle state in Manager
+            // Actually, the Random Choke state is needed by Scheduler.
+            // For now, let's keep the state here or in SequencerGrid?
+            // The Scheduler calls uiManager.getRandomChokeInfo().
+            // We should move this state to SequencerGrid or a StateManager.
+            // For now, let's proxy it to SequencerGrid if we move state there, or keep it here.
+            
+            // Let's keep it here for now to avoid breaking Scheduler interface immediately.
+            this.randomChokeMode = !this.randomChokeMode;
+            if(this.randomChokeMode) this.randomChokeGroups = this.tracks.map(() => Math.floor(Math.random() * 8));
+            else this.randomChokeGroups = [];
+            
+            const btn = document.getElementById('rndChokeBtn');
+            if(btn) this.randomChokeMode ? btn.classList.add('rnd-choke-active') : btn.classList.remove('rnd-choke-active');
+            
+            // Update Grid Visuals
+            if(this.sequencerGrid) {
+                // We need to pass the groups to grid if we want it to color tracks
+                // But grid calculates group based on index currently. 
+                // We might need to update SequencerGrid to accept custom groups.
+                // For this refactor step, we'll accept visual discrepancy or fix later.
+=======
     getSelectedLfoIndex() { return this.selectedLfoIndex; }
     setSelectedLfoIndex(index) { this.selectedLfoIndex = index; }
     getRandomChokeInfo() { return { mode: this.randomChokeMode, groups: this.randomChokeGroups }; }
@@ -1108,9 +1222,18 @@ export class UIManager {
                 if(el.nextElementSibling) {
                     el.nextElementSibling.innerText = t.params[param].toFixed(2) + suffix;
                 }
+>>>>>>> parent of c582013 (iuytre)
             }
-        });
+        }
     }
+<<<<<<< HEAD
+    
+    getRandomChokeInfo() { return { mode: this.randomChokeMode, groups: this.randomChokeGroups }; }
+    
+    // Proxy for snapshot logic which is still here
+    updateTrackStateUI(idx) {
+        if(this.sequencerGrid) this.sequencerGrid.updateTrackStateVisuals(idx);
+=======
 
     updateLfoUI() {
         if(!this.tracks[this.selectedTrackIndex]) return;
@@ -1141,9 +1264,14 @@ export class UIManager {
         if(rateVal) rateVal.innerText = lfo.rate.toFixed(1);
         document.getElementById('lfoAmt').value = lfo.amount;
         if(amtVal) amtVal.innerText = lfo.amount.toFixed(2);
+>>>>>>> parent of c582013 (iuytre)
     }
-
+    
     toggleSnapshot() {
+<<<<<<< HEAD
+        // ... (Existing Snapshot Logic) ...
+=======
+>>>>>>> parent of c582013 (iuytre)
         const btn = document.getElementById('snapshotBtn');
         if(!this.snapshotData) {
             this.snapshotData = JSON.stringify({
@@ -1181,6 +1309,12 @@ export class UIManager {
                             t.lfos[lIdx].target = lData.target;
                         }
                     });
+<<<<<<< HEAD
+                    
+                    if(this.sequencerGrid) {
+                        this.sequencerGrid.updateTrackStateVisuals(i);
+                        this.sequencerGrid.refreshTrackRow(i);
+=======
                     this.updateTrackStateUI(i);
                     for(let s=0; s<NUM_STEPS; s++) {
                          const btn = this.matrixStepElements[i][s];
@@ -1193,6 +1327,7 @@ export class UIManager {
                          } else {
                              if(t.steps[s] > 0) btn.classList.add(`vel-${t.steps[s]}`);
                          }
+>>>>>>> parent of c582013 (iuytre)
                     }
                     
                     if(t.bus.hp) t.bus.hp.frequency.value = t.params.hpFilter;
@@ -1203,7 +1338,11 @@ export class UIManager {
                 this.snapshotData = null;
                 btn.classList.remove('snap-active');
                 btn.innerText = 'Snap';
+<<<<<<< HEAD
+                globalBus.emit(EVENTS.TRACK_SELECTED, this.selectedTrackIndex);
+=======
                 this.selectTrack(this.selectedTrackIndex, this.visualizerCallback);
+>>>>>>> parent of c582013 (iuytre)
             } catch(e) {
                 console.error("Snapshot restore failed", e);
                 this.snapshotData = null;
@@ -1212,6 +1351,8 @@ export class UIManager {
             }
         }
     }
+<<<<<<< HEAD
+=======
 
     clearPlayheadForStop() {
         for(let t=0; t<this.tracks.length; t++) {
@@ -1221,4 +1362,5 @@ export class UIManager {
             }
         }
     }
+>>>>>>> parent of c582013 (iuytre)
 }
