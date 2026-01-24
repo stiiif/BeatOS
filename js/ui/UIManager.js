@@ -342,8 +342,6 @@ export class UIManager {
         const pattern = this.patternLibrary.getPatternById(patId);
         if (!pattern) return;
 
-        // 1. Apply the pattern structure first (notes, velocity)
-        // This will set the steps/microtiming but also incorrectly reset type to simple-drum
         this.applyGroove(); 
 
         const btn = document.getElementById('applyGrooveFsBtn');
@@ -354,81 +352,81 @@ export class UIManager {
         const startTrack = grpId * TRACKS_PER_GROUP;
 
         console.log(`[GrooveFS] Starting Freesound Auto-Kit for Pattern: ${pattern.name}`);
-        console.log(`[GrooveFS] Group ID: ${grpId}, Start Track: ${startTrack}`);
 
         try {
-            // 2. Iterate tracks and fetch sounds
             for (let i = 0; i < TRACKS_PER_GROUP; i++) {
                 const targetTrackId = startTrack + i;
                 const patternTrack = pattern.tracks[i];
                 
-                // Only process if track exists and is not locked
                 if (this.tracks[targetTrackId] && !this.tracks[targetTrackId].stepLock && patternTrack) {
                     const trackObj = this.tracks[targetTrackId];
-                    
-                    console.log(`[GrooveFS] Processing Track ${targetTrackId} (${patternTrack.instrument_type})`);
-                    console.log(`[GrooveFS] Track type BEFORE: ${trackObj.type}`);
-
-                    // Construct search query
                     let query = patternTrack.instrument_type.replace(/_/g, ' ');
                     
-                    // PHASE 4 REFINEMENT: Add "ghost" to query if it's a ghost track
-                    // AND apply specific brightness/duration filters
-                    let filters = 'duration:[0.05 TO 1.0]';
+                    console.log(`[GrooveFS] Processing Track ${targetTrackId} (${query})`);
 
-                    if (patternTrack.role === 'ghost') {
-                        // For ghost tracks, search for slightly different terms or apply filter
-                        // query += " hit"; // sometimes "ghost" keyword returns spooky sounds, "hit" is safer
-                        // Use darker/shorter sounds
-                        filters += ' ac_brightness:[0 TO 50] duration:[0.01 TO 0.4]'; 
-                    } else {
-                        // Standard hits
-                        filters += ' ac_brightness:[10 TO 100]';
+                    // 1. Strict Search
+                    let filters = 'duration:[0.05 TO 1.0] license:"Creative Commons 0"';
+                    if (patternTrack.role === 'ghost') filters += ' ac_brightness:[0 TO 50]';
+                    else filters += ' ac_brightness:[10 TO 100]';
+
+                    let results = await this.searchModal.client.textSearch(query, filters);
+                    
+                    // 2. Relaxed Filters
+                    if (results.results.length === 0) {
+                        console.log(`[GrooveFS] Attempt 2: Relaxed Filters for ${query}`);
+                        const relaxed = 'duration:[0.05 TO 3.0] license:"Creative Commons 0"';
+                        results = await this.searchModal.client.textSearch(query, relaxed);
                     }
-                    
-                    // Add license filter for safety
-                    filters += ' license:"Creative Commons 0"';
-                    
-                    console.log(`[GrooveFS] Query: "${query}", Filters: ${filters}`);
 
-                    const results = await this.searchModal.client.textSearch(query, filters);
-                    
+                    // 3. Fallback Query
+                    if (results.results.length === 0) {
+                         const fallbacks = {
+                            'tambora': 'tom drum',
+                            'guacharaca': 'guiro',
+                            'conga': 'percussion',
+                            'bongo': 'percussion',
+                            'timbales': 'percussion',
+                            'cowbell': 'bell',
+                            'industrial_perc': 'metallic hit',
+                            'glitch': 'noise',
+                            'dembow': 'reggaeton',
+                            'conga_high': 'conga',
+                            'conga_low': 'conga',
+                            'bongo_high': 'bongo',
+                            'shaker': 'shaker loop'
+                        };
+                        const fallbackQuery = fallbacks[query] || patternTrack.instrument.replace(/_/g, ' ');
+                        
+                        if (fallbackQuery !== query) {
+                             console.log(`[GrooveFS] Attempt 3: Fallback Query "${fallbackQuery}"`);
+                             results = await this.searchModal.client.textSearch(fallbackQuery, 'duration:[0.05 TO 2.0] license:"Creative Commons 0"');
+                             if (results.results.length > 0) query = fallbackQuery; 
+                        }
+                    }
+
                     if (results.results && results.results.length > 0) {
-                        // Pick random from top 5 for variety
                         const pickIdx = Math.floor(Math.random() * Math.min(5, results.results.length));
                         const sound = results.results[pickIdx];
                         
-                        console.log(`[GrooveFS] Found sound: ${sound.name} (ID: ${sound.id})`);
-
+                        console.log(`[GrooveFS] Success! Loading: ${sound.name}`);
                         const url = sound.previews['preview-hq-mp3'];
-                        console.log(`[GrooveFS] Loading URL: ${url}`);
-                        
                         await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
                         
-                        // FORCE TRACK TYPE TO GRANULAR to avoid 909 override
-                        // This fixes the issue where applyGroove() sets it to 'simple-drum'
                         trackObj.type = 'granular';
-                        console.log(`[GrooveFS] Track type FORCED to 'granular'`);
-                        
-                        // Reset Granular Params for standard playback of a one-shot sample
                         trackObj.params.position = 0;
-                        trackObj.params.grainSize = 0.2; // Moderate grain size
-                        trackObj.params.density = 20;    // High density for continuous sound
+                        trackObj.params.grainSize = 0.2; 
+                        trackObj.params.density = 20;    
                         trackObj.params.spray = 0;
                         trackObj.params.pitch = 1.0;
-                        trackObj.params.overlap = 3.0;   // Ensure smooth overlap
+                        trackObj.params.overlap = 3.0;   
 
-                        // Update Name
                         trackObj.customSample.name = sound.name;
                     } else {
-                        console.warn(`[GrooveFS] No results found for ${query}`);
+                        console.warn(`[GrooveFS] FAILED to find sample for ${query}. Keeping default.`);
                     }
-                    
-                    console.log(`[GrooveFS] Track type AFTER: ${trackObj.type}`);
                 }
             }
             
-            // Refresh UI
             this.selectTrack(this.selectedTrackIndex);
             btn.innerHTML = '<i class="fas fa-check"></i> KIT LOADED!';
             setTimeout(() => {
@@ -438,7 +436,7 @@ export class UIManager {
 
         } catch (e) {
             console.error(e);
-            alert("Error fetching kit: " + e.message);
+            alert("Error: " + e.message);
             btn.innerHTML = originalText;
             btn.disabled = false;
         }
