@@ -1,6 +1,7 @@
 // UI Manager Module - Updated for Refinement & Polish
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS, MAX_TRACKS } from '../utils/constants.js';
 import { PatternLibrary } from '../modules/PatternLibrary.js';
+import { SearchModal } from './SearchModal.js'; // Import the new modal
 
 export class UIManager {
     constructor() {
@@ -18,6 +19,7 @@ export class UIManager {
         this.globalPanShift = 0;
         this.patternLibrary = new PatternLibrary();
         
+        // Define Keyboard Mapping
         this.keyMapping = {
             'Digit1': 0, 'KeyQ': 1, 'KeyA': 2, 'KeyZ': 3,
             'Digit2': 4, 'KeyW': 5, 'KeyS': 6, 'KeyX': 7,
@@ -29,7 +31,9 @@ export class UIManager {
             'Digit8': 28, 'KeyI': 29, 'KeyK': 30, 'Comma': 31
         };
         
+        // IMMEDIATE CSS UPDATE in Constructor
         document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
+        this.searchModal = null; // Initialize property
     }
 
     setTracks(tracks) {
@@ -43,6 +47,7 @@ export class UIManager {
     initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
         
+        // Ensure CSS var is set again
         document.documentElement.style.setProperty('--num-steps', NUM_STEPS);
         this.generateLfoTabs();
 
@@ -59,9 +64,10 @@ export class UIManager {
             const div = document.createElement('div');
             div.className = 'header-cell';
             div.innerText = i+1;
-            div.id = `header-step-${i}`; 
+            div.id = `header-step-${i}`; // ADDED ID for dynamic styling updates
             if (i % 4 === 0) div.classList.add('text-neutral-400', 'font-bold');
             
+            // Dividers logic: 16-step (Bar) takes precedence over 4-step (Beat)
             if ((i + 1) % 16 === 0 && i !== NUM_STEPS - 1) {
                 div.classList.add('bar-divider');
             } else if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) {
@@ -81,6 +87,7 @@ export class UIManager {
         actHeader.innerText = 'ACTIONS';
         headerContainer.appendChild(actHeader);
 
+        // Visualizer Header
         const visHeader = document.createElement('div');
         visHeader.className = 'header-cell';
         visHeader.innerText = 'VIS';
@@ -115,8 +122,25 @@ export class UIManager {
         });
 
         this.bindAutomationControls();
+        // Removed old choke selector init
         
+        // --- Initialize Groove Controls ---
         this.initGrooveControls();
+
+        // Initialize Search Modal (pass audio engine from track manager)
+        if (this.trackManager && this.trackManager.audioEngine) {
+            this.searchModal = new SearchModal(this.trackManager.audioEngine);
+        }
+        
+        // Listen for sample load events to refresh header
+        window.addEventListener('trackSampleLoaded', (e) => {
+            if (e.detail.trackId === this.selectedTrackIndex) {
+                this.selectTrack(this.selectedTrackIndex);
+            }
+        });
+
+        // NOTE: Old global visualizer click listener removed as element doesn't exist.
+        // Per-track visualizer clicks are handled in appendTrackRow.
 
         document.body.addEventListener('wheel', (e) => {
             if (e.target.type === 'range') {
@@ -190,8 +214,26 @@ export class UIManager {
                 if(patternInfluenceVal) patternInfluenceVal.innerText = e.target.value;
             });
         }
+        
+        // Add Apply Groove listener (existing)
+        const applyBtn = document.getElementById('applyGrooveBtn');
+        if(applyBtn) {
+            applyBtn.onclick = () => this.applyGroove();
+        }
+
+        // --- NEW: Add "Apply Groove (Freesound)" Button ---
+        const groovePanel = document.querySelector('#applyGrooveBtn')?.parentElement;
+        if (groovePanel && !document.getElementById('applyGrooveFsBtn')) {
+            const fsBtn = document.createElement('button');
+            fsBtn.id = 'applyGrooveFsBtn';
+            fsBtn.className = 'w-full text-[10px] bg-indigo-900/40 hover:bg-indigo-800 text-indigo-300 py-1 rounded transition border border-indigo-900/50 font-bold mt-1 flex items-center justify-center gap-2';
+            fsBtn.innerHTML = '<i class="fas fa-cloud-download-alt"></i> AUTO-KIT (FREESOUND)';
+            fsBtn.onclick = () => this.applyGrooveFreesound();
+            groovePanel.appendChild(fsBtn);
+        }
     }
 
+    // --- APPLY GROOVE LOGIC ---
     applyGroove() {
         const patId = parseInt(document.getElementById('patternSelect').value);
         const grpId = parseInt(document.getElementById('targetGroupSelect').value);
@@ -205,24 +247,33 @@ export class UIManager {
 
         const startTrack = grpId * TRACKS_PER_GROUP;
         
+        // Update Grid Visuals based on Time Signature
         this.updateGridVisuals(pattern.time_sig);
 
+        // V2: Loop through JSON tracks and map to BeatOS tracks
+        // Pattern tracks array length might be less than TRACKS_PER_GROUP (8)
+        
         for (let i = 0; i < TRACKS_PER_GROUP; i++) {
             const targetTrackId = startTrack + i;
+            // Get corresponding track from pattern if available
             const patternTrack = pattern.tracks[i];
             
+            // Check if track exists and isn't locked/automation
             if (this.tracks[targetTrackId] && !this.tracks[targetTrackId].stepLock && this.tracks[targetTrackId].type !== 'automation') {
                 
                 const targetTrackObj = this.tracks[targetTrackId];
 
+                // 1. Clear Track first
                 targetTrackObj.steps.fill(0);
                 targetTrackObj.microtiming.fill(0);
 
                 if (patternTrack) {
+                    // 2. Auto-Configure Sound
                     if (this.trackManager) {
                         this.trackManager.autoConfigureTrack(targetTrackObj, patternTrack.instrument_type || patternTrack.instrument);
                     }
 
+                    // 3. Populate Steps & Microtiming
                     const stepString = patternTrack.steps; // "3002..."
                     const microtimingArray = patternTrack.microtiming; // [0, 3, ...]
 
@@ -234,21 +285,27 @@ export class UIManager {
                         const roll = Math.random();
                         
                         if (roll < influence) {
+                            // Adhere to pattern
                             if (!isNaN(velocity) && velocity > 0) {
                                 targetTrackObj.steps[s] = velocity;
+                                
+                                // Map microtiming
                                 if (microtimingArray && microtimingArray[charIndex] !== undefined) {
                                     targetTrackObj.microtiming[s] = microtimingArray[charIndex];
                                 }
                             }
                         } else {
-                            // Deviation: 5% chance of Ghost note
+                            // Deviation logic (could be improved)
+                            // 5% chance of random ghost note
                             if (Math.random() < 0.05) {
                                 targetTrackObj.steps[s] = 1; 
                             }
                         }
                         
+                        // Update UI Button Class
                         const btn = this.matrixStepElements[targetTrackId][s];
                         if (btn) {
+                            // Remove all possible velocity classes
                             btn.classList.remove('active', 'vel-1', 'vel-2', 'vel-3');
                             const val = targetTrackObj.steps[s];
                             if (val > 0) {
@@ -257,6 +314,7 @@ export class UIManager {
                         }
                     }
                 } else {
+                    // No pattern track for this slot - clear UI
                     for (let s = 0; s < NUM_STEPS; s++) {
                         const btn = this.matrixStepElements[targetTrackId][s];
                         if(btn) btn.classList.remove('active', 'vel-1', 'vel-2', 'vel-3');
@@ -265,23 +323,121 @@ export class UIManager {
             }
         }
         
+        // Update selection to first track of group to show new sound settings
         this.selectTrack(startTrack, this.visualizerCallback);
     }
 
+    async applyGrooveFreesound() {
+        if (!this.searchModal) {
+            alert("Search module not ready.");
+            return;
+        }
+
+        const patId = parseInt(document.getElementById('patternSelect').value);
+        const grpId = parseInt(document.getElementById('targetGroupSelect').value);
+        
+        if (isNaN(patId)) { alert("Please select a pattern first."); return; }
+        if (isNaN(grpId)) { alert("Please select a target group."); return; }
+
+        const pattern = this.patternLibrary.getPatternById(patId);
+        if (!pattern) return;
+
+        // 1. Apply the pattern structure first (notes, velocity)
+        this.applyGroove(); 
+
+        const btn = document.getElementById('applyGrooveFsBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> FETCHING SOUNDS...';
+        btn.disabled = true;
+
+        const startTrack = grpId * TRACKS_PER_GROUP;
+
+        try {
+            // 2. Iterate tracks and fetch sounds
+            for (let i = 0; i < TRACKS_PER_GROUP; i++) {
+                const targetTrackId = startTrack + i;
+                const patternTrack = pattern.tracks[i];
+                
+                // Only process if track exists and is not locked
+                if (this.tracks[targetTrackId] && !this.tracks[targetTrackId].stepLock && patternTrack) {
+                    const trackObj = this.tracks[targetTrackId];
+                    
+                    // Construct search query
+                    let query = patternTrack.instrument_type.replace(/_/g, ' ');
+                    
+                    // PHASE 4 REFINEMENT: Add "ghost" to query if it's a ghost track
+                    // AND apply specific brightness/duration filters
+                    let filters = 'duration:[0.05 TO 1.0]';
+
+                    if (patternTrack.role === 'ghost') {
+                        // For ghost tracks, search for slightly different terms or apply filter
+                        // query += " hit"; // sometimes "ghost" keyword returns spooky sounds, "hit" is safer
+                        // Use darker/shorter sounds
+                        filters += ' ac_brightness:[0 TO 50] duration:[0.01 TO 0.4]'; 
+                    } else {
+                        // Standard hits
+                        filters += ' ac_brightness:[10 TO 100]';
+                    }
+                    
+                    // Add license filter for safety
+                    filters += ' license:"Creative Commons 0"';
+
+                    const results = await this.searchModal.client.textSearch(query, filters);
+                    
+                    if (results.results && results.results.length > 0) {
+                        // Pick random from top 5 for variety
+                        const pickIdx = Math.floor(Math.random() * Math.min(5, results.results.length));
+                        const sound = results.results[pickIdx];
+                        
+                        const url = sound.previews['preview-hq-mp3'];
+                        await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
+                        
+                        // Update Name
+                        trackObj.customSample.name = sound.name;
+                    }
+                }
+            }
+            
+            // Refresh UI
+            this.selectTrack(this.selectedTrackIndex);
+            btn.innerHTML = '<i class="fas fa-check"></i> KIT LOADED!';
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }, 2000);
+
+        } catch (e) {
+            console.error(e);
+            alert("Error fetching kit: " + e.message);
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    // NEW: Visual Grid Update for Time Sigs
     updateGridVisuals(timeSig) {
+        // Reset all dividers first
         for(let i=0; i<NUM_STEPS; i++) {
             const div = document.getElementById(`header-step-${i}`);
+            // Also need to update the BUTTONS in the grid rows
             if(div) {
                 div.classList.remove('beat-divider', 'bar-divider', 'triplet-divider');
+                // Re-apply default logic if needed, or apply new logic
                 if (timeSig === '12/8' || timeSig === '6/8') {
+                     // Triplet feel: Every 3 steps = 1 beat?
+                     // 12/8 = 4 beats of 3 notes. 
+                     // Bar lines every 12 steps?
+                     // Let's mark every 3rd step
                      if ((i + 1) % 12 === 0 && i !== NUM_STEPS - 1) div.classList.add('bar-divider');
                      else if ((i + 1) % 3 === 0 && i !== NUM_STEPS - 1) div.classList.add('triplet-divider');
                 } else {
+                    // Standard 4/4
                     if ((i + 1) % 16 === 0 && i !== NUM_STEPS - 1) div.classList.add('bar-divider');
                     else if ((i + 1) % 4 === 0 && i !== NUM_STEPS - 1) div.classList.add('beat-divider');
                 }
             }
             
+            // Now update the rows buttons
             this.tracks.forEach((t, tIdx) => {
                 const btn = this.matrixStepElements[tIdx][i];
                 if(btn) {
@@ -309,6 +465,8 @@ export class UIManager {
             });
         }
     }
+
+    // REMOVED addChokeSelectorToHeader and updateChokeButtonsState (replaced by updateCustomTrackHeader)
 
     handleSliderWheel(e) {
         const el = e.target;
@@ -363,6 +521,7 @@ export class UIManager {
             btn.style.setProperty('--step-group-color', groupColor);
             btn.style.setProperty('--step-group-color-glow', groupColorGlow);
             
+            // Dividers Logic: Bar (16) vs Beat (4)
             if ((step + 1) % 16 === 0 && step !== NUM_STEPS - 1) {
                 btn.classList.add('bar-divider');
             } else if ((step + 1) % 4 === 0 && step !== NUM_STEPS - 1) {
@@ -376,6 +535,7 @@ export class UIManager {
                     btn.classList.add(`auto-level-${val}`);
                 }
             } else {
+                // V2: Handle velocity steps (0-3)
                 const val = trackObj.steps[step];
                 if (val > 0) {
                     btn.classList.add(`vel-${val}`);
@@ -421,12 +581,15 @@ export class UIManager {
         rowDiv.appendChild(actionsDiv);
         rowElements.push(actionsDiv);
 
+        // Per-Track Visualizer Canvas
         const visCanvas = document.createElement('canvas');
         visCanvas.className = 'track-vis-canvas';
         visCanvas.id = `vis-canvas-${trk}`;
+        // Needs a fixed size for canvas buffer, CSS scales it visually
         visCanvas.width = 40; 
         visCanvas.height = 16;
         
+        // ADDED CLICK LISTENER FOR SELECTION
         visCanvas.style.cursor = 'pointer';
         visCanvas.onclick = () => this.selectTrack(trk, visualizerCallback);
 
@@ -459,8 +622,10 @@ export class UIManager {
             grpLbl.style.color = groupColor;
         }
         
+        // --- NEW: Update Custom Track Header Content ---
         this.updateCustomTrackHeader(idx, grp, groupColor);
 
+        // Update indicator (existing)
         const indicator = document.getElementById('trackIndicator');
         if(indicator) {
             indicator.style.backgroundColor = groupColor;
@@ -491,6 +656,7 @@ export class UIManager {
         let trackName = `Track ${displayNum}`;
         let trackType = 'Synth';
         
+        // ... (existing logic for trackName/trackType determination) ...
         if (t.customSample) {
             trackName = t.customSample.name;
             trackType = 'Sample';
@@ -505,6 +671,7 @@ export class UIManager {
             trackType = 'Synth';
         }
 
+        // --- ROW 1: Info (Existing) ---
         const row1 = document.createElement('div');
         row1.className = 'flex items-center gap-2 w-full';
         
@@ -532,8 +699,30 @@ export class UIManager {
         typeLabel.className = 'text-[10px] text-neutral-500 font-mono uppercase';
         row1.appendChild(typeLabel);
 
+        // --- ADD SEARCH BUTTON TO ROW 1 ---
+        const searchBtn = document.createElement('button');
+        searchBtn.className = 'text-[10px] bg-emerald-900/30 hover:bg-emerald-800 text-emerald-400 px-2 py-0.5 rounded transition border border-emerald-900/50 ml-2';
+        searchBtn.innerHTML = '<i class="fas fa-search mr-1"></i>Find';
+        searchBtn.title = "Search Freesound";
+        searchBtn.onclick = () => {
+            if (this.searchModal) {
+                // Determine a good search query
+                let query = "";
+                if (t.type === 'simple-drum') query = t.params.drumType || "drum";
+                else if (t.customSample) query = t.customSample.name.replace('.wav', '').replace('.mp3', '');
+                else if (t.autoName) query = t.autoName;
+                else query = "drum hit";
+                
+                this.searchModal.open(t, query);
+            } else {
+                alert("Search module not initialized");
+            }
+        };
+        row1.appendChild(searchBtn);
+
         container.appendChild(row1);
 
+        // ROW 2: Type Buttons
         const row2 = document.createElement('div');
         row2.className = 'flex gap-1 w-full justify-between';
         
@@ -608,6 +797,7 @@ export class UIManager {
 
         container.appendChild(row2);
 
+        // ROW 3: Group Selectors (Choke Groups)
         const row3 = document.createElement('div');
         row3.className = 'flex gap-0.5 w-full';
         
@@ -660,12 +850,21 @@ export class UIManager {
         if(lfoSection) lfoSection.classList.add('hidden');
         if(autoControls) autoControls.classList.add('hidden');
 
+        // Update Choke Buttons in Header
+        // this.updateChokeButtonsState(); // Removed as we now redraw the header dynamically
+
         if (t.type === 'automation') {
             if(autoControls) autoControls.classList.remove('hidden');
+            if(typeLabel) {
+                // Handled in updateCustomTrackHeader
+            }
             if(speedSel) speedSel.value = t.clockDivider || 1;
         } 
         else if (t.type === 'simple-drum') {
             if(drumControls) drumControls.classList.remove('hidden');
+            if(typeLabel) {
+               // Handled in updateCustomTrackHeader
+            }
             document.querySelectorAll('.drum-sel-btn').forEach(btn => {
                 if (btn.dataset.drum === t.params.drumType) {
                     btn.classList.replace('text-neutral-400', 'text-white');
@@ -678,27 +877,37 @@ export class UIManager {
         }
         else {
             const wasHidden = granularControls && granularControls.classList.contains('hidden');
+            
             if(granularControls) granularControls.classList.remove('hidden');
             if(lfoSection) lfoSection.classList.remove('hidden');
+            
             if(wasHidden) {
                 setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
+            }
+            
+            if(typeLabel) {
+                // Handled in updateCustomTrackHeader
             }
         }
     }
 
     updateMatrixHead(currentStep, totalStepsPlayed) {
+        // Use totalStepsPlayed if available, otherwise fallback to currentStep
         const masterStep = (typeof totalStepsPlayed !== 'undefined') ? totalStepsPlayed : currentStep;
 
         for(let t=0; t<this.tracks.length; t++) {
             const track = this.tracks[t];
             const div = track.clockDivider || 1;
             
+            // ROBUST CLEARING:
             const currentLit = this.matrixStepElements[t].filter(el => el.classList.contains('step-playing'));
             currentLit.forEach(el => el.classList.remove('step-playing'));
             
+            // Calculate effective step using track's own length (fallback to NUM_STEPS if array not ready)
             const trackLength = track.steps.length > 0 ? track.steps.length : NUM_STEPS;
             const currentEffective = Math.floor(masterStep / div) % trackLength;
             
+            // Light up the new one
             if(this.matrixStepElements[t] && this.matrixStepElements[t][currentEffective]) {
                 this.matrixStepElements[t][currentEffective].classList.add('step-playing');
             }
@@ -788,6 +997,7 @@ export class UIManager {
              return; 
         }
 
+        // V2 Cycle: 0 -> 2 (Normal) -> 3 (Accent) -> 1 (Ghost) -> 0
         let val = track.steps[step];
         let nextVal = 0;
         
@@ -798,6 +1008,7 @@ export class UIManager {
         
         track.steps[step] = nextVal;
         
+        // Update UI
         btn.classList.remove('vel-1', 'vel-2', 'vel-3');
         if (nextVal > 0) {
             btn.classList.add(`vel-${nextVal}`);
@@ -826,15 +1037,18 @@ export class UIManager {
              return;
         }
 
+        // V2 Randomize: Mix of Normal (2) and Ghost (1)
         for(let i=0; i<NUM_STEPS; i++) { 
+            // Simple Euclidian-ish random
             const active = Math.random() < 0.25; 
             if (active) { 
                 if (t.stepLock) continue;
                 
+                // Random velocity
                 const rnd = Math.random();
-                let vel = 2; 
-                if (rnd > 0.8) vel = 3; 
-                else if (rnd < 0.2) vel = 1; 
+                let vel = 2; // Normal
+                if (rnd > 0.8) vel = 3; // Accent
+                else if (rnd < 0.2) vel = 1; // Ghost
                 
                 t.steps[i] = vel;
             } else { 
@@ -848,7 +1062,7 @@ export class UIManager {
         if (this.randomChokeMode) this.applyRandomChokeDimming(); 
     }
 
-    randomizeAllPatterns() { for (let i = 0; i < this.tracks.length; i++) { this.randomizeTrackPattern(i); } }
+    randomizeAllPatterns() { for (let step = 0; step < NUM_STEPS; step++) { const numGroups = Math.ceil(this.tracks.length / TRACKS_PER_GROUP); for (let g = 0; g < numGroups; g++) { const groupStart = g * TRACKS_PER_GROUP; const plays = Math.random() < 0.4; const activeTrackOffset = Math.floor(Math.random() * TRACKS_PER_GROUP); const activeTrackId = groupStart + activeTrackOffset; for (let i = 0; i < TRACKS_PER_GROUP; i++) { const trkId = groupStart + i; if (!this.tracks[trkId]) continue; const shouldBeActive = plays && (trkId === activeTrackId); this.tracks[trkId].steps[step] = shouldBeActive; const btn = this.matrixStepElements[trkId][step]; if(shouldBeActive) btn.classList.add('active'); else btn.classList.remove('active'); } } } if (this.randomChokeMode) this.applyRandomChokeDimming(); }
 
     updateKnobs() {
         const t = this.tracks[this.selectedTrackIndex];
@@ -907,6 +1121,7 @@ export class UIManager {
             this.snapshotData = JSON.stringify({
                 tracks: this.tracks.map(t => ({
                     params: {...t.params},
+                    // Steps now Uint8Array, convert to normal array for JSON
                     steps: Array.from(t.steps),
                     muted: t.muted,
                     soloed: t.soloed,
@@ -924,6 +1139,7 @@ export class UIManager {
                     if (i >= this.tracks.length) return;
                     const t = this.tracks[i];
                     t.params = { ...trackData.params };
+                    // Restore array to Uint8Array
                     t.steps = new Uint8Array(trackData.steps);
                     t.muted = trackData.muted;
                     t.soloed = trackData.soloed;
@@ -940,6 +1156,7 @@ export class UIManager {
                     this.updateTrackStateUI(i);
                     for(let s=0; s<NUM_STEPS; s++) {
                          const btn = this.matrixStepElements[i][s];
+                         // Reset classes
                          btn.className = 'step-btn';
                          btn.classList.remove('active', 'vel-1', 'vel-2', 'vel-3', 'auto-level-1', 'auto-level-2', 'auto-level-3', 'auto-level-4', 'auto-level-5');
                          
