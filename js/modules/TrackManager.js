@@ -164,10 +164,12 @@ export class TrackManager {
         let params = { ...track.params };
         let bufferType = 'texture';
 
-        // Heuristic Mapping
+        // Heuristic Mapping - ORDER MATTERS!
+        // Specific checks first, generic checks last.
+
         if (name.includes('kick') || name.includes('surdo') || name.includes('bombo') || 
             name.includes('tambora') || name.includes('manman') || name.includes('boula') || 
-            name.includes('barril') || name.includes('atumpan')) {
+            name.includes('barril') || name.includes('atumpan') || name === 'bass_drum') {
             
             targetType = 'simple-drum';
             params.drumType = 'kick';
@@ -178,7 +180,7 @@ export class TrackManager {
 
         } else if (name.includes('snare') || name.includes('caixa') || name.includes('repinique') || 
                    name.includes('kidi') || name.includes('sabar') || name.includes('djembe') || 
-                   name.includes('conga') || name.includes('bongo') || name.includes('kaganu')) {
+                   name.includes('conga') || name.includes('bongo') || name.includes('kaganu') || name === 'snare_drum') {
             
             targetType = 'simple-drum';
             params.drumType = 'snare';
@@ -189,12 +191,15 @@ export class TrackManager {
 
         } else if (name.includes('hat') || name.includes('shaker') || name.includes('maraca') || 
                    name.includes('ganza') || name.includes('cascabeles') || name.includes('kata') || 
-                   name.includes('guiro') || name.includes('shekere')) {
+                   name.includes('guiro') || name.includes('shekere') || name.includes('hi_hat')) {
             
             targetType = 'simple-drum';
-            params.drumType = 'closed-hat'; // Or open based on string density? Default closed
+            // Differentiate open vs closed
+            if (name.includes('open')) params.drumType = 'open-hat';
+            else params.drumType = 'closed-hat';
+            
             params.drumTune = 0.7;
-            params.drumDecay = 0.3; // Short
+            params.drumDecay = 0.3; 
             params.filter = 20000;
             params.hpFilter = 2000;
 
@@ -219,7 +224,7 @@ export class TrackManager {
 
         } else if (name.includes('guitar') || name.includes('cuatro') || name.includes('charango') || 
                    name.includes('harp') || name.includes('piano') || name.includes('kora') || 
-                   name.includes('ngoma')) {
+                   name.includes('ngoma') || name.includes('synth') || name.includes('bass')) {
             
             // Melodic texture
             targetType = 'granular';
@@ -234,6 +239,12 @@ export class TrackManager {
             params.hpFilter = 100;
         } else {
             // Default Fallback (Percussion/Misc)
+            // CAUTION: If "kick" or "bass_drum" was not caught above, it lands here.
+            // This is likely why "bass_drum" (exact match) loaded cymbal if 'includes' failed or if string was different.
+            // But 'bass_drum' includes 'bass', so it might hit the guitar/bass check above if not careful!
+            // Wait, 'bass_drum' contains 'bass', so it enters the melodic section if the first 'if' fails.
+            // Fix: Ensure 'kick' or 'bass_drum' check is robust.
+            
             targetType = 'simple-drum';
             params.drumType = 'cymbal'; // Generic metallic/noise
             params.drumTune = 0.5;
@@ -245,12 +256,11 @@ export class TrackManager {
         track.params = params;
         
         // Update Name/Label (handled by UI, but we can store it for reference)
-        if (!track.customSample) { // Don't rename if user loaded custom sample
+        if (!track.customSample) { 
             track.autoName = instrumentName; 
         }
 
-        // Regenerate Buffer if switching back to Granular (or if it was a specific texture type)
-        // Note: For simple-drum, buffer isn't used, but good to have if we switch types later.
+        // Regenerate Buffer if switching back to Granular
         if (targetType === 'granular' && this.audioEngine) {
             track.buffer = this.audioEngine.generateBufferByType(bufferType);
             track.rmsMap = this.audioEngine.analyzeBuffer(track.buffer);
