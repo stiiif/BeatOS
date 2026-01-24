@@ -543,6 +543,10 @@ export class UIManager {
             grpLbl.style.color = groupColor;
         }
         
+        // --- NEW: Update Custom Track Header Content ---
+        this.updateCustomTrackHeader(idx, grp, groupColor);
+
+        // Update indicator (existing)
         const indicator = document.getElementById('trackIndicator');
         if(indicator) {
             indicator.style.backgroundColor = groupColor;
@@ -559,6 +563,217 @@ export class UIManager {
         this.updateLfoUI();
         this.updateTrackControlsVisibility(); 
         if (visualizerCallback) visualizerCallback();
+    }
+
+    updateCustomTrackHeader(idx, groupIdx, groupColor) {
+        // Find or create the container for the custom header
+        let container = document.querySelector('.right-pane .p-3.bg-neutral-800');
+        if (!container) return; // Should exist
+
+        // Clear existing content to rebuild structure completely or update specific parts
+        // The previous structure was:
+        /*
+        <div class="flex items-center gap-2">
+            <span class="w-3 h-3 ..."></span>
+            <h2 ...>TRACK 00</h2>
+            ... buttons ...
+        </div>
+        <div class="flex flex-col items-end"> ... </div>
+        */
+
+        // We want:
+        // [track number] [track name] [track type]
+        // rst kick snare hat fm smp 909 auto (track type buttons)
+        // 1 2 3 4 5 6 7 8 (groups)
+
+        // Clear container content safely
+        container.innerHTML = '';
+        container.className = 'p-3 bg-neutral-800 border-b border-neutral-700 flex flex-col gap-2'; // Changed to column layout
+
+        const t = this.tracks[idx];
+        const displayNum = idx + 1 < 10 ? `0${idx + 1}` : idx + 1;
+        let trackName = `Track ${displayNum}`;
+        let trackType = 'Synth';
+        
+        if (t.customSample) {
+            trackName = t.customSample.name;
+            trackType = 'Sample';
+        } else if (t.type === 'simple-drum') {
+            trackName = (t.params.drumType || 'Kick').toUpperCase();
+            trackType = '909';
+        } else if (t.type === 'automation') {
+            trackName = 'Automation';
+            trackType = 'Auto';
+        } else {
+            trackName = 'Granular';
+            trackType = 'Synth';
+        }
+
+        // --- ROW 1: Info ---
+        const row1 = document.createElement('div');
+        row1.className = 'flex items-center gap-2 w-full';
+        
+        // Indicator
+        const indicator = document.createElement('span');
+        indicator.id = 'trackIndicator';
+        indicator.className = 'w-3 h-3 rounded-full transition-colors duration-200 shrink-0';
+        indicator.style.backgroundColor = groupColor;
+        row1.appendChild(indicator);
+
+        // Track Number
+        const numSpan = document.createElement('span');
+        numSpan.id = 'currentTrackNum';
+        numSpan.innerText = displayNum;
+        numSpan.className = 'text-sm font-bold text-white font-mono';
+        row1.appendChild(numSpan);
+
+        // Track Name
+        const nameSpan = document.createElement('span');
+        nameSpan.innerText = trackName;
+        nameSpan.className = 'text-xs text-neutral-300 truncate flex-1';
+        nameSpan.title = trackName;
+        row1.appendChild(nameSpan);
+
+        // Track Type Label
+        const typeLabel = document.createElement('span');
+        typeLabel.id = 'trackTypeLabel';
+        typeLabel.innerText = `[${trackType}]`;
+        typeLabel.className = 'text-[10px] text-neutral-500 font-mono uppercase';
+        row1.appendChild(typeLabel);
+
+        container.appendChild(row1);
+
+        // --- ROW 2: Type Buttons ---
+        const row2 = document.createElement('div');
+        row2.className = 'flex gap-1 w-full justify-between';
+        
+        // Reset Button
+        const rstBtn = document.createElement('button');
+        rstBtn.id = 'resetParamBtn';
+        rstBtn.className = 'text-[9px] bg-neutral-700 hover:bg-neutral-600 text-neutral-300 px-1.5 py-1 rounded transition border border-neutral-600 min-w-[24px]';
+        rstBtn.innerHTML = '<i class="fas fa-undo"></i>';
+        rstBtn.title = 'Reset Parameters';
+        rstBtn.onclick = () => document.getElementById('resetParamBtn').click(); // Re-bind existing global handler logic if needed, or add logic here.
+        // Since we are rebuilding DOM, global event listeners attached to specific IDs in main.js might be lost if we don't handle them.
+        // Ideally, UIManager should handle these clicks or re-attach listeners.
+        // For simplicity, I will dispatch a custom event or call a method if possible.
+        // However, the cleanest way in this refactor is to attach the listeners directly here.
+        rstBtn.addEventListener('click', () => {
+             const t = this.tracks[this.selectedTrackIndex];
+             if (t.type === 'granular') {
+                 t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
+                 t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
+             } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
+             t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
+             t.lfos.forEach(lfo => { lfo.target = 'none'; });
+             this.updateKnobs();
+             this.updateLfoUI();
+             // Visualizer redraw if needed
+        });
+        row2.appendChild(rstBtn);
+
+        // Type Buttons Generator
+        const createTypeBtn = (label, type, colorClass = 'bg-neutral-700', is909 = false, isAuto = false) => {
+            const btn = document.createElement('button');
+            btn.innerText = label;
+            btn.className = `text-[9px] font-bold ${colorClass} hover:bg-neutral-600 text-neutral-300 px-1.5 py-1 rounded transition border border-neutral-600 flex-1 text-center`;
+            btn.onclick = () => {
+                if (!this.trackManager || !this.trackManager.audioEngine) return;
+                const ae = this.trackManager.audioEngine;
+                const t = this.tracks[this.selectedTrackIndex];
+                
+                if (isAuto) {
+                    t.type = 'automation';
+                    t.steps.fill(0);
+                    const stepElements = this.matrixStepElements[t.id];
+                    if(stepElements) {
+                         stepElements.forEach(el => { el.className = 'step-btn'; el.classList.remove('active'); });
+                    }
+                    this.updateTrackControlsVisibility();
+                    // Redraw buffer handled by visualizer loop or explicit call
+                } else if (is909) {
+                    t.type = 'simple-drum';
+                    t.params.drumType = 'kick'; t.params.drumTune = 0.5; t.params.drumDecay = 0.5;
+                    this.updateTrackControlsVisibility();
+                    this.updateKnobs();
+                } else if (label === 'SMP') {
+                    document.getElementById('sampleInput').click();
+                } else {
+                    t.type = 'granular';
+                    this.updateTrackControlsVisibility();
+                    const newBuf = ae.generateBufferByType(type);
+                    if (newBuf) {
+                        t.buffer = newBuf;
+                        t.customSample = null;
+                        t.rmsMap = ae.analyzeBuffer(newBuf);
+                        // Update visualizer buffer
+                    }
+                }
+                this.selectTrack(this.selectedTrackIndex); // Refresh header
+            };
+            return btn;
+        };
+
+        row2.appendChild(createTypeBtn('KICK', 'kick'));
+        row2.appendChild(createTypeBtn('SNR', 'snare'));
+        row2.appendChild(createTypeBtn('HAT', 'hihat'));
+        row2.appendChild(createTypeBtn('FM', 'texture'));
+        row2.appendChild(createTypeBtn('SMP', null, 'bg-sky-900/30 text-sky-400 border-sky-900/50'));
+        row2.appendChild(createTypeBtn('909', null, 'bg-orange-900/30 text-orange-400 border-orange-900/50', true));
+        row2.appendChild(createTypeBtn('AUTO', null, 'bg-indigo-900/30 text-indigo-400 border-indigo-900/50', false, true));
+
+        container.appendChild(row2);
+
+        // --- ROW 3: Group Selectors ---
+        const row3 = document.createElement('div');
+        row3.className = 'flex gap-0.5 w-full';
+        
+        // Label "GRP"
+        const grpLabel = document.createElement('span');
+        grpLabel.innerText = 'GRP';
+        grpLabel.id = 'trackGroupLabel'; // Keep ID for compatibility
+        grpLabel.className = 'text-[9px] font-bold text-neutral-500 mr-1 flex items-center';
+        row3.appendChild(grpLabel);
+
+        for(let i=0; i<8; i++) {
+            const btn = document.createElement('button');
+            const isCurrentGroup = i === groupIdx;
+            // Highlight current group
+            const bgClass = isCurrentGroup ? '' : 'bg-neutral-800 text-neutral-500';
+            const style = isCurrentGroup ? `background-color: ${groupColor}; color: #fff;` : '';
+            
+            btn.className = `flex-1 h-4 text-[8px] border border-neutral-700 rounded flex items-center justify-center hover:bg-neutral-700 transition ${bgClass}`;
+            btn.style.cssText = style;
+            btn.innerText = i + 1;
+            btn.onclick = () => {
+                // Logic to move track to group? Or just visualize?
+                // The prompt says "1 2 3 4 5 6 7 8 (groups)". Usually this means assigning the track to a group or selecting the group.
+                // In BeatOS, group is determined by track index (0-3 = Grp 0).
+                // Changing group effectively means moving the track or swapping? 
+                // Or maybe the user implies 'Choke Groups'? 
+                // Given the context of "TRACK Header", standard drum machines allow assigning output/choke groups.
+                // However, "1 2 3 4 5 6 7 8 (groups)" might refer to the "Choke Group" selector I implemented earlier as a dropdown/buttons.
+                // Let's assume this row REPLACES the choke group selector I added to the header earlier.
+                
+                // Assign CHOKE GROUP
+                const t = this.tracks[this.selectedTrackIndex];
+                const newGroup = i + 1; // 1-8
+                if (t.chokeGroup === newGroup) t.chokeGroup = 0; // Toggle off
+                else t.chokeGroup = newGroup;
+                this.selectTrack(this.selectedTrackIndex); // Refresh UI
+            };
+            
+            // Highlight if active choke group
+            if (this.tracks[idx].chokeGroup === (i + 1)) {
+                btn.style.backgroundColor = '#ef4444'; // Red for choke
+                btn.style.color = 'white';
+                btn.style.borderColor = '#b91c1c';
+            }
+
+            row3.appendChild(btn);
+        }
+        
+        container.appendChild(row3);
     }
 
     updateTrackControlsVisibility() {
@@ -579,21 +794,19 @@ export class UIManager {
         if(autoControls) autoControls.classList.add('hidden');
 
         // Update Choke Buttons in Header
-        this.updateChokeButtonsState(); 
+        // this.updateChokeButtonsState(); // Removed as we now redraw the header dynamically
 
         if (t.type === 'automation') {
             if(autoControls) autoControls.classList.remove('hidden');
             if(typeLabel) {
-                typeLabel.textContent = "AUTO SEQ";
-                typeLabel.className = "text-[10px] text-indigo-400 font-mono uppercase font-bold";
+                // Handled in updateCustomTrackHeader
             }
             if(speedSel) speedSel.value = t.clockDivider || 1;
         } 
         else if (t.type === 'simple-drum') {
             if(drumControls) drumControls.classList.remove('hidden');
             if(typeLabel) {
-                typeLabel.textContent = "909 " + (t.params.drumType || 'KICK').toUpperCase();
-                typeLabel.className = "text-[10px] text-orange-400 font-mono uppercase truncate max-w-[80px]";
+               // Handled in updateCustomTrackHeader
             }
             document.querySelectorAll('.drum-sel-btn').forEach(btn => {
                 if (btn.dataset.drum === t.params.drumType) {
@@ -616,13 +829,7 @@ export class UIManager {
             }
             
             if(typeLabel) {
-                if (t.customSample) {
-                    typeLabel.textContent = t.customSample.name;
-                    typeLabel.className = "text-[10px] text-sky-400 font-mono uppercase truncate max-w-[80px]";
-                } else {
-                    typeLabel.textContent = "GRANULAR";
-                    typeLabel.className = "text-[10px] text-emerald-400 font-mono uppercase truncate max-w-[80px]";
-                }
+                // Handled in updateCustomTrackHeader
             }
         }
     }
