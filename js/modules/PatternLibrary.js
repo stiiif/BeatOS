@@ -2706,7 +2706,7 @@ export class PatternLibrary {
                     }
                 ]
             }
-        ];
+        ],
     }
 
     getPatterns() {
