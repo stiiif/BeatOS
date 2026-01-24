@@ -125,17 +125,8 @@ export class UIManager {
         // --- Initialize Groove Controls ---
         this.initGrooveControls();
 
-        const vis = document.getElementById('visualizer');
-        if(vis) {
-            vis.addEventListener('click', (e) => {
-                if(this.tracks.length === 0) return;
-                const rect = vis.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const w = rect.width;
-                const trkIdx = Math.floor((x / w) * this.tracks.length);
-                if(trkIdx >= 0 && trkIdx < this.tracks.length) this.selectTrack(trkIdx, visualizerCallback);
-            });
-        }
+        // NOTE: Old global visualizer click listener removed as element doesn't exist.
+        // Per-track visualizer clicks are handled in appendTrackRow.
 
         document.body.addEventListener('wheel', (e) => {
             if (e.target.type === 'range') {
@@ -518,6 +509,11 @@ export class UIManager {
         // Needs a fixed size for canvas buffer, CSS scales it visually
         visCanvas.width = 40; 
         visCanvas.height = 16;
+        
+        // ADDED CLICK LISTENER FOR SELECTION
+        visCanvas.style.cursor = 'pointer';
+        visCanvas.onclick = () => this.selectTrack(trk, visualizerCallback);
+
         rowDiv.appendChild(visCanvas);
         rowElements.push(visCanvas);
         
