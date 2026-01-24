@@ -1,12 +1,6 @@
 /* UI Components - Buttons, Visualizers, etc */
 
-#visualizer {
-    width: 100%;
-    height: 50px;
-    background: #050505;
-    border-bottom: 1px solid #222;
-    cursor: crosshair;
-}
+/* Removed #visualizer specific styles as it's now dynamic per track */
 
 #bufferDisplay {
     width: 100%;

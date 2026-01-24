@@ -85,6 +85,12 @@ export class UIManager {
         actHeader.innerText = 'ACTIONS';
         headerContainer.appendChild(actHeader);
 
+        // Visualizer Header
+        const visHeader = document.createElement('div');
+        visHeader.className = 'header-cell';
+        visHeader.innerText = 'VIS';
+        headerContainer.appendChild(visHeader);
+
         const container = document.getElementById('matrixContainer');
         container.innerHTML = ''; 
         
@@ -504,6 +510,16 @@ export class UIManager {
 
         rowDiv.appendChild(actionsDiv);
         rowElements.push(actionsDiv);
+
+        // Per-Track Visualizer Canvas
+        const visCanvas = document.createElement('canvas');
+        visCanvas.className = 'track-vis-canvas';
+        visCanvas.id = `vis-canvas-${trk}`;
+        // Needs a fixed size for canvas buffer, CSS scales it visually
+        visCanvas.width = 40; 
+        visCanvas.height = 16;
+        rowDiv.appendChild(visCanvas);
+        rowElements.push(visCanvas);
         
         if (buttonRow) container.insertBefore(rowDiv, buttonRow); else container.appendChild(rowDiv);
         this.trackRowElements[trk] = rowElements;

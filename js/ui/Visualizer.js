@@ -1,10 +1,11 @@
 // Visualizer Module
 export class Visualizer {
     constructor(canvasId, bufferCanvasId, audioEngine) {
-        this.canvas = document.getElementById(canvasId);
-        this.ctx = this.canvas.getContext('2d');
+        // Main canvas ID ignored now if we move to per-track logic, but kept for compatibility
         this.bufCanvas = document.getElementById(bufferCanvasId);
-        this.bufCtx = this.bufCanvas.getContext('2d');
+        if(this.bufCanvas) {
+            this.bufCtx = this.bufCanvas.getContext('2d');
+        }
         this.audioEngine = audioEngine;
         this.drawQueue = [];
         this.tracks = [];
@@ -25,12 +26,12 @@ export class Visualizer {
     }
 
     resizeCanvas() {
-        this.canvas.width = this.canvas.parentElement.offsetWidth;
-        this.canvas.height = 50;
-        this.bufCanvas.width = this.bufCanvas.parentElement.offsetWidth;
-        this.bufCanvas.height = 80;
-        // Immediate static draw before animation loop
-        this.drawBufferDisplay();
+        // Only resize buffer canvas here. Track canvases are handled via CSS/Creation
+        if (this.bufCanvas) {
+            this.bufCanvas.width = this.bufCanvas.parentElement.offsetWidth;
+            this.bufCanvas.height = 80;
+            this.drawBufferDisplay();
+        }
     }
 
     scheduleVisualDraw(time, trackId) {
@@ -38,32 +39,51 @@ export class Visualizer {
     }
 
     drawVisuals() {
-        this.ctx.fillStyle = 'rgba(10,10,10,0.2)';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         const audioCtx = this.audioEngine.getContext();
         const now = audioCtx ? audioCtx.currentTime : 0;
-        this.drawQueue = this.drawQueue.filter(d => d.time > now - 0.2);
+        
+        // 1. Clean up old events from queue
+        this.drawQueue = this.drawQueue.filter(d => d.time > now - 0.5);
+
+        // 2. Fade out all track canvases
+        for(let i=0; i<this.tracks.length; i++) {
+            const canvas = document.getElementById(`vis-canvas-${i}`);
+            if(canvas) {
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = 'rgba(0,0,0,0.2)'; // Fade trail
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+        }
+
+        // 3. Draw new hits
         for(let d of this.drawQueue) {
             if (d.time <= now) {
                 const age = (now - d.time) / 0.2; 
                 if(age > 1) continue;
-                const x = (d.trackId / this.tracks.length) * this.canvas.width;
-                const w = (this.canvas.width / this.tracks.length) - 1;
-                const h = (1-age) * 40;
-                const y = (this.canvas.height - h) / 2;
-                const hue = (d.trackId / this.tracks.length) * 360;
-                this.ctx.fillStyle = `hsla(${hue}, 70%, 60%, ${1-age})`;
-                this.ctx.fillRect(x, y, w, h);
+                
+                const canvas = document.getElementById(`vis-canvas-${d.trackId}`);
+                if(canvas) {
+                    const ctx = canvas.getContext('2d');
+                    const w = canvas.width;
+                    const h = canvas.height;
+                    
+                    // Simple flash effect
+                    const hue = (d.trackId / this.tracks.length) * 360;
+                    ctx.fillStyle = `hsla(${hue}, 70%, 60%, ${1-age})`;
+                    ctx.fillRect(0, 0, w, h);
+                }
             }
         }
         
         // Continuous animate buffer scope to show LFOs or Spectrum
-        this.drawBufferDisplay();
+        if(this.bufCanvas) this.drawBufferDisplay();
         
         requestAnimationFrame(() => this.drawVisuals());
     }
 
     drawBufferDisplay() {
+        if(!this.bufCanvas) return;
+        
         const w = this.bufCanvas.width;
         const h = this.bufCanvas.height;
         const t = this.tracks[this.selectedTrackIndex];
