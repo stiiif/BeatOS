@@ -4,12 +4,12 @@ export class PatternLibrary {
         this.patterns = [
             {
                 "id": 2,
-                "name": "Amen Break",
-                "description": "The legendary 4-bar break from 'Amen, Brother' by The Winstons. Features syncopated kick pattern and the iconic double-snare at bar 2 beat 4. Foundation of jungle, drum and bass, and breakbeat hip-hop.",
+                "name": "Amen Break (CORRECTED)",
+                "description": "The legendary 4-bar break from 'Amen, Brother' by The Winstons. Features the iconic syncopated kick pattern with galloping rhythm and the FAMOUS double-snare ending at beat 4 of bar 4 (steps 60-61). Foundation of jungle, drum and bass, and breakbeat hip-hop.",
                 "genre": "Jungle/Drum and Bass/Breakbeat",
                 "bpm_range": "160-180",
                 "time_signature": "4/4",
-                "bars": 2,
+                "bars": 4,
                 "groove_characteristics": {
                     "swing_amount": 0,
                     "complexity": "high",
@@ -23,28 +23,28 @@ export class PatternLibrary {
                         "instrument": "kick",
                         "instrument_type": "bass_drum",
                         "role": "main",
-                        "steps": "3000000000003000300000000000030030000000000030003000000000003000",
-                        "microtiming": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0],
+                        "steps": "3000000000300030300000003000000030000000003000303000000000300000",
+                        "microtiming": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0],
                         "sample_variation": null,
-                        "description": "Characteristic syncopated kick pattern with the galloping rhythm"
+                        "description": "Syncopated kick with characteristic galloping rhythm - kicks on beat 3+ and 4+ create the driving feel"
                     },
                     {
                         "instrument": "snare",
                         "instrument_type": "snare_drum",
                         "role": "main",
-                        "steps": "0000300000000000000030000000000030000000300000000000000030003000",
-                        "microtiming": [0, 0, 0, 0, -3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, -2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -3, 0, 0, 0, 2, 0, -2, 0],
+                        "steps": "0000300000003000000030000000000000003000000030000000300000003300",
+                        "microtiming": [0, 0, 0, 0, -3, 0, 0, 0, 0, 0, 0, 0, -2, 0, 0, 0, 0, 0, 0, 0, -3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -3, 0, 0, 0, 0, 0, 0, 0, -2, 0, 0, 0, 0, 0, 0, 0, -3, 0, 0, 0, 0, 0, 0, 0, -3, 0, -2, 0],
                         "sample_variation": null,
-                        "description": "Famous syncopated snare with the iconic double-hit ending (steps 56 & 60)"
+                        "description": "THE FAMOUS PATTERN: Snare on 2 and 4, with the iconic DOUBLE SNARE at steps 60-61 (beat 4 of bar 4). This double-hit ending defines the Amen Break."
                     },
                     {
                         "instrument": "snare_ghost",
                         "instrument_type": "snare_drum",
                         "role": "ghost",
-                        "steps": "0000000000001000000000002000000000000000000000000000000000000000",
-                        "microtiming": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        "steps": "0000001000000001000000100020000000000010000000010000001000000000",
+                        "microtiming": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
                         "sample_variation": "ghost",
-                        "description": "Subtle ghost notes that add texture between main snare hits"
+                        "description": "Ghost notes adding texture between main snare hits. Note the slightly louder ghost (level 2) at step 28 in bar 2 for variation."
                     },
                     {
                         "instrument": "closed_hat",
@@ -53,7 +53,7 @@ export class PatternLibrary {
                         "steps": "2020202020202020202020202020202020202020202020202020202020202020",
                         "microtiming": [0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2],
                         "sample_variation": null,
-                        "description": "Straight 16th notes with slight positive microtiming creates laid-back feel"
+                        "description": "Straight 16th notes with slight positive microtiming on off-beats creates the characteristic laid-back shuffle feel"
                     },
                     {
                         "instrument": "closed_hat_ghost",
@@ -62,7 +62,7 @@ export class PatternLibrary {
                         "steps": "0101010101010101010101010101010101010101010101010101010101010101",
                         "microtiming": [0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2],
                         "sample_variation": "ghost",
-                        "description": "Off-beat ghost notes create the shuffle texture"
+                        "description": "Off-beat ghost hi-hats creating the shuffle texture that glues the groove together"
                     },
                     {
                         "instrument": "crash",
@@ -71,7 +71,7 @@ export class PatternLibrary {
                         "steps": "3000000000000000000000000000000030000000000000000000000000000000",
                         "microtiming": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                         "sample_variation": null,
-                        "description": "Crash accents at the start of each 2-bar phrase"
+                        "description": "Crash cymbal accents at bar 1 and bar 3 downbeats"
                     }
                 ]
             },
