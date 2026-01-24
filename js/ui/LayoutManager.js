@@ -19,10 +19,14 @@ export class LayoutManager {
     }
 
     init() {
-        if(!this.resizerH) return;
+        // Check if essential elements exist
+        if (!this.container || !this.middlePane) {
+            console.warn('LayoutManager: Essential elements not found');
+            return;
+        }
 
         // Left Vertical Resize (New Left Panel vs Middle)
-        if(this.resizerLeft) {
+        if(this.resizerLeft && this.newLeftPanel) {
             this.resizerLeft.addEventListener('mousedown', (e) => {
                 this.isResizingLeft = true;
                 this.resizerLeft.classList.add('resizing');
@@ -32,7 +36,7 @@ export class LayoutManager {
         }
 
         // Right Vertical Resize (Middle vs Right Panel)
-        if(this.resizerRight) {
+        if(this.resizerRight && this.rightPane) {
             this.resizerRight.addEventListener('mousedown', (e) => {
                 this.isResizingRight = true;
                 this.resizerRight.classList.add('resizing');
@@ -42,12 +46,14 @@ export class LayoutManager {
         }
 
         // Horizontal Resize (Sequencer vs Future)
-        this.resizerH.addEventListener('mousedown', (e) => {
-            this.isResizingH = true;
-            this.resizerH.classList.add('resizing');
-            document.body.style.cursor = 'row-resize';
-            document.body.style.userSelect = 'none';
-        });
+        if(this.resizerH && this.sequencerPanel && this.futurePanel) {
+            this.resizerH.addEventListener('mousedown', (e) => {
+                this.isResizingH = true;
+                this.resizerH.classList.add('resizing');
+                document.body.style.cursor = 'row-resize';
+                document.body.style.userSelect = 'none';
+            });
+        }
 
         // Global Mouse Move
         document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
@@ -59,7 +65,7 @@ export class LayoutManager {
     handleMouseMove(e) {
         if (!this.isResizingLeft && !this.isResizingRight && !this.isResizingH) return;
 
-        if (this.isResizingLeft) {
+        if (this.isResizingLeft && this.container && this.newLeftPanel) {
             // Calculate new width for new left panel
             const containerRect = this.container.getBoundingClientRect();
             const newLeftWidth = e.clientX - containerRect.left;
@@ -71,7 +77,7 @@ export class LayoutManager {
             }
         }
 
-        if (this.isResizingRight) {
+        if (this.isResizingRight && this.container && this.rightPane) {
             // Calculate new width for right pane
             const containerRect = this.container.getBoundingClientRect();
             const newRightWidth = containerRect.right - e.clientX;
@@ -83,7 +89,7 @@ export class LayoutManager {
             }
         }
 
-        if (this.isResizingH) {
+        if (this.isResizingH && this.middlePane && this.sequencerPanel && this.futurePanel) {
             // Calculate relative heights using flex-grow
             const middlePaneRect = this.middlePane.getBoundingClientRect();
             const relativeY = e.clientY - middlePaneRect.top;
