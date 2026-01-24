@@ -81,8 +81,6 @@ export class GranularSynth {
         const pitch = Math.max(0.1, p.pitch + mod.pitch);
 
         // Update Track Bus (with velocity mods for filter)
-        // Similar to 909, we modify bus filter momentarily. 
-        // This is a trade-off for polyphony but works for per-step feel.
         if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.audioEngine.getMappedFrequency(Math.max(20, p.hpFilter + mod.hpFilter), 'hp'), time);
         
         // Apply filterOffset to LPF
@@ -112,7 +110,14 @@ export class GranularSynth {
         if (offset + dur > bufDur) offset = 0;
 
         grainWindow.gain.setValueAtTime(0, time);
-        grainWindow.gain.linearRampToValueAtTime(ampEnvelope * gainMult, time + (dur * 0.1)); 
+        
+        // FIXED: Use a fixed, short attack time (e.g. 2ms) instead of percentage of duration
+        // This prevents larger grains from sounding "late"
+        const grainAttack = 0.002; 
+        // Ensure attack doesn't exceed half the duration
+        const safeAttack = Math.min(grainAttack, dur * 0.5);
+        
+        grainWindow.gain.linearRampToValueAtTime(ampEnvelope * gainMult, time + safeAttack); 
         grainWindow.gain.linearRampToValueAtTime(0, time + dur);
 
         this.activeGrains++;
@@ -131,8 +136,6 @@ export class GranularSynth {
     scheduleNote(track, time, scheduleVisualDrawCallback, velocityLevel = 2) {
         // --- 1. HANDLE 909 DRUM TYPE ---
         if (track.type === 'simple-drum') {
-            // Bus update handled inside triggerDrum now somewhat, but we should ensure baseline is set if no grains playing?
-            // Actually, triggerDrum sets it.
             this.audioEngine.triggerDrum(track, time, velocityLevel);
             scheduleVisualDrawCallback(time, track.id);
             return;
@@ -184,7 +187,9 @@ export class GranularSynth {
                 ampEnv = 0;
             }
 
-            const jitter = Math.random() * 0.005;
+            // Remove jitter for the first grain to ensure tight timing with 909
+            const jitter = (i === 0) ? 0 : Math.random() * 0.005;
+            
             if (ampEnv > 0.001) { 
                 this.playGrain(track, time + grainRelativeTime + jitter, scheduleVisualDrawCallback, ampEnv, velocityLevel);
             }
