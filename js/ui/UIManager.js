@@ -343,6 +343,7 @@ export class UIManager {
         if (!pattern) return;
 
         // 1. Apply the pattern structure first (notes, velocity)
+        // This will set the steps/microtiming but also incorrectly reset type to simple-drum
         this.applyGroove(); 
 
         const btn = document.getElementById('applyGrooveFsBtn');
@@ -393,13 +394,16 @@ export class UIManager {
                         await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
                         
                         // FORCE TRACK TYPE TO GRANULAR to avoid 909 override
+                        // This fixes the issue where applyGroove() sets it to 'simple-drum'
                         trackObj.type = 'granular';
-                        // Reset Granular Params for standard playback
+                        
+                        // Reset Granular Params for standard playback of a one-shot sample
                         trackObj.params.position = 0;
                         trackObj.params.grainSize = 0.2; // Moderate grain size
                         trackObj.params.density = 20;    // High density for continuous sound
                         trackObj.params.spray = 0;
                         trackObj.params.pitch = 1.0;
+                        trackObj.params.overlap = 3.0;   // Ensure smooth overlap
 
                         // Update Name
                         trackObj.customSample.name = sound.name;
