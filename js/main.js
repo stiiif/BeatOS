@@ -86,9 +86,13 @@ async function init() {
     // Audio Initialization Interaction
     if (initAudioBtn) {
         initAudioBtn.addEventListener('click', async () => {
-            await audioEngine.resume();
-            startOverlay.classList.add('hidden');
-            console.log("[Main] Audio Context Resumed");
+            try {
+                await audioEngine.resume();
+                if (startOverlay) startOverlay.classList.add('hidden');
+                console.log("[Main] Audio Context Resumed Successfully");
+            } catch (err) {
+                console.error("[Main] Failed to resume audio context:", err);
+            }
         });
     }
 
@@ -97,10 +101,6 @@ async function init() {
 
     // 5. Render Initial UI (The Track List)
     const matrixContainer = document.getElementById('matrixContainer');
-    
-    // We need a renderer for the list of tracks. 
-    // Since we didn't make a <track-list> component (optional but good), 
-    // we can do a simple subscription here to render rows.
     
     const renderTrackList = () => {
         matrixContainer.innerHTML = '';
@@ -118,13 +118,9 @@ async function init() {
             // 2. Steps Component
             const steps = document.createElement('sequencer-steps');
             steps.setAttribute('track-id', track.id);
-            steps.slot = 'steps'; // We used <slot name="steps"> in TrackRow
+            steps.slot = 'steps'; 
             
-            // Append steps INTO the track row if it uses shadow DOM slots, 
-            // OR append them as siblings if TrackRow uses `display: contents` and grid.
-            // In Step 3.2, TrackRow template has <slot name="steps">.
             trackRow.appendChild(steps);
-            
             row.appendChild(trackRow);
             matrixContainer.appendChild(row);
         });
@@ -135,15 +131,12 @@ async function init() {
 
     // Subscribe to track list changes (Add/Remove)
     appStore.on('STATE_CHANGED:tracks', () => {
-        // Optimization: In a real app, diff the list. For now, re-render is safe.
         renderTrackList();
     });
 
     // 6. Connect Visualizer
     const visualizer = document.querySelector('audio-visualizer');
     if (visualizer) {
-        // It needs access to the active analyser.
-        // We can listen for the event it emits or just push updates.
         visualizer.addEventListener('visualizer-needs-update', (e) => {
             const trackId = e.detail.trackId;
             const analyser = audioEngine.graph.getTrackAnalyser(trackId);

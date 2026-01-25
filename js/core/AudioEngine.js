@@ -22,9 +22,8 @@ export class AudioEngine {
             this.graph = new AudioGraph(this.ctx);
         }
 
-        if (this.ctx.state === 'suspended') {
-            await this.ctx.resume();
-        }
+        // Do NOT automatically resume here. It must be triggered by a user gesture.
+        // The context will likely be in 'suspended' state initially.
 
         // Subscribe to Store
         this.unsubscribes.push(
@@ -32,9 +31,11 @@ export class AudioEngine {
         );
         
         // Initial reconciliation with current state
-        this.graph.reconcile(appStore.state.tracks);
+        if (appStore.state.tracks) {
+             this.graph.reconcile(appStore.state.tracks);
+        }
         
-        console.log('[AudioEngine] Initialized and subscribed to store.');
+        console.log('[AudioEngine] Initialized (Suspended) and subscribed to store.');
         return this.ctx;
     }
 
@@ -65,10 +66,9 @@ export class AudioEngine {
             audioBuffer = AudioAnalysis.trimBuffer(this.ctx, audioBuffer);
             
             // We need to store this buffer somewhere associated with the track ID.
-            // Since `Track.js` is now pure data, we can store it in the AudioGraph 
-            // or a dedicated BufferManager. For now, let's put it in the Graph's node entry 
-            // or a separate map in this engine.
-            this.graph.nodes.get(trackId).buffer = audioBuffer;
+            if (this.graph.nodes.has(trackId)) {
+                this.graph.nodes.get(trackId).buffer = audioBuffer;
+            }
             
             return audioBuffer;
         } catch (err) {
@@ -82,8 +82,9 @@ export class AudioEngine {
      */
     resume() {
         if (this.ctx && this.ctx.state === 'suspended') {
-            this.ctx.resume();
+            return this.ctx.resume();
         }
+        return Promise.resolve();
     }
     
     /**
@@ -98,12 +99,6 @@ export class AudioEngine {
      * This logic mimics the old AudioEngine but uses the new Graph nodes
      */
     triggerDrum(trackId, time, velocityLevel, params) {
-        const nodes = this.graph.nodes.get(trackId);
-        if (!nodes) return;
-        
-        // Implementation of drum synthesis would go here, 
-        // connecting to nodes.input instead of internal bus
-        // (For brevity, we will implement the full synth logic in the next integration phase 
-        // or keep it in a separate Synth module)
+        // Placeholder for drum triggering if not using GranularSynth
     }
 }
