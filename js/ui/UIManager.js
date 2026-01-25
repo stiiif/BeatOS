@@ -1,3 +1,4 @@
+// comment to check file version is ok
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS, MAX_TRACKS } from '../utils/constants.js';
 import { PatternLibrary } from '../modules/PatternLibrary.js';
 import { SearchModal } from './SearchModal.js';
