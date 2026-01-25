@@ -1,7 +1,4 @@
-import { TrackParams } from '../types/audio';
-
-// --- Default Baselines ---
-// These ensure every track has valid values before we apply specific presets.
+import type { TrackParams } from '../types/audio';
 
 export const DEFAULT_GRANULAR_PARAMS: Partial<TrackParams> = {
     position: 0.0, 
@@ -31,13 +28,9 @@ export const DEFAULT_DRUM_PARAMS: Partial<TrackParams> = {
     pan: 0
 };
 
-// --- Heuristic Configuration ---
-// This defines how instrument names map to engine parameters.
-// The order matches the original TrackManager.js logic exactly to preserve functionality.
-
 export interface InstrumentConfig {
     engine: 'simple-drum' | 'granular';
-    bufferType?: 'kick' | 'snare' | 'hihat' | 'texture'; // For fallback synth generation
+    bufferType?: 'kick' | 'snare' | 'hihat' | 'texture'; 
     params: Partial<TrackParams>;
 }
 
@@ -47,8 +40,6 @@ export interface HeuristicRule {
 }
 
 export const INSTRUMENT_HEURISTICS: HeuristicRule[] = [
-    // 1. Kick Family
-    // Matches: kick, surdo, bombo, tambora, manman, boula, barril, atumpan, bass_drum
     {
         check: (n) => /kick|surdo|bombo|tambora|manman|boula|barril|atumpan|bass_drum/.test(n),
         config: {
@@ -62,8 +53,6 @@ export const INSTRUMENT_HEURISTICS: HeuristicRule[] = [
             }
         }
     },
-    // 2. Snare Family
-    // Matches: snare, caixa, repinique, kidi, sabar, djembe, conga, bongo, kaganu, snare_drum
     {
         check: (n) => /snare|caixa|repinique|kidi|sabar|djembe|conga|bongo|kaganu|snare_drum/.test(n),
         config: {
@@ -77,16 +66,11 @@ export const INSTRUMENT_HEURISTICS: HeuristicRule[] = [
             }
         }
     },
-    // 3. Hat/Shaker Family
-    // Matches: hat, shaker, maraca, ganza, cascabeles, kata, guiro, shekere, hi_hat
     {
         check: (n) => /hat|shaker|maraca|ganza|cascabeles|kata|guiro|shekere|hi_hat/.test(n),
         config: {
             engine: 'simple-drum',
-            // Note: The specific 'open-hat' vs 'closed-hat' decision is handled 
-            // by the InstrumentMapper service using string inclusion check for "open"
             params: { 
-                // Default to closed-hat parameters base
                 drumTune: 0.7, 
                 drumDecay: 0.3, 
                 filter: 20000, 
@@ -94,15 +78,12 @@ export const INSTRUMENT_HEURISTICS: HeuristicRule[] = [
             }
         }
     },
-    // 4. Bell/Metal Family (Uses Granular Engine)
-    // Matches: bell, agogo, ogan, clave, wood, triangle, gong, chico, cowbell
     {
         check: (n) => /bell|agogo|ogan|clave|wood|triangle|gong|chico|cowbell/.test(n),
         config: {
             engine: 'granular',
             bufferType: 'texture',
             params: { 
-                // Note: 'position' should be randomized in the service layer (Math.random())
                 spray: 0, 
                 grainSize: 0.05, 
                 density: 20, 
@@ -116,15 +97,12 @@ export const INSTRUMENT_HEURISTICS: HeuristicRule[] = [
             }
         }
     },
-    // 5. Melodic Family (Uses Granular Engine)
-    // Matches: guitar, cuatro, charango, harp, piano, kora, ngoma, synth, bass
     {
         check: (n) => /guitar|cuatro|charango|harp|piano|kora|ngoma|synth|bass/.test(n),
         config: {
             engine: 'granular',
             bufferType: 'texture',
             params: { 
-                // Note: 'position' should be randomized in the service layer
                 spray: 0.02, 
                 grainSize: 0.15, 
                 density: 10, 
@@ -135,7 +113,6 @@ export const INSTRUMENT_HEURISTICS: HeuristicRule[] = [
             }
         }
     },
-    // 6. Default Fallback (Percussion/Misc)
     {
         check: () => true, // Catch-all
         config: {

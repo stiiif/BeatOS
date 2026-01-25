@@ -1,8 +1,8 @@
 import { AudioEngine } from './AudioEngine';
 import { AudioGraph } from './AudioGraph';
-import { TrackState } from '../types/state';
+import type { TrackState } from '../types/state';
 import { VELOCITY_GAINS } from '../config/constants';
-import { LFO } from '../types/audio';
+import type { LFO } from '../types/audio';
 
 // Ported from GranularSynth.js
 export class GranularSynth {

@@ -1,5 +1,5 @@
 import { store } from '../state/Store';
-import { AppState } from '../types/state';
+import type { AppState } from '../types/state';
 
 export abstract class Component {
     protected element: HTMLElement | null = null;
@@ -11,11 +11,9 @@ export abstract class Component {
             if (!this.element) console.warn(`Element #${elementId} not found`);
         }
         
-        // Auto-subscribe to store
         this.unsubscribe = store.subscribe((state) => this.render(state));
     }
 
-    // Override this to update DOM based on state
     abstract render(state: AppState): void;
 
     destroy() {

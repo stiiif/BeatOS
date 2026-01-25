@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { TrackState } from '../types/state';
+import type { TrackState } from '../types/state';
 import { AudioUtils } from '../utils/audio-utils';
 import { audioContext } from '../core/AudioContext';
 import { audioEngine } from '../core/AudioEngine';
@@ -8,12 +8,7 @@ const STORAGE_KEY = 'beatos_track_library';
 
 export interface SavedTrack extends Omit<TrackState, 'sample'> {
     timestamp: string;
-    sampleName?: string; // Metadata only
-    // Note: We don't store base64 sample in LS to save space, usually. 
-    // But original might have. For this refactor, we'll assume LS stores metadata 
-    // and parameters, but maybe not heavy buffers unless they are small.
-    // The original `TrackLibrary.js` exported ZIPs for samples. 
-    // In LS, it stored `customSample` metadata.
+    sampleName?: string; 
 }
 
 export class LibraryService {
@@ -36,9 +31,6 @@ export class LibraryService {
             sampleName: track.sample?.name
         };
         
-        // Remove sample buffer reference if it exists in state types accidentally
-        // (Our TrackState definition uses 'sample' object without buffer, so it's safe)
-
         library.push(savedItem);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(library));
     }
@@ -51,20 +43,15 @@ export class LibraryService {
         }
     }
 
-    /**
-     * Export a single track to .beattrk (ZIP)
-     */
     static async exportTrack(track: TrackState): Promise<void> {
         const zip = new JSZip();
         
-        // 1. JSON Data
         const trackData = {
             ...track,
             hasSample: false,
             sampleName: track.sample?.name
         };
 
-        // 2. Audio Data
         if (track.sample && track.type === 'granular') {
             const buffer = audioEngine.getBuffer(track.id);
             if (buffer) {
@@ -76,7 +63,6 @@ export class LibraryService {
 
         zip.file('track.json', JSON.stringify(trackData, null, 2));
 
-        // 3. Download
         const blob = await zip.generateAsync({ type: 'blob' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -89,9 +75,6 @@ export class LibraryService {
         URL.revokeObjectURL(url);
     }
 
-    /**
-     * Import a .beattrk file
-     */
     static async importTrack(file: File): Promise<{ track: Partial<TrackState>, buffer?: AudioBuffer }> {
         const zip = await JSZip.loadAsync(file);
         
@@ -99,7 +82,7 @@ export class LibraryService {
         if (!jsonFile) throw new Error('Invalid track file');
         
         const jsonStr = await jsonFile.async('string');
-        const data = JSON.parse(jsonStr); // This is the saved state
+        const data = JSON.parse(jsonStr); 
         
         let buffer: AudioBuffer | undefined;
         const sampleFile = zip.file('sample.wav');
@@ -111,7 +94,7 @@ export class LibraryService {
         }
 
         return {
-            track: data, // Contains params, steps, etc.
+            track: data,
             buffer
         };
     }

@@ -1,9 +1,10 @@
 import { Component } from '../Component';
 import { DOM_IDS } from '../../config/dom-ids';
 import { store } from '../../state/Store';
-import { AppState } from '../../types/state';
+import type { AppState } from '../../types/state';
 import { ActionTypes } from '../../state/actions';
-import { LibraryService, SavedTrack } from '../../services/LibraryService';
+import { LibraryService } from '../../services/LibraryService';
+import type { SavedTrack } from '../../services/LibraryService';
 import { audioEngine } from '../../core/AudioEngine';
 
 export class LibraryModal extends Component {
@@ -40,8 +41,6 @@ export class LibraryModal extends Component {
                     const { track, buffer } = await LibraryService.importTrack(file);
                     const selectedId = store.getState().ui.selectedTrackId;
                     
-                    // 1. Update State (Merge loaded params into selected track)
-                    // We dispatch a bulk update or set type
                     store.dispatch({
                         type: ActionTypes.SET_TRACK_TYPE,
                         payload: { 
@@ -51,7 +50,6 @@ export class LibraryModal extends Component {
                         }
                     });
                     
-                    // 2. Load Buffer
                     if (buffer) {
                         audioEngine.setBuffer(selectedId, buffer);
                         store.dispatch({
@@ -99,28 +97,19 @@ export class LibraryModal extends Component {
                 </div>
             `;
 
-            // Click to load
             item.addEventListener('click', (e) => {
-                if ((e.target as HTMLElement).closest('button')) return; // Ignore button clicks
+                if ((e.target as HTMLElement).closest('button')) return; 
                 this.loadTrack(t);
             });
 
-            // Delete
             item.querySelector('.delete-btn')!.addEventListener('click', () => {
                 if (confirm('Delete saved track?')) {
                     LibraryService.deleteTrack(index);
-                    this.renderList(); // Re-render
+                    this.renderList(); 
                 }
             });
 
-            // Export
             item.querySelector('.export-btn')!.addEventListener('click', async () => {
-                // To export, we need the buffer. 
-                // Since LibraryService only stores metadata/params in LS, we can't export WAV 
-                // UNLESS the track is currently loaded or we change architecture to store blobs in IndexedDB.
-                // For this refactor, we disable export from library if no buffer available, 
-                // or we export JSON only.
-                // NOTE: The original code allowed exporting current track. Exporting from library was limited.
                 alert('Export from library not fully supported in this version. Load track first, then export.');
             });
 
@@ -140,11 +129,6 @@ export class LibraryModal extends Component {
             }
         });
         
-        // TODO: Restore Pattern/Steps
-        // We need a BULK_UPDATE action for steps.
-        // For now, we assume SET_TRACK_TYPE handles params, but steps need iteration.
-        // This is a simplified implementation.
-        
         this.closeModal();
     }
 
@@ -155,7 +139,7 @@ export class LibraryModal extends Component {
     render(state: AppState) {
         if (state.ui.activeModal === 'library') {
             this.modal.classList.remove('hidden');
-            this.renderList(); // Refresh list on open
+            this.renderList();
         } else {
             this.modal.classList.add('hidden');
         }

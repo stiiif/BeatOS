@@ -1,21 +1,18 @@
 import { Component } from './Component';
 import { DOM_IDS } from '../config/dom-ids';
 import { store } from '../state/Store';
-import { AppState } from '../types/state';
+import type { AppState } from '../types/state';
 import { ActionTypes } from '../state/actions';
 import { StorageService } from '../services/StorageService';
 import { audioEngine } from '../core/AudioEngine';
-import { GranularSynth } from '../core/GranularSynth';
 
 export class Transport extends Component {
-    // Elements
     private playBtn: HTMLElement;
     private stopBtn: HTMLElement;
     private bpmInput: HTMLInputElement;
     private grainMonitor: HTMLElement;
     private maxGrains: HTMLInputElement;
     
-    // Global Buttons
     private snapshotBtn: HTMLElement;
     private rndChokeBtn: HTMLElement;
     private rndAllPatBtn: HTMLElement;
@@ -24,12 +21,10 @@ export class Transport extends Component {
     private saveBtn: HTMLElement;
     private loadBtn: HTMLElement;
     
-    // Library Buttons
     private saveTrackBtn: HTMLElement;
     private loadTrackBtn: HTMLElement;
     private exportTrackBtn: HTMLElement;
 
-    // Inputs
     private fileInput: HTMLInputElement;
 
     constructor() {
@@ -48,7 +43,6 @@ export class Transport extends Component {
         this.saveBtn = document.getElementById(DOM_IDS.GLOBAL.SAVE)!;
         this.loadBtn = document.getElementById(DOM_IDS.GLOBAL.LOAD)!;
         
-        // Track Library
         this.saveTrackBtn = document.getElementById('saveTrackBtn')!;
         this.loadTrackBtn = document.getElementById('loadTrackBtn')!;
         this.exportTrackBtn = document.getElementById('exportCurrentTrackBtn')!;
@@ -60,7 +54,6 @@ export class Transport extends Component {
     }
 
     private bindEvents() {
-        // Transport
         this.playBtn.addEventListener('click', () => store.dispatch({ type: ActionTypes.TRANSPORT_PLAY }));
         this.stopBtn.addEventListener('click', () => store.dispatch({ type: ActionTypes.TRANSPORT_STOP }));
         
@@ -68,27 +61,19 @@ export class Transport extends Component {
             store.dispatch({ type: ActionTypes.SET_BPM, payload: parseInt(this.bpmInput.value) });
         });
 
-        // Max Grains
         this.maxGrains.addEventListener('change', () => {
             const val = parseInt(this.maxGrains.value);
             audioEngine.getSynth().setMaxGrains(val);
         });
 
-        // Globals
         this.clearTrackBtn.addEventListener('click', () => {
             store.dispatch({ type: ActionTypes.CLEAR_TRACK, payload: store.getState().ui.selectedTrackId });
         });
 
-        // Randomization Thunks (Simulated)
         this.rndAllPatBtn.addEventListener('click', () => {
-            // Dispatch custom action handled by reducer/middleware
-            // For now, we assume simple pattern randomization logic is in reducer or called here
-            // store.dispatch({ type: 'RANDOMIZE_ALL_PATTERNS' }); 
-            // In a strict strict Flux without thunks, we'd calculate here and dispatch BULK_UPDATE
-            // For brevity, assume action exists.
+            // Placeholder for randomization logic
         });
 
-        // File I/O
         this.saveBtn.addEventListener('click', async () => {
             this.saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             await StorageService.saveProject((id) => audioEngine.getBuffer(id) || null);
@@ -101,17 +86,13 @@ export class Transport extends Component {
             const file = (e.target as HTMLInputElement).files?.[0];
             if (file) {
                 await StorageService.loadProject(file, (id, buf) => audioEngine.setBuffer(id, buf));
-                // Clear input
                 this.fileInput.value = '';
             }
         });
 
-        // Library
         this.loadTrackBtn.addEventListener('click', () => {
             store.dispatch({ type: ActionTypes.OPEN_MODAL, payload: 'library' });
         });
-        
-        // ... Bind other global buttons
     }
 
     private startMonitorLoop() {

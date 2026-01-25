@@ -1,6 +1,6 @@
 import { Component } from './Component';
 import { DOM_IDS } from '../config/dom-ids';
-import { AppState } from '../types/state';
+import type { AppState } from '../types/state';
 
 export class Layout extends Component {
     private container: HTMLElement;
@@ -13,7 +13,6 @@ export class Layout extends Component {
     private resizerLeft: HTMLElement;
     private resizerRight: HTMLElement;
     
-    // We access resizer-h via class as per inventory
     private resizerH: HTMLElement;
 
     private isResizingLeft = false;
@@ -37,19 +36,16 @@ export class Layout extends Component {
     }
 
     private bindEvents() {
-        // Left
         this.resizerLeft.addEventListener('mousedown', () => {
             this.isResizingLeft = true;
             this.startResize('col-resize');
         });
 
-        // Right
         this.resizerRight.addEventListener('mousedown', () => {
             this.isResizingRight = true;
             this.startResize('col-resize');
         });
 
-        // Horizontal
         if (this.resizerH) {
             this.resizerH.addEventListener('mousedown', () => {
                 this.isResizingH = true;
@@ -57,7 +53,6 @@ export class Layout extends Component {
             });
         }
 
-        // Global Move/Up
         document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         document.addEventListener('mouseup', () => this.stopResizing());
     }
@@ -113,7 +108,5 @@ export class Layout extends Component {
     }
 
     render(state: AppState) {
-        // Layout usually doesn't react to audio state, 
-        // but could react to "Sidebar Toggle" actions if we added them.
     }
 }

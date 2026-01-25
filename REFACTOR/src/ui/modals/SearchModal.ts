@@ -1,14 +1,12 @@
 import { Component } from '../Component';
 import { DOM_IDS } from '../../config/dom-ids';
 import { store } from '../../state/Store';
-import { AppState } from '../../types/state';
+import type { AppState } from '../../types/state';
 import { ActionTypes } from '../../state/actions';
 import { SampleService } from '../../services/SampleService';
 import { audioEngine } from '../../core/AudioEngine';
 
-// Mock Client for now, replace with real FreesoundClient logic
 const searchFreesound = async (query: string, filter: string) => {
-    // In real impl, fetch from API
     return { results: [], count: 0 };
 };
 
@@ -21,7 +19,6 @@ export class SearchModal extends Component {
 
     constructor() {
         super();
-        // Create DOM if not exists (dynamic) - preserving ID "freesoundModal"
         if (!document.getElementById('freesoundModal')) {
             this.createModalDOM();
         }
@@ -36,7 +33,6 @@ export class SearchModal extends Component {
     }
 
     private createModalDOM() {
-        // Paste the HTML string from SearchModal.js here
         const div = document.createElement('div');
         div.id = 'freesoundModal';
         div.className = 'hidden fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4';
@@ -56,24 +52,20 @@ export class SearchModal extends Component {
 
         this.searchBtn.addEventListener('click', () => this.performSearch());
         
-        // Delegate result clicks
         this.results.addEventListener('click', async (e) => {
             const target = e.target as HTMLElement;
             const loadBtn = target.closest('.load-sound-btn') as HTMLElement;
             if (loadBtn && loadBtn.dataset.url) {
                 const trackId = store.getState().ui.selectedTrackId;
                 
-                // 1. Load Buffer
                 const buffer = await SampleService.loadFromUrl(loadBtn.dataset.url);
                 audioEngine.setBuffer(trackId, buffer);
                 
-                // 2. Update State
                 store.dispatch({
                     type: ActionTypes.LOAD_SAMPLE_METADATA,
                     payload: { trackId, name: loadBtn.dataset.name, duration: buffer.duration }
                 });
                 
-                // 3. Close
                 store.dispatch({ type: ActionTypes.CLOSE_MODAL });
             }
         });

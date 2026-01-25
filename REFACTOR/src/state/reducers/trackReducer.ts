@@ -1,17 +1,15 @@
-import { TrackState } from '../../types/state';
-import { TrackParams } from '../../types/audio';
-import { ActionTypes, Action } from '../actions';
+import type { TrackState } from '../../types/state';
+import type { TrackParams } from '../../types/audio';
+import { ActionTypes, type Action } from '../actions';
 import { START_TRACKS, NUM_STEPS, NUM_LFOS } from '../../config/constants';
 import { DEFAULT_GRANULAR_PARAMS, DEFAULT_DRUM_PARAMS } from '../../config/mappings';
 
-// Helper to create a clean track
 export const createDefaultTrack = (id: number): TrackState => ({
     id,
     name: `Track ${id + 1}`,
     type: 'granular',
     steps: new Array(NUM_STEPS).fill(0),
     microtiming: new Array(NUM_STEPS).fill(0),
-    // Clone params to avoid reference issues
     params: { ...DEFAULT_GRANULAR_PARAMS } as TrackParams, 
     lfos: Array.from({ length: NUM_LFOS }, () => ({ 
         wave: 'sine', rate: 1, amount: 0, target: 'none' 
@@ -20,7 +18,6 @@ export const createDefaultTrack = (id: number): TrackState => ({
     chokeGroup: 0
 });
 
-// Initial State Generator
 const generateInitialTracks = (): TrackState[] => {
     const tracks: TrackState[] = [];
     for (let i = 0; i < START_TRACKS; i++) {
@@ -45,7 +42,6 @@ export function trackReducer(state: TrackState[] = generateInitialTracks(), acti
             });
         }
 
-        // --- Sequencer Logic (Velocity Cycling) ---
         case ActionTypes.TOGGLE_STEP: {
             const { trackId, stepId } = action.payload;
             return state.map(t => {
@@ -56,10 +52,8 @@ export function trackReducer(state: TrackState[] = generateInitialTracks(), acti
                 let nextVal = 0;
 
                 if (t.type === 'automation') {
-                    // Automation: 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0
                     nextVal = (currentVal + 1) % 6;
                 } else {
-                    // Regular V2 Velocity: 0 (Off) -> 2 (Normal) -> 3 (Accent) -> 1 (Ghost) -> 0
                     if (currentVal === 0) nextVal = 2;
                     else if (currentVal === 2) nextVal = 3;
                     else if (currentVal === 3) nextVal = 1;
@@ -71,7 +65,16 @@ export function trackReducer(state: TrackState[] = generateInitialTracks(), acti
             });
         }
 
-        // --- Parameter Logic ---
+        case ActionTypes.SET_STEP_VALUE: {
+            const { trackId, stepId, value } = action.payload;
+            return state.map(t => {
+                if (t.id !== trackId) return t;
+                const newSteps = [...t.steps];
+                newSteps[stepId] = value;
+                return { ...t, steps: newSteps };
+            });
+        }
+
         case ActionTypes.UPDATE_TRACK_PARAM: {
             const { trackId, param, value } = action.payload;
             return state.map(t => {
@@ -99,23 +102,17 @@ export function trackReducer(state: TrackState[] = generateInitialTracks(), acti
             return state.map(t => {
                 if (t.id !== trackId) return t;
                 
-                // When switching type, we merge specific defaults (e.g. 909 params)
-                // but keep generic params (vol, pan, filter) if possible?
-                // The legacy code often reset params. Let's merge carefully.
-                
                 const baseParams = type === 'simple-drum' ? DEFAULT_DRUM_PARAMS : DEFAULT_GRANULAR_PARAMS;
                 
                 return {
                     ...t,
                     type: type,
                     params: { ...t.params, ...baseParams, ...defaults },
-                    // Clear sample data if switching to drum, unless it's granular
                     sample: type === 'simple-drum' ? undefined : t.sample
                 };
             });
         }
 
-        // --- State Flags ---
         case ActionTypes.TOGGLE_MUTE:
             return state.map(t => t.id === action.payload ? { ...t, triggers: { ...t.triggers, muted: !t.triggers.muted } } : t);
 
@@ -131,7 +128,6 @@ export function trackReducer(state: TrackState[] = generateInitialTracks(), acti
         case ActionTypes.SET_CHOKE_GROUP:
              return state.map(t => t.id === action.payload.trackId ? { ...t, chokeGroup: action.payload.group } : t);
 
-        // --- LFOs ---
         case ActionTypes.UPDATE_LFO: {
             const { trackId, lfoIndex, lfoData } = action.payload;
             return state.map(t => {
@@ -142,14 +138,13 @@ export function trackReducer(state: TrackState[] = generateInitialTracks(), acti
             });
         }
 
-        // --- Sample Metadata ---
         case ActionTypes.LOAD_SAMPLE_METADATA: {
             const { trackId, name, duration } = action.payload;
             return state.map(t => {
                 if (t.id !== trackId) return t;
                 return {
                     ...t,
-                    type: 'granular', // Force granular type on sample load
+                    type: 'granular',
                     sample: { name, duration }
                 };
             });

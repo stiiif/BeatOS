@@ -1,6 +1,6 @@
 import { audioContext } from './AudioContext';
 import { DEFAULT_GRANULAR_PARAMS } from '../config/mappings';
-import { TrackState } from '../types/state';
+import type { TrackState } from '../types/state';
 
 // Per-Track Audio Node Graph
 export interface TrackBus {

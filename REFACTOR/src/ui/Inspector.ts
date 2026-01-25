@@ -1,25 +1,22 @@
 import { Component } from './Component';
 import { DOM_IDS } from '../config/dom-ids';
 import { store } from '../state/Store';
-import { AppState, TrackState } from '../types/state';
+import type { AppState, TrackState } from '../types/state';
 import { ActionTypes } from '../state/actions';
-import { InstrumentType, TrackParams } from '../types/audio';
+import type { TrackParams } from '../types/audio';
 import { NUM_LFOS } from '../config/constants';
 
 export class Inspector extends Component {
-    // Header
     private trackNum: HTMLElement;
     private indicator: HTMLElement;
     private typeLabel: HTMLElement;
     private groupLabel: HTMLElement;
 
-    // Containers
     private granularControls: HTMLElement;
     private drumControls: HTMLElement;
     private autoControls: HTMLElement;
     private lfoSection: HTMLElement;
     
-    // LFO
     private lfoTabsContainer: HTMLElement;
     private lfoTarget: HTMLSelectElement;
     private lfoWave: HTMLSelectElement;
@@ -30,7 +27,6 @@ export class Inspector extends Component {
 
     constructor() {
         super();
-        // Bind Elements
         this.trackNum = document.getElementById(DOM_IDS.TRACK_HEADER.NUM)!;
         this.indicator = document.getElementById(DOM_IDS.TRACK_HEADER.INDICATOR)!;
         this.typeLabel = document.getElementById(DOM_IDS.TRACK_HEADER.LABEL)!;
@@ -53,8 +49,6 @@ export class Inspector extends Component {
     }
 
     private bindEvents() {
-        // 1. Sliders (Event Delegation for all params)
-        // We bind to the right pane container to catch all sliders
         const rightPane = document.querySelector('.right-pane');
         if (rightPane) {
             rightPane.addEventListener('input', (e) => {
@@ -72,16 +66,13 @@ export class Inspector extends Component {
                         }
                     });
                     
-                    // Update Label locally for speed
                     if (target.nextElementSibling) {
-                        // Minimal formatting logic here or call a helper
                         target.nextElementSibling.textContent = value.toFixed(2);
                     }
                 }
             });
         }
 
-        // 2. LFO Controls
         this.lfoTarget.addEventListener('change', () => this.updateLFO('target', this.lfoTarget.value));
         this.lfoWave.addEventListener('change', () => this.updateLFO('wave', this.lfoWave.value));
         
@@ -97,7 +88,6 @@ export class Inspector extends Component {
             this.updateLFO('amount', val);
         });
 
-        // 3. LFO Tabs
         this.lfoTabsContainer.addEventListener('click', (e) => {
             const btn = (e.target as HTMLElement).closest('.lfo-tab') as HTMLElement;
             if (btn) {
@@ -106,10 +96,7 @@ export class Inspector extends Component {
             }
         });
         
-        // 4. Reset & Randomize Buttons
         document.getElementById('resetParamBtn')?.addEventListener('click', () => {
-             // Logic to reset params would be an action dispatch
-             // For now, simpler: Set Track Type again which resets defaults
              const track = this.getSelectedTrack();
              if(track) {
                  store.dispatch({
@@ -119,14 +106,9 @@ export class Inspector extends Component {
              }
         });
         
-        // 5. Type Selectors (Kick, Snare, etc) - bind via delegation or specific IDs if needed
         document.querySelectorAll('.sound-gen-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const type = (e.target as HTMLElement).dataset.type; // kick, snare, etc.
-                // In new architecture, we dispatch LOAD_PRESET or similar.
-                // For simplicity, we can reuse logic or call a service.
-                // Let's assume we dispatch SET_TRACK_TYPE with specific defaults
-                // OR we can trigger the "Heuristic" logic via an action.
+                // Implementation for sound generation buttons
             });
         });
     }
@@ -152,12 +134,10 @@ export class Inspector extends Component {
         const track = state.tracks[state.ui.selectedTrackId];
         if (!track) return;
 
-        // 1. Header
         const displayNum = track.id + 1;
         this.trackNum.innerText = displayNum < 10 ? `0${displayNum}` : displayNum.toString();
         
-        // Group Color
-        const groupIdx = Math.floor(track.id / 8); // hardcoded constant usage
+        const groupIdx = Math.floor(track.id / 8); 
         const groupColor = `hsl(${groupIdx * 45}, 70%, 50%)`;
         this.indicator.style.backgroundColor = groupColor;
         this.groupLabel.innerText = `GRP ${groupIdx}`;
@@ -169,7 +149,6 @@ export class Inspector extends Component {
         else if (track.type === 'automation') typeName = 'Auto';
         this.typeLabel.innerText = `[${typeName}]`;
 
-        // 2. Visibility
         this.granularControls.classList.add('hidden');
         this.drumControls.classList.add('hidden');
         this.autoControls.classList.add('hidden');
@@ -184,8 +163,6 @@ export class Inspector extends Component {
             this.lfoSection.classList.remove('hidden');
         }
 
-        // 3. Update Sliders (Only if they aren't being dragged to avoid fighting user)
-        // Simple check: activeElement
         const activeEl = document.activeElement;
         
         const updateInput = (id: string, val: number) => {
@@ -196,30 +173,25 @@ export class Inspector extends Component {
             }
         };
 
-        // Bulk update common params
         if (track.type === 'granular') {
             updateInput('position', track.params.position);
             updateInput('spray', track.params.spray);
             updateInput('density', track.params.density);
             updateInput('grainSize', track.params.grainSize);
             updateInput('pitch', track.params.pitch);
-            // ... map others
         } else if (track.type === 'simple-drum') {
             updateInput('drumTune', track.params.drumTune);
             updateInput('drumDecay', track.params.drumDecay);
         }
         
-        // Global params
         updateInput('hpFilter', track.params.hpFilter);
         updateInput('filter', track.params.filter);
         updateInput('volume', track.params.volume);
 
-        // 4. LFO UI
         this.renderLFOs(track, state.ui.selectedLfoIndex);
     }
 
     private renderLFOs(track: TrackState, selectedIndex: number) {
-        // Regenerate Tabs if needed (simple check)
         if (this.lfoTabsContainer.children.length === 0) {
             for(let i=0; i<NUM_LFOS; i++) {
                 const btn = document.createElement('button');
@@ -230,7 +202,6 @@ export class Inspector extends Component {
             }
         }
 
-        // Highlight Tab
         const tabs = this.lfoTabsContainer.children;
         for(let i=0; i<tabs.length; i++) {
             const btn = tabs[i] as HTMLElement;
@@ -243,7 +214,6 @@ export class Inspector extends Component {
             }
         }
 
-        // Values
         const lfo = track.lfos[selectedIndex];
         if (document.activeElement !== this.lfoTarget) this.lfoTarget.value = lfo.target;
         if (document.activeElement !== this.lfoWave) this.lfoWave.value = lfo.wave;

@@ -1,5 +1,5 @@
-import { UIState } from '../../types/state';
-import { ActionTypes, Action } from '../actions';
+import type { UIState } from '../../types/state';
+import { ActionTypes, type Action } from '../actions';
 
 const initialState: UIState = {
     selectedTrackId: 0,
@@ -26,7 +26,6 @@ export function uiReducer(state: UIState = initialState, action: Action): UIStat
             return { ...state, activeModal: null };
 
         case ActionTypes.LOAD_STATE:
-            // Reset selection to 0 on load to avoid out-of-bounds
             return { ...state, selectedTrackId: 0, selectedLfoIndex: 0 };
 
         default:

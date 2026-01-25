@@ -1,4 +1,4 @@
-import { AppState } from '../types/state';
+import type { AppState } from '../types/state';
 
 // Transport
 export const selectBpm = (state: AppState) => state.transport.bpm;

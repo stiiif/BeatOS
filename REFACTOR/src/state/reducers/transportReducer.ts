@@ -1,5 +1,5 @@
-import { TransportState } from '../../types/state';
-import { ActionTypes, Action } from '../actions';
+import type { TransportState } from '../../types/state';
+import { ActionTypes, type Action } from '../actions';
 
 const initialState: TransportState = {
     bpm: 120,
@@ -17,7 +17,6 @@ export function transportReducer(state: TransportState = initialState, action: A
             return { ...state, isPlaying: false, currentStep: 0, totalSteps: 0 };
 
         case ActionTypes.SET_BPM:
-            // Clamp BPM to reasonable limits
             const bpm = Math.max(30, Math.min(300, action.payload));
             return { ...state, bpm };
 
@@ -29,8 +28,6 @@ export function transportReducer(state: TransportState = initialState, action: A
             };
 
         case ActionTypes.LOAD_STATE:
-            // If loading a project, restore BPM but maybe keep playing state?
-            // Usually simpler to stop.
             if (action.payload.transport) {
                 return { 
                     ...state, 

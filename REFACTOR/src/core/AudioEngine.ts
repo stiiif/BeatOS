@@ -3,7 +3,7 @@ import { audioContext } from './AudioContext';
 import { audioGraph } from './AudioGraph';
 import { GranularSynth } from './GranularSynth';
 import { SampleService } from '../services/SampleService';
-import { TrackState } from '../types/state';
+import type { TrackState } from '../types/state';
 
 // Reactive Audio Engine
 // Listens to Store -> Updates AudioGraph & Sample Buffers
