@@ -1,0 +1,29 @@
+:root {
+    /* Colors */
+    --color-bg-main: #0a0a0a;
+    --color-bg-panel: #171717;
+    --color-bg-element: #262626;
+    
+    --color-text-main: #e0e0e0;
+    --color-text-muted: #737373;
+    
+    --color-border: #333;
+    
+    /* Brand / Accent Colors */
+    --color-primary: #10b981; /* Emerald-500 */
+    --color-primary-glow: rgba(16, 185, 129, 0.4);
+    
+    --color-accent-1: #3b82f6; /* Blue */
+    --color-accent-2: #8b5cf6; /* Violet */
+    --color-accent-3: #ec4899; /* Pink */
+    --color-accent-4: #ef4444; /* Red */
+    --color-accent-5: #f97316; /* Orange */
+    --color-accent-6: #eab308; /* Yellow */
+    --color-accent-7: #84cc16; /* Lime */
+    --color-accent-8: #14b8a6; /* Teal */
+
+    /* Dimensions */
+    --step-height: 16px;
+    --track-label-width: 40px;
+    --step-gap: 1px;
+}

@@ -12,6 +12,8 @@
     <link rel="stylesheet" href="css/sequencer.css">
     <link rel="stylesheet" href="css/components.css">
     <link rel="stylesheet" href="css/layout.css">
+    <!-- Load CSS Variables -->
+    <link rel="stylesheet" href="css/variables.css">
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
 
@@ -25,89 +27,31 @@
                 <span class="text-xs text-neutral-500 font-bold">BPM</span>
                 <input type="number" id="bpmInput" value="120" min="30" max="300" class="bg-transparent border-none w-12 text-sm text-center focus:outline-none text-emerald-400 font-mono">
             </div>
-            <div class="flex items-center gap-2 ml-2 bg-neutral-800 rounded px-2 py-1" title="Active Audio Grains / CPU Load">
-                <span class="text-xs text-neutral-500 font-bold"><i class="fas fa-microchip"></i> CPU</span>
-                <span id="grainMonitor" class="text-sm font-mono text-emerald-400 w-8 text-center">0</span>
-                <div class="h-4 w-px bg-neutral-700 mx-1"></div>
-                <span class="text-[10px] text-neutral-500 font-bold" title="Max Grains Safety Limit">LIM</span>
-                <input type="number" id="maxGrainsInput" value="400" step="50" min="50" class="bg-transparent border-none w-10 text-xs text-center focus:outline-none text-neutral-400 font-mono focus:text-white hover:text-neutral-200 transition">
-            </div>
         </div>
         <div class="flex items-center gap-2">
              <button id="snapshotBtn" class="text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2 py-1 rounded transition border border-neutral-700 w-16">Snap</button>
-             <button id="rndChokeBtn" class="text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2 py-1 rounded transition border border-neutral-700">Rnd Choke</button>
              <div class="h-6 w-px bg-neutral-700 mx-1"></div>
              
-             <button id="saveTrackBtn" class="text-[10px] bg-neutral-800 hover:bg-amber-900/30 text-amber-500 px-2 py-1 rounded transition border border-neutral-700" title="Save current track to library"><i class="fas fa-save mr-1"></i>Lib Save</button>
-             <button id="loadTrackBtn" class="text-[10px] bg-neutral-800 hover:bg-amber-900/30 text-amber-500 px-2 py-1 rounded transition border border-neutral-700" title="Load track from library"><i class="fas fa-folder-open mr-1"></i>Lib Load</button>
-             <button id="exportCurrentTrackBtn" class="text-[10px] bg-neutral-800 hover:bg-indigo-900/30 text-indigo-400 px-2 py-1 rounded transition border border-neutral-700" title="Export current track with sample to .beattrk file"><i class="fas fa-file-export mr-1"></i>Export</button>
-             
-             <input type="file" id="sampleInput" class="hidden" accept="audio/*">
+             <button id="addTrackBtn" class="text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2 py-1 rounded transition border border-neutral-700">Add Track</button>
+             <button id="addGroupBtn" class="text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2 py-1 rounded transition border border-neutral-700">Add Group</button>
              
              <div class="h-6 w-px bg-neutral-700 mx-1"></div>
-             
-             <button id="randomizeAllPatternsBtn" class="text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2 py-1 rounded transition border border-neutral-700">Rand Pat</button>
-             <button id="randAllParamsBtn" class="text-[10px] bg-indigo-900/40 hover:bg-indigo-800 text-indigo-300 px-2 py-1 rounded transition border border-indigo-900/50">Rand Prms</button>
-             
-             <div class="h-6 w-px bg-neutral-700 mx-1"></div>
-             <button id="clearTrackBtn" class="text-[10px] bg-neutral-800 hover:bg-red-900/50 text-red-400 px-2 py-1 rounded transition border border-neutral-700">Clear</button>
-             <button id="saveBtn" class="text-[10px] bg-neutral-800 hover:bg-emerald-900/30 text-emerald-500 px-2 py-1 rounded transition border border-neutral-700" title="Save Project (.beatos)"><i class="fas fa-download"></i></button>
-             <button id="loadBtn" class="text-[10px] bg-neutral-800 hover:bg-emerald-900/30 text-emerald-500 px-2 py-1 rounded transition border border-neutral-700" title="Load Project (.beatos)"><i class="fas fa-upload"></i></button>
-             <input type="file" id="fileInput" class="hidden" accept=".json,.beatos,.zip">
+             <button id="initAudioBtn" class="text-[10px] bg-emerald-900/30 hover:bg-emerald-800 text-emerald-500 px-3 py-1 rounded transition border border-emerald-900/50">Init Audio</button>
         </div>
     </header>
 
     <div class="app-container">
 
-        <!-- New Left Panel for Future Modules -->
+        <!-- Left Panel (Future Modules) -->
         <div class="new-left-panel bg-[#0d0d0d] overflow-y-auto custom-scrollbar">
             <div class="p-4 space-y-6">
                 <div class="flex items-center gap-2 pb-2 border-b border-neutral-800 text-neutral-400">
                     <i class="fas fa-sliders-h"></i>
-                    <h2 class="text-xs font-bold uppercase tracking-wider">Global Modules</h2>
+                    <h2 class="text-xs font-bold uppercase tracking-wider">Modules</h2>
                 </div>
-
-                <!-- MOVED: GROOVE GENERATOR CONTROLS -->
-                <div>
-                    <div class="flex justify-between items-end mb-2">
-                        <label class="text-[10px] text-neutral-500 uppercase font-bold"><i class="fas fa-music mr-1"></i> Groove Generator</label>
-                    </div>
-                    <div class="bg-neutral-800/50 p-3 rounded border border-neutral-800 space-y-3">
-                        <div class="space-y-2">
-                             <select id="patternSelect" class="w-full bg-neutral-900 text-neutral-300 text-[10px] rounded border border-neutral-700 p-2 outline-none hover:border-neutral-600 transition">
-                                <option value="">Select Pattern...</option>
-                                <!-- Populated by JS -->
-                             </select>
-                             <select id="targetGroupSelect" class="w-full bg-neutral-900 text-neutral-300 text-[10px] rounded border border-neutral-700 p-2 outline-none hover:border-neutral-600 transition">
-                                <!-- Populated by JS -->
-                             </select>
-                        </div>
-                        <div class="flex items-center gap-2 bg-neutral-900/50 p-1.5 rounded border border-neutral-800">
-                            <span class="text-[9px] text-neutral-500 font-bold whitespace-nowrap">RND %</span>
-                            <input type="range" id="patternInfluence" min="0" max="100" value="100" class="flex-1 h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer">
-                            <span id="patternInfluenceVal" class="text-[9px] text-emerald-400 font-mono w-6 text-right">100</span>
-                        </div>
-                        <button id="applyGrooveBtn" class="w-full text-[10px] bg-emerald-900/30 hover:bg-emerald-800 text-emerald-400 hover:text-white py-2 rounded transition border border-emerald-900/50 font-bold flex items-center justify-center gap-2">
-                            <i class="fas fa-check-circle"></i> APPLY GROOVE
-                        </button>
-                    </div>
+                <div class="text-xs text-neutral-600 p-4 text-center">
+                    Groove Generator &amp; Global Effects coming soon...
                 </div>
-
-                <!-- MOVED: Global Pan Shift -->
-                <div>
-                    <div class="flex justify-between items-end mb-2">
-                        <label class="text-[10px] text-neutral-500 uppercase font-bold"><i class="fas fa-arrows-alt-h mr-1"></i> Global Pan Shift</label>
-                        <button id="randPanBtn" class="text-[9px] bg-cyan-900/40 hover:bg-cyan-800 text-cyan-300 px-2 py-0.5 rounded transition border border-cyan-900/50" title="Distribute groups evenly across stereo field">Rnd Pan</button>
-                    </div>
-                    <div class="bg-neutral-800/50 p-3 rounded border border-neutral-800">
-                        <div class="knob-container pt-2">
-                            <input type="range" id="panShiftSlider" min="0" max="1" step="0.01" value="0">
-                            <span class="text-[10px] text-emerald-400 font-mono mt-1" id="panShiftValue">0%</span>
-                        </div>
-                        <p class="text-[9px] text-neutral-600 text-center mt-2">Rotate All Groups</p>
-                    </div>
-                </div>
-
             </div>
         </div>
 
@@ -118,22 +62,22 @@
             <div class="sequencer-panel relative custom-scrollbar">
                 
                 <div id="startOverlay" class="absolute inset-0 bg-neutral-950/95 z-50 flex flex-col items-center justify-center">
-                    <button id="initAudioBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 px-10 rounded-full shadow-2xl shadow-emerald-900/50 transition transform hover:scale-105 border border-emerald-400">
-                        <i class="fas fa-power-off mr-2"></i> INITIALIZE AUDIO
+                    <button class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 px-10 rounded-full shadow-2xl shadow-emerald-900/50 transition transform hover:scale-105 border border-emerald-400" onclick="document.getElementById('initAudioBtn').click()">
+                        <i class="fas fa-power-off mr-2"></i> START AUDIO ENGINE
                     </button>
-                    <p class="mt-6 text-neutral-500 text-sm font-mono">Web Audio API • Dynamic Tracks</p>
                 </div>
 
                 <div class="flex h-full">
                     <div class="flex-1 flex flex-col min-w-0">
-                        <div id="stepHeaders"></div>
+                        <!-- Matrix Container where <track-row> elements will be injected -->
                         <div class="matrix-container" id="matrixContainer"></div>
                         <div class="h-10"></div>
                     </div>
-                    <!-- MOVED VISUALIZER -->
+                    
+                    <!-- Visualizer Column -->
                     <div class="w-16 bg-[#050505] border-l border-neutral-800 shrink-0 sticky right-0 top-0 h-full z-10">
-                        <div class="h-[22px] border-b border-neutral-800 bg-neutral-950"></div> <!-- Header align spacer -->
-                        <canvas id="visualizer" title="Click to select track" class="w-full h-full"></canvas>
+                        <!-- Web Component Visualizer -->
+                        <audio-visualizer></audio-visualizer>
                     </div>
                 </div>
             </div>
@@ -143,308 +87,16 @@
             <div class="future-panel custom-scrollbar">
                 <div class="text-neutral-600 text-center">
                     <i class="fas fa-tools text-2xl mb-2"></i>
-                    <p>Future Module Area</p>
-                    <p class="text-xs text-neutral-700 mt-1">Arranger / Mixer / Effects</p>
+                    <p>Arranger / Mixer Area</p>
                 </div>
             </div>
-        </div> <!-- End middle-pane -->
+        </div> 
 
         <div class="resizer-v" id="resizer-right"></div>
 
         <div class="right-pane border-l border-neutral-800 shadow-2xl">
-            
-            <!-- Removed global Visualizer from here -->
-
-            <div class="p-3 bg-neutral-800 border-b border-neutral-700 flex flex-wrap justify-between items-center gap-2">
-                <div class="flex items-center gap-2">
-                    <span class="w-3 h-3 rounded-full transition-colors duration-200" id="trackIndicator"></span>
-                    <h2 class="text-sm font-bold text-white tracking-wide whitespace-nowrap">TRACK <span id="currentTrackNum">00</span></h2>
-                    <button id="resetParamBtn" class="ml-1 text-[9px] bg-neutral-700 hover:bg-neutral-600 text-neutral-300 px-2 py-1 rounded transition border border-neutral-600" title="Reset parameters">
-                        <i class="fas fa-undo"></i>
-                    </button>
-                    
-                    <!-- Sound Generator Buttons -->
-                    <div class="flex gap-1 ml-2">
-                        <button class="sound-gen-btn text-[9px] font-bold bg-neutral-700 hover:bg-neutral-600 text-neutral-300 px-2 py-1 rounded transition border border-neutral-600" data-type="kick" title="Generate Random Kick">Kick</button>
-                        <button class="sound-gen-btn text-[9px] font-bold bg-neutral-700 hover:bg-neutral-600 text-neutral-300 px-2 py-1 rounded transition border border-neutral-600" data-type="snare" title="Generate Random Snare">Snare</button>
-                        <button class="sound-gen-btn text-[9px] font-bold bg-neutral-700 hover:bg-neutral-600 text-neutral-300 px-2 py-1 rounded transition border border-neutral-600" data-type="hihat" title="Generate Random Hi-Hat">Hat</button>
-                        <button class="sound-gen-btn text-[9px] font-bold bg-neutral-700 hover:bg-neutral-600 text-neutral-300 px-2 py-1 rounded transition border border-neutral-600" data-type="texture" title="Generate Random FM Texture">FM</button>
-                        <button id="loadSampleBtnInline" class="text-[9px] font-bold bg-sky-900/30 hover:bg-sky-800 text-sky-400 px-2 py-1 rounded transition border border-sky-900/50" title="Load Audio Sample">Smpl</button>
-                        <!-- 909 Button -->
-                        <button id="load909Btn" class="text-[9px] font-bold bg-orange-900/30 hover:bg-orange-800 text-orange-400 px-2 py-1 rounded transition border border-orange-900/50" title="Load 909 Drum Engine">909</button>
-                    </div>
-                </div>
-                
-                <div class="flex flex-col items-end">
-                    <span class="text-[9px] font-mono font-bold" id="trackGroupLabel">GRP 0</span>
-                    <span class="text-[10px] text-neutral-400 font-mono uppercase truncate max-w-[80px]" id="trackTypeLabel">Synth</span>
-                </div>
-            </div>
-
-            <div class="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
-
-                <!-- 1. GRANULAR CONTROLS (Hidden when 909 is active) -->
-                <div id="granularControls">
-                    <div>
-                        <div class="flex justify-between items-end mb-1">
-                            <label class="text-[10px] text-neutral-500 uppercase font-bold">Scope</label>
-                            <div class="flex items-center gap-1 bg-neutral-800 rounded p-0.5">
-                                <button id="scopeBtnWave" class="px-2 py-0.5 text-[9px] bg-neutral-600 text-white rounded-sm transition">WAVE</button>
-                                <button id="scopeBtnSpec" class="px-2 py-0.5 text-[9px] text-neutral-400 hover:text-white transition">SPEC</button>
-                                <div class="w-px h-3 bg-neutral-700 mx-0.5"></div>
-                                <button id="scopeBtnTrim" class="px-2 py-0.5 text-[9px] text-red-400 hover:bg-red-900/50 hover:text-red-300 rounded-sm transition font-bold" title="Auto-Trim Silence (Detect Transient)">TRIM</button>
-                            </div>
-                        </div>
-                        <canvas id="bufferDisplay"></canvas>
-                    </div>
-
-                    <div class="space-y-4">
-                        <div class="flex items-center justify-between">
-                            <h3 class="text-xs font-bold text-neutral-400 uppercase"><i class="fas fa-atom mr-1"></i> Granular Engine</h3>
-                            <div class="flex gap-1">
-                                 <button id="randomizeBtn" class="text-[9px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2 py-1 rounded transition border border-neutral-700">Rnd Params</button>
-                                 <button id="randModsBtn" class="text-[9px] bg-purple-900/40 hover:bg-purple-800 text-purple-300 px-2 py-1 rounded transition border border-purple-900/50">Rnd Mods</button>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-4 gap-x-2 gap-y-4">
-                            <div class="knob-container col-span-2">
-                                <label class="text-[10px] text-neutral-500 mb-1">Position</label>
-                                <input type="range" min="0" max="1" step="0.01" data-param="position" class="param-slider">
-                                <span class="text-[10px] text-emerald-400 font-mono">0.00</span>
-                            </div>
-                            <div class="knob-container col-span-2">
-                                <label class="text-[10px] text-neutral-500 mb-1">Spray</label>
-                                <input type="range" min="0" max="0.5" step="0.01" data-param="spray" class="param-slider">
-                                <span class="text-[10px] text-emerald-400 font-mono">0.00</span>
-                            </div>
-                            
-                            <div class="knob-container col-span-2">
-                                <label class="text-[10px] text-neutral-500 mb-1">Overlap (Thicken)</label>
-                                <input type="range" min="0" max="8" step="0.1" data-param="overlap" class="param-slider" title="Overrides Density. >1 = Continuous Sound">
-                                <span class="text-[10px] text-emerald-400 font-mono">0.0x</span>
-                            </div>
-                            <div class="knob-container col-span-2">
-                                <label class="text-[10px] text-neutral-500 mb-1">Scan Speed</label>
-                                <input type="range" min="-2" max="2" step="0.01" data-param="scanSpeed" class="param-slider" title="Auto-movement of Playhead">
-                                <span class="text-[10px] text-emerald-400 font-mono">0.00</span>
-                            </div>
-
-                            <div class="knob-container col-span-2">
-                                <label class="text-[10px] text-neutral-500 mb-1">Grain Size</label>
-                                <input type="range" min="0.01" max="0.5" step="0.01" data-param="grainSize" class="param-slider">
-                                <span class="text-[10px] text-emerald-400 font-mono">0.10s</span>
-                            </div>
-                            <div class="knob-container col-span-2">
-                                <label class="text-[10px] text-neutral-500 mb-1">Density</label>
-                                <input type="range" min="1" max="50" step="1" data-param="density" class="param-slider">
-                                <span class="text-[10px] text-emerald-400 font-mono">10hz</span>
-                            </div>
-
-                            <div class="knob-container col-span-2 bg-neutral-800/50 p-2 rounded border border-neutral-800">
-                                 <label class="text-[10px] text-neutral-500 mb-1">Pitch / Rate</label>
-                                 <input type="range" min="0.1" max="4.0" step="0.01" data-param="pitch" class="param-slider">
-                                 <span class="text-[10px] text-emerald-400 font-mono">1.00x</span>
-                            </div>
-                            <div class="knob-container col-span-2 bg-neutral-800/50 p-2 rounded border border-neutral-800">
-                                <label class="text-[10px] text-neutral-500 mb-1">Rel Grain (Dur)</label>
-                                <input type="range" min="0.01" max="2" step="0.01" data-param="relGrain" class="param-slider">
-                                <span class="text-[10px] text-emerald-400 font-mono">0.40s</span>
-                            </div>
-                        </div>
-
-                        <!-- Amp Envelope Section (ADR) -->
-                        <div class="pt-2 border-t border-neutral-800">
-                            <div class="flex justify-between items-end mb-1">
-                                <label class="text-[10px] text-neutral-500 uppercase font-bold">Amp Envelope (ADR)</label>
-                            </div>
-                            <div class="grid grid-cols-3 gap-2">
-                                <div class="knob-container">
-                                    <label class="text-[10px] text-neutral-500 mb-1">Attack</label>
-                                    <input type="range" min="0.001" max="1" step="0.01" data-param="ampAttack" class="param-slider">
-                                    <span class="text-[10px] text-emerald-400 font-mono">0.01</span>
-                                </div>
-                                <div class="knob-container">
-                                    <label class="text-[10px] text-neutral-500 mb-1">Decay</label>
-                                    <input type="range" min="0.01" max="1" step="0.01" data-param="ampDecay" class="param-slider">
-                                    <span class="text-[10px] text-emerald-400 font-mono">0.10</span>
-                                </div>
-                                <div class="knob-container">
-                                    <label class="text-[10px] text-neutral-500 mb-1">Release</label>
-                                    <input type="range" min="0.01" max="2" step="0.01" data-param="ampRelease" class="param-slider">
-                                    <span class="text-[10px] text-emerald-400 font-mono">0.30</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div> <!-- End Granular Controls -->
-
-                <!-- 2. 909 CONTROLS (Hidden by default) -->
-                <div id="simpleDrumControls" class="hidden space-y-6">
-                    <div class="flex items-center justify-between border-b border-neutral-700 pb-2">
-                        <h3 class="text-xs font-bold text-orange-400 uppercase"><i class="fas fa-drum mr-2"></i>909 ENGINE</h3>
-                    </div>
-                    
-                    <div class="bg-neutral-800/50 p-4 rounded border border-neutral-800">
-                        <label class="text-[10px] text-neutral-500 block mb-2 font-bold uppercase">Drum Type Selection</label>
-                        <div class="grid grid-cols-5 gap-2 mb-4">
-                            <button class="drum-sel-btn text-[10px] bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white py-2 rounded" data-drum="kick">KICK</button>
-                            <button class="drum-sel-btn text-[10px] bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white py-2 rounded" data-drum="snare">SNARE</button>
-                            <button class="drum-sel-btn text-[10px] bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white py-2 rounded" data-drum="closed-hat">CH</button>
-                            <button class="drum-sel-btn text-[10px] bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white py-2 rounded" data-drum="open-hat">OH</button>
-                            <button class="drum-sel-btn text-[10px] bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white py-2 rounded" data-drum="cymbal">CYM</button>
-                        </div>
-                        
-                        <div class="grid grid-cols-2 gap-6">
-                            <div class="knob-container">
-                                <label class="text-[10px] text-neutral-500 mb-2">Tuning</label>
-                                <input type="range" min="0" max="1" step="0.01" data-param="drumTune" class="param-slider">
-                                <span class="text-[10px] text-orange-400 font-mono mt-1">0.50</span>
-                            </div>
-                            <div class="knob-container">
-                                <label class="text-[10px] text-neutral-500 mb-2">Decay</label>
-                                <input type="range" min="0" max="1" step="0.01" data-param="drumDecay" class="param-slider">
-                                <span class="text-[10px] text-orange-400 font-mono mt-1">0.50</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 3. AUTOMATION CONTROLS (Hidden by default) -->
-                <div id="automationControls" class="hidden space-y-6">
-                    <div class="flex items-center justify-between border-b border-neutral-700 pb-2">
-                        <h3 class="text-xs font-bold text-indigo-400 uppercase"><i class="fas fa-robot mr-2"></i>AUTOMATION LANE</h3>
-                    </div>
-                    
-                    <div class="bg-neutral-800/50 p-4 rounded border border-neutral-800">
-                        <label class="text-[10px] text-neutral-500 block mb-2 font-bold uppercase">Clock Speed</label>
-                        <select id="autoSpeedSelect" class="w-full bg-neutral-900 text-neutral-300 text-xs rounded border border-neutral-700 p-2 outline-none">
-                            <option value="1">1/1 (Normal)</option>
-                            <option value="2">1/2 (Half Speed)</option>
-                            <option value="4">1/4 (Quarter Speed)</option>
-                            <option value="8">1/8 (Slow)</option>
-                        </select>
-                        <p class="text-[9px] text-neutral-500 mt-2">
-                            Click steps to cycle intensity (1-5).<br>
-                            Triggers randomization on value change.<br>
-                            Reverts to original sound on empty steps.
-                        </p>
-                    </div>
-                </div>
-
-                <!-- Global Track Effects (Bus) - Always Visible -->
-                <div class="pt-2 border-t border-neutral-800">
-                    <div class="flex justify-between items-end mb-1">
-                        <label class="text-[10px] text-neutral-500 uppercase font-bold">Track Effects (Global)</label>
-                    </div>
-                    <div class="grid grid-cols-3 gap-2">
-                        <div class="knob-container">
-                            <label class="text-[10px] text-neutral-500 mb-1">HPF</label>
-                            <input type="range" min="20" max="5000" step="10" data-param="hpFilter" class="param-slider">
-                            <span class="text-[10px] text-emerald-400 font-mono">20</span>
-                        </div>
-                        <div class="knob-container">
-                            <label class="text-[10px] text-neutral-500 mb-1">LPF</label>
-                            <input type="range" min="100" max="10000" step="100" data-param="filter" class="param-slider">
-                            <span class="text-[10px] text-emerald-400 font-mono">8000</span>
-                        </div>
-                        <div class="knob-container">
-                            <label class="text-[10px] text-neutral-500 mb-1">Vol</label>
-                            <input type="range" min="0" max="1.5" step="0.01" data-param="volume" class="param-slider">
-                            <span class="text-[10px] text-emerald-400 font-mono">0.80</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- LFOs (Granular only or Global?) -->
-                <div id="lfoSection" class="space-y-3 pt-2 border-t border-neutral-800">
-                    <div class="flex items-center gap-2 mb-2">
-                        <h3 class="text-xs font-bold text-neutral-400 uppercase"><i class="fas fa-wave-square mr-1"></i> Modulators</h3>
-                    </div>
-                    
-                    <!-- LFO Tabs Container (Dynamically Generated) -->
-                    <div id="lfoTabsContainer" class="flex gap-1 bg-neutral-800 p-1 rounded overflow-x-auto custom-scrollbar">
-                        <!-- JS injects buttons here -->
-                    </div>
-
-                    <div class="bg-neutral-800/30 p-3 rounded border border-neutral-800 space-y-3">
-                         <div class="flex gap-2">
-                             <div class="flex-1">
-                                <label class="text-[10px] text-neutral-500 block mb-1">Target</label>
-                                <select id="lfoTarget" class="w-full bg-neutral-800 text-neutral-300 text-[10px] rounded border border-neutral-700 p-1 outline-none">
-                                    <option value="none">Off</option>
-                                    <option value="position">Position</option>
-                                    <option value="spray">Spray</option>
-                                    <option value="density">Density</option>
-                                    <option value="grainSize">Grain Size</option>
-                                    <option value="pitch">Pitch</option>
-                                    <option value="relGrain">Rel Grain</option>
-                                    <option value="overlap">Overlap</option>
-                                    <option value="scanSpeed">Scan Speed</option>
-                                    <option value="filter">LPF</option>
-                                    <option value="hpFilter">HPF</option>
-                                    <option value="ampAttack">Amp Attack</option>
-                                    <option value="ampDecay">Amp Decay</option>
-                                    <option value="ampRelease">Amp Release</option>
-                                </select>
-                             </div>
-                             <div class="flex-1">
-                                <label class="text-[10px] text-neutral-500 block mb-1">Wave</label>
-                                <select id="lfoWave" class="w-full bg-neutral-800 text-neutral-300 text-[10px] rounded border border-neutral-700 p-1 outline-none">
-                                    <option value="sine">Sine</option>
-                                    <option value="square">Square</option>
-                                    <option value="sawtooth">Saw</option>
-                                    <option value="random">Rnd</option>
-                                </select>
-                             </div>
-                         </div>
-                         
-                         <div class="grid grid-cols-2 gap-4">
-                            <div class="knob-container">
-                                <label class="text-[10px] text-neutral-500 mb-1">Rate</label>
-                                <input type="range" id="lfoRate" min="0.1" max="20" step="0.1">
-                                <span class="text-[10px] text-emerald-500 mt-1" id="lfoRateVal">1.0</span>
-                            </div>
-                            <div class="knob-container">
-                                <label class="text-[10px] text-neutral-500 mb-1">Amount</label>
-                                <input type="range" id="lfoAmt" min="0" max="1" step="0.01">
-                                <span class="text-[10px] text-emerald-500 mt-1" id="lfoAmtVal">0.0</span>
-                            </div>
-                         </div>
-                    </div>
-                </div>
-
-                <div class="text-[10px] text-neutral-600 text-center pt-4">
-                    Track <span id="debugTrackId">0</span> selected
-                </div>
-
-            </div>
-        </div>
-    </div>
-
-    <!-- Track Library Modal -->
-    <div id="trackLibraryModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-        <div class="bg-neutral-900 rounded-lg shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col border border-neutral-700">
-            <div class="p-4 border-b border-neutral-800 flex justify-between items-center">
-                <h2 class="text-lg font-bold text-white"><i class="fas fa-archive mr-2"></i>Track Library</h2>
-                <button id="closeLibraryBtn" class="text-neutral-400 hover:text-white transition">
-                    <i class="fas fa-times text-xl"></i>
-                </button>
-            </div>
-            <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                <div id="trackLibraryList" class="space-y-2"></div>
-                <div id="emptyLibraryMsg" class="text-center text-neutral-500 py-8">
-                    <i class="fas fa-folder-open text-4xl mb-3 opacity-50"></i>
-                    <p>No saved tracks yet</p>
-                    <p class="text-sm mt-2">Click "Lib Save" to add tracks to your library</p>
-                </div>
-            </div>
-            <div class="p-4 border-t border-neutral-800 flex justify-end gap-2">
-                <button id="importTrackBtn" class="text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-3 py-2 rounded transition border border-neutral-700">
-                    <i class="fas fa-file-import mr-1"></i>Import Track
-                </button>
-                <input type="file" id="importTrackInput" class="hidden" accept=".json,.beattrk,.zip">
-            </div>
+            <!-- Web Component Inspector -->
+            <track-controls></track-controls>
         </div>
     </div>
 

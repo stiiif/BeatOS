@@ -1,98 +1,115 @@
-// Audio Utilities for WAV encoding/decoding
-export class AudioUtils {
-    
-    // Convert AudioBuffer to WAV ArrayBuffer
-    static audioBufferToWav(buffer, opt) {
-        opt = opt || {};
+/**
+ * AudioAnalysis - Pure utility functions for processing AudioBuffers.
+ * Decoupled from the AudioContext state.
+ */
+export class AudioAnalysis {
+
+    /**
+     * Analyze buffer for RMS amplitude visualization
+     * @param {AudioBuffer} buffer 
+     * @returns {boolean[]} Array of booleans indicating presence of signal > threshold
+     */
+    static analyzeBuffer(buffer) {
+        if (!buffer) return [];
+        const data = buffer.getChannelData(0);
+        const chunkSize = Math.floor(data.length / 100);
+        const map = [];
+
+        for (let i = 0; i < 100; i++) {
+            let sum = 0;
+            const start = i * chunkSize;
+            // Guard against out of bounds if length isn't perfectly divisible
+            const limit = Math.min(start + chunkSize, data.length);
+            
+            for (let j = start; j < limit; j++) {
+                const s = data[j];
+                sum += s * s;
+            }
+            const rms = Math.sqrt(sum / chunkSize);
+            map.push(rms > 0.01);
+        }
+        return map;
+    }
+
+    /**
+     * Smart trim using threshold and transient detection logic
+     * @param {AudioContext} audioCtx - Context needed to create new buffer
+     * @param {AudioBuffer} buffer - Source buffer
+     * @param {number} staticThreshold - Noise floor threshold
+     * @param {boolean} useTransientDetection - Whether to use relative peak detection
+     * @returns {AudioBuffer} Trimmed buffer
+     */
+    static trimBuffer(audioCtx, buffer, staticThreshold = 0.002, useTransientDetection = true) {
+        if (!buffer || !audioCtx) return buffer;
+
         const numChannels = buffer.numberOfChannels;
-        const sampleRate = buffer.sampleRate;
-        const format = opt.float32 ? 3 : 1;
-        const bitDepth = format === 3 ? 32 : 16;
+        const len = buffer.length;
+        let startIndex = len; // Default to end (if silence)
 
-        let result;
-        if (numChannels === 2) {
-            result = this.interleave(buffer.getChannelData(0), buffer.getChannelData(1));
+        if (useTransientDetection) {
+            // Create a temporary mono array for analysis
+            const mono = new Float32Array(len);
+            for (let i = 0; i < len; i++) {
+                let sum = 0;
+                for (let c = 0; c < numChannels; c++) {
+                    sum += buffer.getChannelData(c)[i];
+                }
+                mono[i] = sum / numChannels;
+            }
+
+            // Find max amplitude to normalize threshold logic
+            let maxAmp = 0;
+            for (let i = 0; i < len; i++) {
+                const abs = Math.abs(mono[i]);
+                if (abs > maxAmp) maxAmp = abs;
+            }
+
+            // If silent, return original
+            if (maxAmp < 0.001) return buffer;
+
+            // Set threshold relative to peak (e.g., 5% of peak)
+            // But ensure it's not lower than the static noise floor threshold
+            const relativeThreshold = maxAmp * 0.05;
+            const finalThreshold = Math.max(staticThreshold, relativeThreshold);
+
+            // Scan
+            for (let i = 0; i < len; i++) {
+                if (Math.abs(mono[i]) > finalThreshold) {
+                    // Backtrack slightly to catch the attack ramp-up (e.g. 2ms)
+                    const backtrackSamples = Math.floor(0.002 * buffer.sampleRate);
+                    startIndex = Math.max(0, i - backtrackSamples);
+                    break;
+                }
+            }
         } else {
-            result = buffer.getChannelData(0);
+            // Original static threshold logic
+            for (let c = 0; c < numChannels; c++) {
+                const data = buffer.getChannelData(c);
+                for (let i = 0; i < len; i++) {
+                    if (Math.abs(data[i]) > staticThreshold) {
+                        if (i < startIndex) startIndex = i;
+                        break;
+                    }
+                }
+            }
         }
 
-        return this.encodeWAV(result, numChannels, sampleRate, format, bitDepth);
-    }
+        // Check if trimming is needed
+        if (startIndex >= len || startIndex === 0) return buffer;
 
-    static interleave(inputL, inputR) {
-        const length = inputL.length + inputR.length;
-        const result = new Float32Array(length);
+        // Create new shorter buffer
+        const newLen = len - startIndex;
+        const newBuffer = audioCtx.createBuffer(numChannels, newLen, buffer.sampleRate);
 
-        let index = 0;
-        let inputIndex = 0;
-
-        while (index < length) {
-            result[index++] = inputL[inputIndex];
-            result[index++] = inputR[inputIndex];
-            inputIndex++;
-        }
-        return result;
-    }
-
-    static encodeWAV(samples, numChannels, sampleRate, format, bitDepth) {
-        const bytesPerSample = bitDepth / 8;
-        const blockAlign = numChannels * bytesPerSample;
-
-        const buffer = new ArrayBuffer(44 + samples.length * bytesPerSample);
-        const view = new DataView(buffer);
-
-        /* RIFF identifier */
-        this.writeString(view, 0, 'RIFF');
-        /* RIFF chunk length */
-        view.setUint32(4, 36 + samples.length * bytesPerSample, true);
-        /* RIFF type */
-        this.writeString(view, 8, 'WAVE');
-        /* format chunk identifier */
-        this.writeString(view, 12, 'fmt ');
-        /* format chunk length */
-        view.setUint32(16, 16, true);
-        /* sample format (raw) */
-        view.setUint16(20, format, true);
-        /* channel count */
-        view.setUint16(22, numChannels, true);
-        /* sample rate */
-        view.setUint32(24, sampleRate, true);
-        /* byte rate (sample rate * block align) */
-        view.setUint32(28, sampleRate * blockAlign, true);
-        /* block align (channel count * bytes per sample) */
-        view.setUint16(32, blockAlign, true);
-        /* bits per sample */
-        view.setUint16(34, bitDepth, true);
-        /* data chunk identifier */
-        this.writeString(view, 36, 'data');
-        /* data chunk length */
-        view.setUint32(40, samples.length * bytesPerSample, true);
-
-        if (format === 1) { // PCM
-            this.floatTo16BitPCM(view, 44, samples);
-        } else {
-            this.writeFloat32(view, 44, samples);
+        for (let c = 0; c < numChannels; c++) {
+            const oldData = buffer.getChannelData(c);
+            const newData = newBuffer.getChannelData(c);
+            for (let i = 0; i < newLen; i++) {
+                newData[i] = oldData[i + startIndex];
+            }
         }
 
-        return buffer;
-    }
-
-    static writeString(view, offset, string) {
-        for (let i = 0; i < string.length; i++) {
-            view.setUint8(offset + i, string.charCodeAt(i));
-        }
-    }
-
-    static floatTo16BitPCM(output, offset, input) {
-        for (let i = 0; i < input.length; i++, offset += 2) {
-            const s = Math.max(-1, Math.min(1, input[i]));
-            output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-        }
-    }
-
-    static writeFloat32(output, offset, input) {
-        for (let i = 0; i < input.length; i++, offset += 4) {
-            output.setFloat32(offset, input[i], true);
-        }
+        console.log(`[AudioAnalysis] Trimmed ${(startIndex / buffer.sampleRate).toFixed(4)}s start silence.`);
+        return newBuffer;
     }
 }

@@ -1,6 +1,6 @@
 /**
  * EventBus - A simple Publish/Subscribe system for decoupling components.
- * * Usage:
+ * Usage:
  * import { globalBus } from './EventBus.js';
  * globalBus.on('EVENT_NAME', (data) => { ... });
  * globalBus.emit('EVENT_NAME', { some: 'data' });

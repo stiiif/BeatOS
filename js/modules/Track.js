@@ -1,92 +1,69 @@
-// Track Module
-import { LFO } from './LFO.js';
 import { NUM_STEPS, NUM_LFOS } from '../utils/constants.js';
+import { LFO } from './LFO.js';
 
-export class Track {
-    constructor(id) {
-        this.id = id;
-        this.type = 'granular'; // 'granular', 'simple-drum', or 'automation'
+/**
+ * Creates a pure data object representing a Track.
+ * No AudioNodes, Buffers, or runtime logic should be stored here.
+ * @param {number} id 
+ * @returns {Object} Clean track data structure
+ */
+export const createTrackData = (id) => {
+    return {
+        id,
+        type: 'granular', // 'granular', 'simple-drum', 'automation'
         
-        // Automation specific
-        this.clockDivider = 1; // 1=1x, 2=1/2x, 4=1/4x, 8=1/8x
-        this.lastAutoValue = 0; // To track state changes
+        // State flags
+        muted: false,
+        soloed: false,
+        stepLock: false,
+        ignoreRandom: false,
         
-        this.buffer = null;
-        this.rmsMap = []; 
+        // Sequencer Data
+        // 0=Off, 1=Ghost, 2=Normal, 3=Accent
+        steps: new Uint8Array(NUM_STEPS).fill(0),
+        microtiming: new Float32Array(NUM_STEPS).fill(0),
         
-        // V2 Engine: Steps use integers 0-3 (0=Off, 1=Ghost, 2=Normal, 3=Accent)
-        this.steps = new Uint8Array(NUM_STEPS).fill(0);
-        
-        // V2 Engine: Microtiming offsets in milliseconds
-        this.microtiming = new Float32Array(NUM_STEPS).fill(0);
-        
-        this.lfos = Array.from({ length: NUM_LFOS }, () => new LFO());
-        
-        this.playhead = 0; 
-        
-        this.muted = false;
-        this.soloed = false;
-        this.stepLock = false; 
-        this.ignoreRandom = false; 
-        
-        // --- NEW: Choke Group Logic ---
-        this.chokeGroup = 0; // 0 = None, 1-8 = Shared Choke Groups
-        this.activeSources = new Set(); // Store active WebAudio nodes to stop them
-
-        this.bus = {
-            input: null,
-            hp: null,
-            lp: null,
-            vol: null,
-            pan: null
-        };
-
-        this.params = {
-            // --- Common / Granular ---
-            position: 0.0, 
-            spray: 0.00, 
+        // Audio Parameters (Pure Data)
+        params: {
+            // Granular
+            position: 0.0,
+            spray: 0.0,
             scanSpeed: 0.0,
-            density: 15, 
-            overlap: 3, 
+            density: 15,
             grainSize: 0.25,
-            pitch: 1.0, 
+            pitch: 1.0,
+            overlap: 3,
             relGrain: 0.4,
             
-            // --- 909 / Simple Drum Params ---
-            drumType: 'kick', 
-            drumTune: 0.5,    
-            drumDecay: 0.5,   
-            
-            // --- Amp Envelope ---
+            // Amp Envelope
             ampAttack: 0.01,
             ampDecay: 0.01,
             ampRelease: 0.1,
             
-            // --- Track Bus ---
-            hpFilter: 20,
-            filter: 20000, 
-            volume: 0.8, 
-            pan: 0 
-        };
-    }
-
-    addSource(source) {
-        this.activeSources.add(source);
-        source.onended = () => {
-            this.activeSources.delete(source);
-        };
-    }
-
-    stopAllSources(time = 0) {
-        this.activeSources.forEach(src => {
-            try {
-                // Schedule stop if time is provided, otherwise stop immediately
-                if (time > 0) src.stop(time);
-                else src.stop();
-            } catch(e) {
-                // Ignore errors if source already stopped
-            }
-        });
-        this.activeSources.clear();
-    }
-}
+            // Drum Engine
+            drumType: 'kick',
+            drumTune: 0.5,
+            drumDecay: 0.5,
+            
+            // Mixer
+            volume: 0.8,
+            pan: 0,
+            filter: 20000,
+            hpFilter: 20
+        },
+        
+        // Modulation
+        lfos: Array.from({ length: NUM_LFOS }, () => ({
+            wave: 'sine',
+            rate: 1.0,
+            amount: 0.0,
+            target: 'none'
+        })),
+        
+        // Grouping
+        chokeGroup: 0,
+        
+        // Sample Info (Metadata only, no Buffers)
+        sampleName: null
+    };
+};

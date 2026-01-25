@@ -1,211 +1,110 @@
-// Scheduler Module - Final (Debug logs removed)
+import { appStore } from '../state/Store.js';
+import { ACTIONS } from '../state/Actions.js';
 import { LOOKAHEAD, SCHEDULE_AHEAD_TIME, NUM_STEPS } from '../utils/constants.js';
 
 export class Scheduler {
     constructor(audioEngine, granularSynth) {
         this.audioEngine = audioEngine;
         this.granularSynth = granularSynth;
-        this.isPlaying = false;
-        this.bpm = 120;
-        this.currentStep = 0;
-        this.totalStepsPlayed = 0; 
-        this.nextNoteTime = 0.0;
-        this.schedulerTimerID = null;
-        this.tracks = [];
-        this.updateMatrixHeadCallback = null;
-        this.randomChokeCallback = null;
         
-        this.trackManager = null; 
-        this.activeSnapshot = null; 
+        this.nextNoteTime = 0.0;
+        this.timerID = null;
+        this.lastStep = -1;
+
+        // Bind for loop
+        this.schedule = this.schedule.bind(this);
+        
+        // Listen to store for play/stop commands if needed, 
+        // though usually main.js calls start/stop.
     }
 
-    setTracks(tracks) {
-        this.tracks = tracks;
+    get bpm() {
+        return appStore.state.bpm;
     }
 
-    setTrackManager(tm) {
-        this.trackManager = tm;
+    get isPlaying() {
+        return appStore.state.isPlaying;
     }
 
-    setBPM(bpm) {
-        this.bpm = Math.max(30, Math.min(300, parseInt(bpm)));
-    }
-
-    getBPM() {
-        return this.bpm;
-    }
-
-    setUpdateMatrixHeadCallback(callback) {
-        this.updateMatrixHeadCallback = callback;
-    }
-
-    setRandomChokeCallback(callback) {
-        this.randomChokeCallback = callback;
-    }
-
-    start(scheduleVisualDrawCallback) {
+    start() {
         const audioCtx = this.audioEngine.getContext();
         if (!audioCtx) return;
-        if (!this.isPlaying) {
-            this.isPlaying = true;
-            this.currentStep = 0;
-            this.totalStepsPlayed = 0; 
-            this.nextNoteTime = audioCtx.currentTime + 0.1;
-            
-            this.activeSnapshot = null;
-            this.tracks.forEach(t => { if(t.type === 'automation') t.lastAutoValue = 0; });
 
-            this.schedule(scheduleVisualDrawCallback);
-        }
+        if (this.isPlaying) return;
+
+        // Dispatch playing state
+        appStore.dispatch(ACTIONS.SET_PLAYING, true);
+
+        // Reset timing
+        this.nextNoteTime = audioCtx.currentTime + 0.1;
+        this.lastStep = -1; // Reset last step
+        
+        // Optionally reset step to 0 in store
+        appStore.dispatch(ACTIONS.SET_CURRENT_STEP, { step: 0 });
+
+        this.schedule();
     }
 
     stop() {
         this.isPlaying = false;
-        clearTimeout(this.schedulerTimerID);
-        if(this.activeSnapshot && this.trackManager) {
-            this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
-            this.activeSnapshot = null;
-        }
-        this.tracks.forEach(t => {
-            if(t.stopAllSources) t.stopAllSources();
-        });
+        appStore.dispatch(ACTIONS.SET_PLAYING, false);
+        clearTimeout(this.timerID);
+        
+        // Stop all active sources via Engine/Graph
+        // (Assuming AudioGraph has a method to stop all, or we iterate tracks)
+        // For now, we rely on the node disconnect or GC, or implement stopAll later.
     }
 
-    getIsPlaying() {
-        return this.isPlaying;
-    }
+    schedule() {
+        if (!this.isPlaying) return;
 
-    getCurrentStep() {
-        return this.currentStep;
-    }
-
-    schedule(scheduleVisualDrawCallback) {
         const audioCtx = this.audioEngine.getContext();
+        const state = appStore.state;
+
         while (this.nextNoteTime < audioCtx.currentTime + SCHEDULE_AHEAD_TIME) {
-            this.scheduleStep(this.currentStep, this.nextNoteTime, scheduleVisualDrawCallback);
-            this.nextNextTime();
+            this.scheduleStep(state.currentStep, this.nextNoteTime);
+            this.advanceStep();
         }
-        this.schedulerTimerID = window.setTimeout(() => this.schedule(scheduleVisualDrawCallback), LOOKAHEAD);
+
+        this.timerID = window.setTimeout(this.schedule, LOOKAHEAD);
     }
 
-    nextNextTime() {
+    advanceStep() {
         const secondsPerBeat = 60.0 / this.bpm;
-        this.nextNoteTime += secondsPerBeat / 4;
-        this.currentStep = (this.currentStep + 1) % NUM_STEPS;
-        this.totalStepsPlayed++; 
+        // 16th notes = 1/4 of a beat
+        this.nextNoteTime += 0.25 * secondsPerBeat;
+
+        const nextStep = (appStore.state.currentStep + 1) % NUM_STEPS;
+        appStore.dispatch(ACTIONS.SET_CURRENT_STEP, { step: nextStep });
     }
 
-    scheduleStep(step, time, scheduleVisualDrawCallback) {
-        const currentTotal = this.totalStepsPlayed;
+    scheduleStep(stepIndex, time) {
+        // Only schedule if we haven't already for this step/time combo (simple debounce)
+        // Note: In this loop logic, stepIndex changes every iteration, so it's safe.
 
-        if (this.updateMatrixHeadCallback) {
-            requestAnimationFrame(() => this.updateMatrixHeadCallback(step, currentTotal));
-        }
+        const tracks = appStore.state.tracks;
         
-        this.tracks.forEach(t => {
-            if (t.type === 'automation' && !t.muted) {
-                this.processAutomationTrack(t, currentTotal, time);
+        // Trigger generic visualization event if needed (or components listen to SET_CURRENT_STEP)
+        
+        tracks.forEach(track => {
+            if (track.muted) return;
+
+            // Get velocity/trigger for this step
+            const velocity = track.steps[stepIndex];
+            
+            if (velocity > 0) {
+                // V2: Microtiming logic would go here (offset 'time')
+                // const offset = track.microtiming[stepIndex] / 1000;
+                
+                // Trigger Sound
+                // We pass the clean track data object. 
+                // The synth needs to look up the buffer from the AudioGraph or Engine.
+                this.granularSynth.scheduleNote(track, time, velocity);
+                
+                // Trigger Visuals (Flash)
+                // We can emit a specific event for visualizers to pick up
+                // globalBus.emit('TRACK_TRIGGERED', { trackId: track.id, time });
             }
         });
-
-        const randomChokeInfo = this.randomChokeCallback ? this.randomChokeCallback() : { mode: false, groups: [] };
-        
-        if (randomChokeInfo.mode) {
-            const chokeGroupMap = new Map();
-            const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
-            
-            for (let i = 0; i < this.tracks.length; i++) {
-                const t = this.tracks[i];
-                if (t.type === 'automation') continue; 
-                // V2: Velocity Check > 0
-                if (t.steps[step] === 0) continue;
-                if (isAnySolo && !t.soloed) continue;
-                if (!isAnySolo && t.muted) continue;
-                
-                const randomGroup = randomChokeInfo.groups[i];
-                if (!chokeGroupMap.has(randomGroup)) {
-                    chokeGroupMap.set(randomGroup, []);
-                }
-                chokeGroupMap.get(randomGroup).push(i);
-            }
-            
-            chokeGroupMap.forEach((trackIds) => {
-                if (trackIds.length > 0) {
-                    const winnerIdx = Math.floor(Math.random() * trackIds.length);
-                    const winnerId = trackIds[winnerIdx];
-                    this.triggerTrack(this.tracks[winnerId], time, scheduleVisualDrawCallback, step);
-                }
-            });
-        } else {
-            const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
-            for (let i = 0; i < this.tracks.length; i++) {
-                const t = this.tracks[i];
-                if (t.type === 'automation') continue; 
-
-                // V2: Velocity Check > 0
-                if (t.steps[step] === 0) continue;
-                
-                if (isAnySolo) {
-                    if (t.soloed) this.triggerTrack(t, time, scheduleVisualDrawCallback, step);
-                } else {
-                    if (!t.muted) this.triggerTrack(t, time, scheduleVisualDrawCallback, step);
-                }
-            }
-        }
-    }
-
-    triggerTrack(track, time, scheduleVisualDrawCallback, stepIndex) {
-        if (track.chokeGroup > 0) {
-            this.tracks.forEach(other => {
-                if (other.id !== track.id && other.chokeGroup === track.chokeGroup) {
-                    other.stopAllSources(time);
-                }
-            });
-        }
-
-        // V2: Get Velocity & Microtiming
-        const velocity = track.steps[stepIndex];
-        const microtimingMs = track.microtiming[stepIndex] || 0;
-        
-        // Convert ms to seconds (e.g., -5ms = -0.005s)
-        const offsetSeconds = microtimingMs / 1000.0;
-        
-        let actualTime = time + offsetSeconds;
-        
-        // Clamp time to now if offset makes it in the past (only if negative offset > lookahead)
-        const audioCtx = this.audioEngine.getContext();
-        if (audioCtx && actualTime < audioCtx.currentTime) {
-            actualTime = audioCtx.currentTime;
-        }
-
-        this.granularSynth.scheduleNote(track, actualTime, scheduleVisualDrawCallback, velocity);
-    }
-
-    processAutomationTrack(track, totalSteps, time) {
-        if (!this.trackManager) return;
-
-        const trackLength = track.steps.length > 0 ? track.steps.length : NUM_STEPS;
-        const effectiveStepIndex = Math.floor(totalSteps / track.clockDivider) % trackLength;
-        const currentValue = track.steps[effectiveStepIndex];
-        const prevValue = track.lastAutoValue;
-
-        if (currentValue !== prevValue) {
-            if (prevValue === 0 && currentValue > 0) {
-                if (!this.activeSnapshot) {
-                    this.activeSnapshot = this.trackManager.saveGlobalSnapshot();
-                }
-                this.trackManager.triggerRandomization(currentValue);
-            }
-            else if (prevValue > 0 && currentValue > 0) {
-                this.trackManager.triggerRandomization(currentValue);
-            }
-            else if (prevValue > 0 && currentValue === 0) {
-                if (this.activeSnapshot) {
-                    this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
-                    this.activeSnapshot = null;
-                }
-            }
-            track.lastAutoValue = currentValue;
-        }
     }
 }
