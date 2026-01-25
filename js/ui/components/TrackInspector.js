@@ -1,4 +1,4 @@
-import { NUM_LFOS, TRACKS_PER_GROUP } from '../../utils/constants.js';
+import { NUM_LFOS, TRACKS_PER_GROUP } from '../../config/constants.js';
 import { globalBus } from '../../events/EventBus.js';
 import { EVENTS } from '../../events/Events.js';
 import { SearchModal } from '../SearchModal.js';

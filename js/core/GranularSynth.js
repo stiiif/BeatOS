@@ -1,5 +1,5 @@
 // Granular Synthesis Engine
-import { VELOCITY_GAINS } from '../utils/constants.js';
+import { VELOCITY_GAINS } from '../../js/config/constants.js';
 
 export class GranularSynth {
     constructor(audioEngine) {

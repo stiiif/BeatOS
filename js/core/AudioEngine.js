@@ -1,5 +1,5 @@
 // Audio Engine Module
-import { VELOCITY_GAINS } from '../utils/constants.js';
+import { VELOCITY_GAINS } from '../../js/config/constants.js';
 
 export class AudioEngine {
     constructor() {
