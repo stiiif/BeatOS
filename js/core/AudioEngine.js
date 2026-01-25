@@ -22,7 +22,7 @@ export class AudioEngine {
     }
 
     // New method: Automatically removes leading silence from a buffer
-    trimBuffer(buffer, threshold = 0.002) {
+    trimBuffer(buffer, threshold = 0.01) {
         if (!buffer) return null;
         
         const numChannels = buffer.numberOfChannels;

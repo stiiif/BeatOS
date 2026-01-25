@@ -20,7 +20,9 @@ export class SampleLoader {
             
             // Auto-Trim Silence if method exists (from AudioEngine update)
             if (this.audioEngine.trimBuffer) {
-                audioBuffer = this.audioEngine.trimBuffer(audioBuffer);
+                // Use a higher threshold (0.01) to catch background noise/hiss
+                // common in Freesound samples, which might otherwise prevent trimming.
+                audioBuffer = this.audioEngine.trimBuffer(audioBuffer, 0.01);
             }
             
             // Update Track with new sample data
