@@ -1,6 +1,6 @@
 // Track Module
 import { LFO } from './LFO.js';
-import { NUM_STEPS, NUM_LFOS } from '../../js/config/constants.js';
+import { NUM_STEPS, NUM_LFOS } from '../utils/constants.js';
 
 export class Track {
     constructor(id) {

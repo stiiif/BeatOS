@@ -1,5 +1,5 @@
 // Track Library Module - Manages saved track presets
-import { NUM_LFOS } from '../../js/config/constants.js';
+import { NUM_LFOS } from '../utils/constants.js';
 import { AudioUtils } from '../utils/AudioUtils.js';
 
 export class TrackLibrary {

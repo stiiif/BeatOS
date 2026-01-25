@@ -8,7 +8,7 @@ import { TrackLibrary } from './modules/TrackLibrary.js';
 import { UIManager } from './ui/UIManagerClean.js'; // IMPORTING THE NEW CLEAN FILE
 import { Visualizer } from './ui/Visualizer.js';
 import { LayoutManager } from './ui/LayoutManager.js';
-import { NUM_LFOS, TRACKS_PER_GROUP } from './config/constants.js';
+import { NUM_LFOS, TRACKS_PER_GROUP } from './utils/constants.js';
 
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);

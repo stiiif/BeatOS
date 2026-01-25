@@ -1,5 +1,5 @@
 // Preset Manager Module
-import { NUM_LFOS } from '../../js/config/constants.js';
+import { NUM_LFOS } from '../utils/constants.js';
 import { AudioUtils } from '../utils/AudioUtils.js';
 
 export class PresetManager {

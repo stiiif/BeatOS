@@ -1,6 +1,6 @@
 // Track Manager Module
 import { Track } from './Track.js';
-import { START_TRACKS, MAX_TRACKS, NUM_LFOS, TRACKS_PER_GROUP, AUTOMATION_INTENSITIES } from '../../js/config/constants.js';
+import { START_TRACKS, MAX_TRACKS, NUM_LFOS, TRACKS_PER_GROUP, AUTOMATION_INTENSITIES } from '../utils/constants.js';
 
 export class TrackManager {
     constructor(audioEngine) {

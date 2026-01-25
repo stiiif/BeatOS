@@ -1,5 +1,5 @@
 // Scheduler Module - Final (Debug logs removed)
-import { LOOKAHEAD, SCHEDULE_AHEAD_TIME, NUM_STEPS } from '../../js/config/constants.js';
+import { LOOKAHEAD, SCHEDULE_AHEAD_TIME, NUM_STEPS } from '../utils/constants.js';
 
 export class Scheduler {
     constructor(audioEngine, granularSynth) {
