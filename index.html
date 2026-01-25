@@ -13,17 +13,82 @@
     <link rel="stylesheet" href="css/components.css">
     <link rel="stylesheet" href="css/layout.css">
     
-    <!-- Debug Script: Catches errors before modules load -->
+    <!-- SYSTEM DIAGNOSTICS: Catches loading errors and displays help -->
     <script>
-        console.log("[HTML] Debug script running.");
         window.addEventListener('error', function(e) {
-            console.error("[HTML] Global Error Caught:", e.message, "at", e.filename, ":", e.lineno);
-            // Check for the specific UIManager error
-            if (e.message.includes('SyntaxError') && e.filename.includes('UIManager.js')) {
-                console.warn("[HTML] DETECTED 404/HTML-IN-JS ISSUE: UIManager.js is likely being served as HTML (404 page) instead of JavaScript.");
-                alert("Critical Error: UIManager.js failed to load. Check console for details. (Likely 404/Path issue)");
+            // Check specifically for the UIManager issue or general module failures
+            if ((e.message && e.message.includes('SyntaxError') && e.filename && e.filename.includes('UIManager.js')) || 
+                (e.message && e.message.includes('import'))) {
+                
+                console.error("[Diagnostics] Critical Load Error Detected:", e);
+                showDiagnosticModal(e.filename || 'js/ui/UIManager.js');
             }
         });
+
+        async function showDiagnosticModal(failedUrl) {
+            // Prevent duplicate modals
+            if (document.getElementById('diagnostic-modal')) return;
+
+            const modal = document.createElement('div');
+            modal.id = 'diagnostic-modal';
+            modal.className = "fixed inset-0 bg-neutral-900/95 z-[100] flex flex-col items-center justify-center p-8 text-white font-mono";
+            
+            // Clean up URL for display
+            const displayPath = failedUrl.split('/').slice(-3).join('/');
+
+            modal.innerHTML = `
+                <div class="max-w-2xl w-full bg-neutral-800 border-2 border-red-500 rounded-lg p-6 shadow-2xl">
+                    <h2 class="text-2xl font-bold text-red-500 mb-4"><i class="fas fa-exclamation-triangle mr-2"></i>System Startup Failed</h2>
+                    <p class="mb-4 text-neutral-300">The application code could not be loaded. This is why the "Initialize Audio" button is not working.</p>
+                    
+                    <div class="bg-black/50 p-4 rounded mb-4 text-sm">
+                        <div class="text-red-400 font-bold">Problem File:</div>
+                        <div class="break-all text-neutral-400 font-mono">.../${displayPath}</div>
+                        <div class="mt-2 text-red-400 font-bold">Detected Issue:</div>
+                        <div class="text-neutral-400">The browser received an invalid file (likely HTML instead of JavaScript).</div>
+                    </div>
+
+                    <div id="diag-results" class="space-y-2 text-xs mb-6 bg-neutral-900 p-3 rounded border border-neutral-700">
+                        <div class="flex items-center gap-2 text-yellow-500"><i class="fas fa-spinner fa-spin"></i> Running server connection test...</div>
+                    </div>
+
+                    <div class="bg-blue-900/20 border border-blue-800/50 p-4 rounded text-xs text-blue-200">
+                        <strong>How to Fix (Check your server files):</strong>
+                        <ul class="list-disc list-inside mt-2 space-y-1 text-neutral-400">
+                            <li>Does the folder <code>js/ui/</code> exist?</li>
+                            <li>Is the file named exactly <code>UIManager.js</code>? (Case-sensitive!)</li>
+                            <li>Common mistake: <code>uimanager.js</code> vs <code>UIManager.js</code></li>
+                        </ul>
+                    </div>
+                    
+                    <button onclick="location.reload()" class="mt-6 bg-neutral-700 hover:bg-neutral-600 text-white px-4 py-2 rounded transition w-full font-bold">RELOAD PAGE</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // Active File Test
+            const resultsDiv = modal.querySelector('#diag-results');
+            try {
+                const response = await fetch(failedUrl);
+                const text = await response.text();
+                
+                resultsDiv.innerHTML = ''; 
+                
+                if (response.status === 404) {
+                    resultsDiv.innerHTML = `<div class="text-red-500 font-bold text-base"><i class="fas fa-times-circle"></i> Result: 404 NOT FOUND</div><div class="text-neutral-500 mt-1">The server cannot find this file. Check the path.</div>`;
+                } else if (response.status === 200) {
+                    if (text.trim().startsWith('<')) {
+                        resultsDiv.innerHTML = `<div class="text-red-500 font-bold text-base"><i class="fas fa-file-code"></i> Result: INVALID CONTENT</div><div class="text-neutral-500 mt-1">The server returned an HTML page (like a 404 page) instead of JavaScript code. This confirms the file path is incorrect.</div>`;
+                    } else {
+                        resultsDiv.innerHTML = `<div class="text-green-500 font-bold"><i class="fas fa-check-circle"></i> Result: File OK (This is unexpected)</div>`;
+                    }
+                } else {
+                    resultsDiv.innerHTML = `<div class="text-yellow-500 font-bold">⚠️ HTTP ${response.status}</div>`;
+                }
+            } catch (e) {
+                resultsDiv.innerHTML = `<div class="text-red-500">Network Error: ${e.message}</div>`;
+            }
+        }
     </script>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
