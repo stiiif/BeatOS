@@ -48,7 +48,7 @@ export class Track {
             scanSpeed: 0.0,
             density: 15, 
             overlap: 3, 
-            grainSize: 0.05,
+            grainSize: 0.25,
             pitch: 1.0, 
             relGrain: 0.4,
             
@@ -59,8 +59,8 @@ export class Track {
             
             // --- Amp Envelope ---
             ampAttack: 0.01,
-            ampDecay: 0.1,
-            ampRelease: 0.3,
+            ampDecay: 0.01,
+            ampRelease: 0.1,
             
             // --- Track Bus ---
             hpFilter: 20,
