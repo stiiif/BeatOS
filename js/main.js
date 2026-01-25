@@ -1,4 +1,3 @@
-// Main Application Entry Point
 import { AudioEngine } from './core/AudioEngine.js';
 import { GranularSynth } from './core/GranularSynth.js';
 import { Scheduler } from './core/Scheduler.js';
@@ -10,7 +9,6 @@ import { Visualizer } from './ui/Visualizer.js';
 import { LayoutManager } from './ui/LayoutManager.js';
 import { NUM_LFOS, TRACKS_PER_GROUP } from './utils/constants.js';
 
-// Initialize all systems
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
 const scheduler = new Scheduler(audioEngine, granularSynth);
@@ -20,39 +18,31 @@ const trackLibrary = new TrackLibrary();
 const uiManager = new UIManager();
 const visualizer = new Visualizer('visualizer', 'bufferDisplay', audioEngine);
 
-// Initialize Layout
 const layoutManager = new LayoutManager();
 
-// Wire up Scheduler dependencies
 scheduler.setTrackManager(trackManager);
 scheduler.setTracks(trackManager.getTracks());
 
-// Initialize tracks
 trackManager.initTracks();
 const tracks = trackManager.getTracks();
 
-// Wire up UI/Visualizer dependencies
 uiManager.setTracks(tracks);
-uiManager.setTrackManager(trackManager); // NEW: Pass track manager for pattern logic
+uiManager.setTrackManager(trackManager);
 visualizer.setTracks(tracks);
 
-// Setup UI callbacks
 scheduler.setUpdateMatrixHeadCallback((step, total) => uiManager.updateMatrixHead(step, total));
 scheduler.setRandomChokeCallback(() => uiManager.getRandomChokeInfo());
 
-// Helper to refresh UI via UIManager
 function updateTrackControlsVisibility() {
     uiManager.updateTrackControlsVisibility();
 }
 
-// Override UIManager selectTrack to trigger our visibility update
 const originalSelectTrack = uiManager.selectTrack.bind(uiManager);
 uiManager.selectTrack = (idx, cb) => {
     originalSelectTrack(idx, cb);
     updateTrackControlsVisibility();
 };
 
-// Add track functionality
 function addTrack() {
     const newId = trackManager.addTrack();
     if (newId !== null) {
@@ -65,7 +55,6 @@ function addTrack() {
     }
 }
 
-// Add group functionality
 function addGroup() {
     const tracksAdded = [];
     for (let i = 0; i < TRACKS_PER_GROUP; i++) {
@@ -84,7 +73,6 @@ function addGroup() {
     }
 }
 
-// Initialize Audio Button
 document.getElementById('initAudioBtn').addEventListener('click', async () => {
     await audioEngine.initialize();
     trackManager.createBuffersForAllTracks();
@@ -100,7 +88,6 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     uiManager.updateLfoUI();
 });
 
-// Play Button
 document.getElementById('playBtn').addEventListener('click', () => {
     if (!audioEngine.getContext()) return;
     if (!scheduler.getIsPlaying()) {
@@ -109,19 +96,16 @@ document.getElementById('playBtn').addEventListener('click', () => {
     }
 });
 
-// Stop Button
 document.getElementById('stopBtn').addEventListener('click', () => {
     scheduler.stop();
     document.getElementById('playBtn').classList.remove('text-emerald-500');
     uiManager.clearPlayheadForStop();
 });
 
-// BPM Control
 document.getElementById('bpmInput').addEventListener('change', e => {
     scheduler.setBPM(e.target.value);
 });
 
-// Apply Groove Button - NEW CONNECTION
 const applyGrooveBtn = document.getElementById('applyGrooveBtn');
 if (applyGrooveBtn) {
     applyGrooveBtn.addEventListener('click', () => {
@@ -129,7 +113,6 @@ if (applyGrooveBtn) {
     });
 }
 
-// Scope Mode Toggle Buttons
 document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
     visualizer.setScopeMode('wave');
     const btnWave = e.target;
@@ -154,12 +137,10 @@ document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
     btnWave.classList.remove('rounded-sm');
 });
 
-// Pattern Randomization
 document.getElementById('randomizeAllPatternsBtn').addEventListener('click', () => {
     uiManager.randomizeAllPatterns();
 });
 
-// Randomize All Params
 document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -241,7 +222,6 @@ document.getElementById('resetParamBtn').addEventListener('click', () => {
     setTimeout(() => { btn.innerHTML = originalContent; btn.classList.remove('text-emerald-400', 'border-emerald-500'); }, 800);
 });
 
-// Sound Generator Buttons
 document.querySelectorAll('.sound-gen-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
         if (!audioEngine.getContext()) return;
@@ -278,7 +258,6 @@ document.getElementById('load909Btn').addEventListener('click', () => {
     ctx.font = '10px monospace'; ctx.fillStyle = '#f97316'; ctx.fillText("909 ENGINE ACTIVE", 10, 40);
 });
 
-// Dynamic Auto Button logic
 const btnContainer = document.querySelector('.flex.gap-1.ml-2');
 if (btnContainer && !document.getElementById('loadAutoBtn')) {
     const autoBtn = document.createElement('button');
