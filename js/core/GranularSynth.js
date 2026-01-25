@@ -1,3 +1,4 @@
+// Granular Synthesis Engine
 import { VELOCITY_GAINS } from '../utils/constants.js';
 
 export class GranularSynth {
@@ -7,109 +8,186 @@ export class GranularSynth {
         this.MAX_GRAINS = 400; 
     }
 
-    /**
-     * Helper to get buffer from the AudioEngine/Graph
-     */
-    getTrackBuffer(trackId) {
-        // We assume the AudioGraph nodes might hold the buffer, or the Engine maintains a map.
-        // In Step 2.3 AudioEngine, we did: this.graph.nodes.get(trackId).buffer = audioBuffer;
-        // So we access it via the engine's graph.
-        const nodes = this.audioEngine.graph.nodes.get(trackId);
-        return nodes ? nodes.buffer : null;
+    getActiveGrainCount() {
+        return this.activeGrains;
     }
 
-    getTrackBus(trackId) {
-        // Returns the Input Node of the track chain
-        const nodes = this.audioEngine.graph.nodes.get(trackId);
-        return nodes ? nodes.input : null;
+    setMaxGrains(max) {
+        this.MAX_GRAINS = max;
     }
 
-    scheduleNote(track, time, velocityLevel = 2) {
-        // If simple-drum type, delegate to engine (or handle here if moved)
+    findActivePosition(track, requestedPos) {
+        if (!track.rmsMap || track.rmsMap.length === 0) return requestedPos;
+        const mapIdx = Math.floor(requestedPos * 99); 
+        if (track.rmsMap[mapIdx]) return requestedPos; 
+        for (let i = 1; i < 50; i++) {
+            if (track.rmsMap[mapIdx + i]) return (mapIdx + i) / 99;
+            if (track.rmsMap[mapIdx - i]) return (mapIdx - i) / 99;
+        }
+        return requestedPos; 
+    }
+
+    playGrain(track, time, scheduleVisualDrawCallback, ampEnvelope = 1.0, velocityLevel = 2) {
+        if (this.activeGrains >= this.MAX_GRAINS) return;
+
+        const audioCtx = this.audioEngine.getContext();
+        if (!audioCtx || !track.buffer || !track.bus) return; 
+
+        let gainMult = 1.0;
+        let filterOffset = 0;
+        let sprayMod = 0;
+
+        switch(velocityLevel) {
+            case 1: // Ghost
+                gainMult = 0.4;
+                filterOffset = -3000;
+                sprayMod = 0.05; 
+                break;
+            case 2: // Normal
+                gainMult = 0.75;
+                break;
+            case 3: // Accent
+                gainMult = 1.0;
+                break;
+            default:
+                if (velocityLevel > 0) gainMult = 0.75;
+                else return;
+        }
+
+        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, filter:0, hpFilter:0 };
+        track.lfos.forEach(lfo => {
+            const v = lfo.getValue(time);
+            if (lfo.target === 'filter') mod.filter += v * 5000;
+            else if (lfo.target === 'hpFilter') mod.hpFilter += v * 2000;
+            else if(mod[lfo.target] !== undefined) mod[lfo.target] += v;
+        });
+
+        const p = track.params;
+
+        let basePos = (p.scanSpeed > 0.01 || p.scanSpeed < -0.01) ? track.playhead : p.position;
+        
+        let gPos = Math.max(0, Math.min(1, basePos + mod.position));
+        const spray = Math.max(0, p.spray + mod.spray + sprayMod);
+        gPos += (Math.random()*2-1) * spray;
+        gPos = Math.max(0, Math.min(1, gPos));
+
+        if (spray > 0.01) {
+            gPos = this.findActivePosition(track, gPos);
+        }
+
+        const dur = Math.max(0.01, p.grainSize + mod.grainSize);
+        const pitch = Math.max(0.1, p.pitch + mod.pitch);
+
+        if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.audioEngine.getMappedFrequency(Math.max(20, p.hpFilter + mod.hpFilter), 'hp'), time);
+        
+        let lpFreq = this.audioEngine.getMappedFrequency(Math.max(100, p.filter + mod.filter), 'lp');
+        if (velocityLevel === 1) lpFreq = Math.max(100, lpFreq + filterOffset);
+        if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(lpFreq, time);
+        
+        if(track.bus.vol) track.bus.vol.gain.setValueAtTime(p.volume, time);
+        if(track.bus.pan) track.bus.pan.pan.setValueAtTime(p.pan, time);
+
+        const src = audioCtx.createBufferSource();
+        src.buffer = track.buffer;
+        src.playbackRate.value = pitch;
+
+        const grainWindow = audioCtx.createGain();
+        grainWindow.gain.value = ampEnvelope * gainMult;
+
+        src.connect(grainWindow);
+        grainWindow.connect(track.bus.input); 
+
+        track.addSource(src);
+
+        const bufDur = track.buffer.duration;
+        let offset = gPos * bufDur;
+        if (offset + dur > bufDur) offset = 0;
+
+        // FIXED: Force fast attack for immediate onset regardless of duration
+        grainWindow.gain.setValueAtTime(0, time);
+        const grainAttack = 0.002; 
+        // Ensure attack is always fast (2ms) unless duration is extremely short
+        const safeAttack = Math.min(grainAttack, dur * 0.1); 
+        
+        grainWindow.gain.linearRampToValueAtTime(ampEnvelope * gainMult, time + safeAttack); 
+        // Decay to end
+        grainWindow.gain.linearRampToValueAtTime(0, time + dur);
+
+        this.activeGrains++;
+        src.start(time, offset, dur);
+        src.onended = () => { 
+            this.activeGrains--;
+            src.disconnect();
+            grainWindow.disconnect();
+        };
+        
+        scheduleVisualDrawCallback(time, track.id);
+    }
+
+    scheduleNote(track, time, scheduleVisualDrawCallback, velocityLevel = 2) {
         if (track.type === 'simple-drum') {
-            this.audioEngine.triggerDrum(track.id, time, velocityLevel, track.params);
+            this.audioEngine.triggerDrum(track, time, velocityLevel);
+            scheduleVisualDrawCallback(time, track.id);
             return;
         }
 
-        const buffer = this.getTrackBuffer(track.id);
-        const destination = this.getTrackBus(track.id);
-
-        if (!buffer || !destination) return;
-
-        // ... Existing Granular Logic ...
-        // Adapted to use 'buffer' and 'destination' local vars
-        
         const p = track.params;
-        let density = Math.max(1, p.density);
-        let interval = 1 / density; // Simplified for brevity, original logic applies
         
+        let density = Math.max(1, p.density);
+        let interval;
+        const dur = p.grainSize; 
+
         if (p.overlap > 0) {
-            const dur = p.grainSize;
             interval = dur / Math.max(0.1, p.overlap);
+            density = 1 / interval; 
+        } else {
+            interval = 1 / density;
         }
 
         const noteDur = p.relGrain !== undefined ? p.relGrain : 0.4;
-        const grains = Math.min(64, Math.ceil(noteDur / interval)); 
+        const rawGrains = Math.ceil(noteDur / interval);
+        const grains = Math.min(64, rawGrains); 
 
         const atk = p.ampAttack || 0.01;
         const dec = p.ampDecay || 0.1;
         const rel = p.ampRelease || 0.1;
+        const sustainLevel = 0.6;
 
-        // Playhead logic would need to be stored in a ephemeral state map if we want scanSpeed to work
-        // For now, stateless implementation using p.position
-        let currentPlayhead = p.position;
+        if (p.scanSpeed !== 0) {
+            track.playhead = (track.playhead + (p.scanSpeed * 0.1)) % 1.0;
+            if (track.playhead < 0) track.playhead += 1.0;
+        } else {
+            track.playhead = p.position;
+        }
 
         for(let i=0; i<grains; i++) {
-            const grainTime = time + (i * interval);
+            const grainRelativeTime = i * interval;
+            let ampEnv = 0;
+
+            // FIX: Ensure first grain starts immediately with full amplitude
+            // Overriding global attack for the very first grain to ensure transients are preserved
+            if (i === 0) {
+                ampEnv = 1.0;
+            } else {
+                if (grainRelativeTime < atk) {
+                    ampEnv = grainRelativeTime / atk;
+                } else if (grainRelativeTime < atk + dec) {
+                    const decProgress = (grainRelativeTime - atk) / dec;
+                    ampEnv = 1.0 - (decProgress * (1.0 - sustainLevel));
+                } else if (grainRelativeTime < atk + dec + rel) {
+                    const relProgress = (grainRelativeTime - (atk + dec)) / rel;
+                    ampEnv = sustainLevel * (1.0 - relProgress);
+                } else {
+                    ampEnv = 0;
+                }
+            }
+
+            // Remove jitter for the first grain to ensure precise sync with 909 kicks
             const jitter = (i === 0) ? 0 : Math.random() * 0.005;
             
-            // Amp Envelope Calc (Simplified)
-            let amp = 1.0; 
-            // ... (Insert complex envelope logic from original if needed) ...
-
-            this.playGrain(track, buffer, destination, grainTime + jitter, amp, velocityLevel, currentPlayhead);
-            
-            // Advance playhead if scanning
-            if (p.scanSpeed !== 0) {
-                currentPlayhead = (currentPlayhead + (p.scanSpeed * 0.01)) % 1.0;
+            if (ampEnv > 0.001) { 
+                this.playGrain(track, time + grainRelativeTime + jitter, scheduleVisualDrawCallback, ampEnv, velocityLevel);
             }
         }
-    }
-
-    playGrain(track, buffer, destination, time, amp, velocity, playhead) {
-        if (this.activeGrains >= this.MAX_GRAINS) return;
-
-        const ctx = this.audioEngine.getContext();
-        const src = ctx.createBufferSource();
-        src.buffer = buffer;
-        
-        // Params
-        const p = track.params;
-        src.playbackRate.value = p.pitch;
-
-        // Gain
-        const env = ctx.createGain();
-        env.gain.value = 0;
-        
-        // Connect
-        src.connect(env);
-        env.connect(destination);
-
-        // Windowing / Grain Envelope
-        const grainDur = p.grainSize;
-        const offset = playhead * buffer.duration;
-        
-        env.gain.setValueAtTime(0, time);
-        env.gain.linearRampToValueAtTime(amp * VELOCITY_GAINS[velocity], time + 0.005);
-        env.gain.linearRampToValueAtTime(0, time + grainDur);
-
-        src.start(time, offset, grainDur);
-        this.activeGrains++;
-        
-        src.onended = () => {
-            this.activeGrains--;
-            src.disconnect();
-            env.disconnect();
-        };
     }
 }
