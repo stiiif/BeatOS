@@ -16,7 +16,12 @@ export class SampleLoader {
             
             if (!audioCtx) throw new Error("AudioContext not available");
 
-            const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+            let audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+            
+            // Auto-Trim Silence if method exists (from AudioEngine update)
+            if (this.audioEngine.trimBuffer) {
+                audioBuffer = this.audioEngine.trimBuffer(audioBuffer);
+            }
             
             // Update Track with new sample data
             track.customSample = {

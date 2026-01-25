@@ -21,6 +21,46 @@ export class AudioEngine {
         return this.audioCtx;
     }
 
+    // New method: Automatically removes leading silence from a buffer
+    trimBuffer(buffer, threshold = 0.002) {
+        if (!buffer) return null;
+        
+        const numChannels = buffer.numberOfChannels;
+        const len = buffer.length;
+        let startIndex = len;
+
+        // 1. Find the earliest start point across all channels
+        for (let c = 0; c < numChannels; c++) {
+            const data = buffer.getChannelData(c);
+            for (let i = 0; i < len; i++) {
+                if (Math.abs(data[i]) > threshold) {
+                    // We found sound! Check if it's earlier than what we found in other channels
+                    if (i < startIndex) startIndex = i;
+                    break;
+                }
+            }
+        }
+
+        // If the sample is entirely silent or starts immediately, return original
+        if (startIndex >= len || startIndex === 0) return buffer;
+
+        // 2. Create a new shorter buffer
+        const newLen = len - startIndex;
+        const newBuffer = this.audioCtx.createBuffer(numChannels, newLen, buffer.sampleRate);
+
+        // 3. Copy the data shifting it left by startIndex
+        for (let c = 0; c < numChannels; c++) {
+            const oldData = buffer.getChannelData(c);
+            const newData = newBuffer.getChannelData(c);
+            for (let i = 0; i < newLen; i++) {
+                newData[i] = oldData[i + startIndex];
+            }
+        }
+
+        console.log(`[AudioEngine] Trimmed ${(startIndex / buffer.sampleRate).toFixed(3)}s of silence`);
+        return newBuffer;
+    }
+
     getMappedFrequency(value, type) {
         let min, max;
         if (type === 'hp') { min = 20; max = 5000; }
@@ -95,7 +135,11 @@ export class AudioEngine {
             reader.onload = async (e) => {
                 try {
                     const arrayBuffer = e.target.result;
-                    const audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
+                    let audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
+                    
+                    // Auto-Trim silence immediately after loading
+                    audioBuffer = this.trimBuffer(audioBuffer);
+
                     track.customSample = {
                         name: file.name,
                         buffer: audioBuffer,
