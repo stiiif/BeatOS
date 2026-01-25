@@ -12,6 +12,19 @@
     <link rel="stylesheet" href="css/sequencer.css">
     <link rel="stylesheet" href="css/components.css">
     <link rel="stylesheet" href="css/layout.css">
+    
+    <!-- Debug Script: Catches errors before modules load -->
+    <script>
+        console.log("[HTML] Debug script running.");
+        window.addEventListener('error', function(e) {
+            console.error("[HTML] Global Error Caught:", e.message, "at", e.filename, ":", e.lineno);
+            // Check for the specific UIManager error
+            if (e.message.includes('SyntaxError') && e.filename.includes('UIManager.js')) {
+                console.warn("[HTML] DETECTED 404/HTML-IN-JS ISSUE: UIManager.js is likely being served as HTML (404 page) instead of JavaScript.");
+                alert("Critical Error: UIManager.js failed to load. Check console for details. (Likely 404/Path issue)");
+            }
+        });
+    </script>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
 
