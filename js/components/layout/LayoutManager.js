@@ -19,15 +19,8 @@ export class LayoutManager {
     }
 
     init() {
-        // Check if essential elements exist
-        if (!this.container || !this.middlePane) {
-            console.warn('LayoutManager: Essential elements not found');
-            return;
-        }
-
-        // Left Vertical Resize (New Left Panel vs Middle)
-        if(this.resizerLeft && this.newLeftPanel) {
-            this.resizerLeft.addEventListener('mousedown', (e) => {
+        if(this.resizerLeft) {
+            this.resizerLeft.addEventListener('mousedown', () => {
                 this.isResizingLeft = true;
                 this.resizerLeft.classList.add('resizing');
                 document.body.style.cursor = 'col-resize';
@@ -35,9 +28,8 @@ export class LayoutManager {
             });
         }
 
-        // Right Vertical Resize (Middle vs Right Panel)
-        if(this.resizerRight && this.rightPane) {
-            this.resizerRight.addEventListener('mousedown', (e) => {
+        if(this.resizerRight) {
+            this.resizerRight.addEventListener('mousedown', () => {
                 this.isResizingRight = true;
                 this.resizerRight.classList.add('resizing');
                 document.body.style.cursor = 'col-resize';
@@ -45,9 +37,8 @@ export class LayoutManager {
             });
         }
 
-        // Horizontal Resize (Sequencer vs Future)
-        if(this.resizerH && this.middlePane && this.sequencerPanel && this.futurePanel) {
-            this.resizerH.addEventListener('mousedown', (e) => {
+        if(this.resizerH) {
+            this.resizerH.addEventListener('mousedown', () => {
                 this.isResizingH = true;
                 this.resizerH.classList.add('resizing');
                 document.body.style.cursor = 'row-resize';
@@ -55,10 +46,7 @@ export class LayoutManager {
             });
         }
 
-        // Global Mouse Move
         document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-
-        // Global Mouse Up
         document.addEventListener('mouseup', () => this.stopResizing());
     }
 
@@ -66,11 +54,8 @@ export class LayoutManager {
         if (!this.isResizingLeft && !this.isResizingRight && !this.isResizingH) return;
 
         if (this.isResizingLeft && this.container && this.newLeftPanel) {
-            // Calculate new width for new left panel
             const containerRect = this.container.getBoundingClientRect();
             const newLeftWidth = e.clientX - containerRect.left;
-
-            // Constrain width
             if (newLeftWidth > 200 && newLeftWidth < 600) {
                 this.newLeftPanel.style.width = `${newLeftWidth}px`;
                 window.dispatchEvent(new Event('resize'));
@@ -78,11 +63,8 @@ export class LayoutManager {
         }
 
         if (this.isResizingRight && this.container && this.rightPane) {
-            // Calculate new width for right pane
             const containerRect = this.container.getBoundingClientRect();
             const newRightWidth = containerRect.right - e.clientX;
-
-            // Constrain width
             if (newRightWidth > 250 && newRightWidth < 800) {
                 this.rightPane.style.width = `${newRightWidth}px`;
                 window.dispatchEvent(new Event('resize'));
@@ -90,14 +72,11 @@ export class LayoutManager {
         }
 
         if (this.isResizingH && this.middlePane && this.sequencerPanel && this.futurePanel) {
-            // Calculate relative heights using flex-grow
             const middlePaneRect = this.middlePane.getBoundingClientRect();
             const relativeY = e.clientY - middlePaneRect.top;
-
             const totalHeight = middlePaneRect.height;
             const topHeight = Math.max(100, Math.min(totalHeight - 100, relativeY));
             const bottomHeight = totalHeight - topHeight;
-
             this.sequencerPanel.style.flex = `${topHeight}`;
             this.futurePanel.style.flex = `${bottomHeight}`;
         }
