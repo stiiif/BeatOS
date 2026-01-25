@@ -1,16 +1,11 @@
 // Track Manager Module
 import { Track } from './Track.js';
-import { START_TRACKS, MAX_TRACKS, NUM_LFOS, TRACKS_PER_GROUP, AUTOMATION_INTENSITIES, NUM_STEPS } from '../../js/config/constants.js';
-import { globalBus } from '../../js/events/EventBus.js';
-import { EVENTS } from '../../js/config/events.js';
+import { START_TRACKS, MAX_TRACKS, NUM_LFOS, TRACKS_PER_GROUP, AUTOMATION_INTENSITIES } from '../../js/config/constants.js';
 
 export class TrackManager {
     constructor(audioEngine) {
         this.audioEngine = audioEngine;
         this.tracks = [];
-        this.randomChokeMode = false;
-        this.randomChokeGroups = [];
-        this.basePanValues = [];
     }
 
     getTracks() {
@@ -38,10 +33,7 @@ export class TrackManager {
             this.audioEngine.initTrackBus(t);
         }
 
-        if (!silent) {
-            globalBus.emit(EVENTS.TRACK_ADDED, t);
-        }
-        return newId;
+        return silent ? null : newId;
     }
 
     applyDefaultPresets() {
@@ -78,7 +70,6 @@ export class TrackManager {
         } else {
             t.params.relGrain = 0.05 + Math.random() * 0.5;
         }
-        globalBus.emit(EVENTS.PARAM_CHANGED, { track: t.id });
     }
 
     randomizeTrackModulators(t) {
@@ -92,32 +83,6 @@ export class TrackManager {
             lfo.wave = waves[Math.floor(Math.random() * waves.length)];
             lfo.rate = parseFloat((0.1 + Math.random() * 19.9).toFixed(1));
         });
-        globalBus.emit(EVENTS.LFO_CHANGED, { track: t.id });
-    }
-
-    savePanBaseline() {
-        this.basePanValues = this.tracks.map(t => t.params.pan);
-    }
-
-    applyPanShift(shiftAmount) {
-        if (this.basePanValues.length === 0) this.savePanBaseline();
-        const numGroups = 8;
-        for (let i = 0; i < this.tracks.length; i++) {
-            const groupIdx = Math.floor(i / TRACKS_PER_GROUP);
-            const basePan = this.basePanValues[i] || 0;
-            const shiftInGroups = shiftAmount * numGroups;
-            const newGroupPosition = (groupIdx + shiftInGroups) % numGroups;
-            const newGroupCenter = -1 + (newGroupPosition / (numGroups - 1)) * 2;
-            const originalGroupCenter = -1 + (groupIdx / (numGroups - 1)) * 2;
-            const offsetFromCenter = basePan - originalGroupCenter;
-            let newPan = newGroupCenter + offsetFromCenter;
-            newPan = Math.max(-1, Math.min(1, newPan));
-            this.tracks[i].params.pan = parseFloat(newPan.toFixed(3));
-            if(this.tracks[i].bus && this.tracks[i].bus.pan) {
-                this.tracks[i].bus.pan.pan.value = newPan;
-            }
-        }
-        globalBus.emit(EVENTS.GLOBAL_PAN_SHIFTED, shiftAmount);
     }
 
     randomizePanning() {
@@ -128,12 +93,7 @@ export class TrackManager {
             const variation = (Math.random() - 0.5) * 0.2;
             const pan = Math.max(-1, Math.min(1, groupCenter + variation));
             this.tracks[i].params.pan = parseFloat(pan.toFixed(3));
-            if(this.tracks[i].bus && this.tracks[i].bus.pan) {
-                this.tracks[i].bus.pan.pan.value = pan;
-            }
         }
-        this.savePanBaseline(); // Update baseline after randomization
-        globalBus.emit(EVENTS.PARAM_CHANGED);
     }
 
     // --- AUTOMATION FEATURES ---
@@ -173,7 +133,6 @@ export class TrackManager {
                 });
             }
         });
-        globalBus.emit(EVENTS.PARAM_CHANGED);
     }
 
     triggerRandomization(intensityLevel) {
@@ -194,72 +153,6 @@ export class TrackManager {
                 t.params.drumDecay = Math.random();
             }
         });
-    }
-
-    // --- GROOVE LOGIC ---
-    applyGroove(pattern, targetGroupIndex, influence) {
-        if (!pattern) return;
-        
-        const startTrack = targetGroupIndex * TRACKS_PER_GROUP;
-        
-        for (let i = 0; i < TRACKS_PER_GROUP; i++) {
-            const targetTrackId = startTrack + i;
-            const patternTrack = pattern.tracks[i];
-            
-            if (this.tracks[targetTrackId] && !this.tracks[targetTrackId].stepLock && this.tracks[targetTrackId].type !== 'automation') {
-                const targetTrackObj = this.tracks[targetTrackId];
-
-                // Clear
-                targetTrackObj.steps.fill(0);
-                targetTrackObj.microtiming.fill(0);
-
-                if (patternTrack) {
-                    this.autoConfigureTrack(targetTrackObj, patternTrack.instrument_type || patternTrack.instrument);
-
-                    const stepString = patternTrack.steps;
-                    const microtimingArray = patternTrack.microtiming;
-
-                    for (let s = 0; s < NUM_STEPS; s++) {
-                        const charIndex = s % stepString.length;
-                        const velocity = parseInt(stepString[charIndex]);
-                        const roll = Math.random();
-                        
-                        if (roll < influence) {
-                            if (!isNaN(velocity) && velocity > 0) {
-                                targetTrackObj.steps[s] = velocity;
-                                if (microtimingArray && microtimingArray[charIndex] !== undefined) {
-                                    targetTrackObj.microtiming[s] = microtimingArray[charIndex];
-                                }
-                            }
-                        } else {
-                            if (Math.random() < 0.05) {
-                                targetTrackObj.steps[s] = 1; 
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        globalBus.emit(EVENTS.GROOVE_APPLIED, { groupIndex: targetGroupIndex, pattern });
-    }
-
-    // --- CHOKE LOGIC ---
-    toggleRandomChoke() {
-        this.randomChokeMode = !this.randomChokeMode;
-        if (this.randomChokeMode) {
-            this.randomChokeGroups = this.tracks.map(() => Math.floor(Math.random() * 8));
-        } else {
-            this.randomChokeGroups = [];
-        }
-        globalBus.emit(EVENTS.CHOKE_GROUP_UPDATED, { 
-            mode: this.randomChokeMode, 
-            groups: this.randomChokeGroups 
-        });
-        return { mode: this.randomChokeMode, groups: this.randomChokeGroups };
-    }
-
-    getRandomChokeInfo() { 
-        return { mode: this.randomChokeMode, groups: this.randomChokeGroups }; 
     }
 
     // --- INSTRUMENT AUTO-CONFIGURATION (GROOVE GEN) ---
@@ -345,6 +238,13 @@ export class TrackManager {
             params.filter = 10000;
             params.hpFilter = 100;
         } else {
+            // Default Fallback (Percussion/Misc)
+            // CAUTION: If "kick" or "bass_drum" was not caught above, it lands here.
+            // This is likely why "bass_drum" (exact match) loaded cymbal if 'includes' failed or if string was different.
+            // But 'bass_drum' includes 'bass', so it might hit the guitar/bass check above if not careful!
+            // Wait, 'bass_drum' contains 'bass', so it enters the melodic section if the first 'if' fails.
+            // Fix: Ensure 'kick' or 'bass_drum' check is robust.
+            
             targetType = 'simple-drum';
             params.drumType = 'cymbal'; // Generic metallic/noise
             params.drumTune = 0.5;
@@ -365,7 +265,5 @@ export class TrackManager {
             track.buffer = this.audioEngine.generateBufferByType(bufferType);
             track.rmsMap = this.audioEngine.analyzeBuffer(track.buffer);
         }
-        
-        globalBus.emit(EVENTS.TRACK_UPDATED, { trackId: track.id });
     }
 }
