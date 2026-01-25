@@ -21,34 +21,80 @@ export class AudioEngine {
         return this.audioCtx;
     }
 
-    // New method: Automatically removes leading silence from a buffer
-    trimBuffer(buffer, threshold = 0.01) {
+    // UPDATED: Smarter trim using transient detection
+    trimBuffer(buffer, staticThreshold = 0.002, useTransientDetection = true) {
         if (!buffer) return null;
         
         const numChannels = buffer.numberOfChannels;
         const len = buffer.length;
-        let startIndex = len;
+        let startIndex = len; // Default to end (if silence)
 
-        // 1. Find the earliest start point across all channels
-        for (let c = 0; c < numChannels; c++) {
-            const data = buffer.getChannelData(c);
+        if (useTransientDetection) {
+            // Transient Detection Strategy:
+            // 1. Calculate RMS over small windows to find the "noise floor"
+            // 2. Find the first window that jumps significantly above that floor
+            
+            // Simplified implementation:
+            // Scan for the first sample that exceeds a dynamic threshold relative to peak?
+            // Or just a more robust static scan.
+            
+            // Let's stick to a robust threshold scan but on a summed mono signal for reliability
+            // and look for a sequence of samples, not just one stray click.
+            
+            // Create a temporary mono array for analysis
+            const mono = new Float32Array(len);
             for (let i = 0; i < len; i++) {
-                if (Math.abs(data[i]) > threshold) {
-                    // We found sound! Check if it's earlier than what we found in other channels
-                    if (i < startIndex) startIndex = i;
+                let sum = 0;
+                for (let c = 0; c < numChannels; c++) {
+                    sum += buffer.getChannelData(c)[i];
+                }
+                mono[i] = sum / numChannels;
+            }
+
+            // Find max amplitude to normalize threshold logic
+            let maxAmp = 0;
+            for(let i=0; i<len; i++) {
+                const abs = Math.abs(mono[i]);
+                if (abs > maxAmp) maxAmp = abs;
+            }
+
+            // If silent, return original
+            if (maxAmp < 0.001) return buffer;
+
+            // Set threshold relative to peak (e.g., -40dB from peak)
+            // But ensure it's not lower than the static noise floor threshold
+            const relativeThreshold = maxAmp * 0.05; // 5% of peak is a safe "start" for a drum hit
+            const finalThreshold = Math.max(staticThreshold, relativeThreshold);
+
+            // Scan
+            for (let i = 0; i < len; i++) {
+                if (Math.abs(mono[i]) > finalThreshold) {
+                    // Backtrack slightly to catch the attack ramp-up (e.g. 5ms)
+                    const backtrackSamples = Math.floor(0.002 * buffer.sampleRate);
+                    startIndex = Math.max(0, i - backtrackSamples);
                     break;
+                }
+            }
+        } else {
+            // Original static threshold logic
+            for (let c = 0; c < numChannels; c++) {
+                const data = buffer.getChannelData(c);
+                for (let i = 0; i < len; i++) {
+                    if (Math.abs(data[i]) > staticThreshold) {
+                        if (i < startIndex) startIndex = i;
+                        break;
+                    }
                 }
             }
         }
 
-        // If the sample is entirely silent or starts immediately, return original
+        // Check if trimming is needed
         if (startIndex >= len || startIndex === 0) return buffer;
 
-        // 2. Create a new shorter buffer
+        // Create new shorter buffer
         const newLen = len - startIndex;
         const newBuffer = this.audioCtx.createBuffer(numChannels, newLen, buffer.sampleRate);
 
-        // 3. Copy the data shifting it left by startIndex
         for (let c = 0; c < numChannels; c++) {
             const oldData = buffer.getChannelData(c);
             const newData = newBuffer.getChannelData(c);
@@ -57,7 +103,7 @@ export class AudioEngine {
             }
         }
 
-        console.log(`[AudioEngine] Trimmed ${(startIndex / buffer.sampleRate).toFixed(3)}s of silence`);
+        console.log(`[AudioEngine] Smart Trim: Removed ${(startIndex / buffer.sampleRate).toFixed(4)}s`);
         return newBuffer;
     }
 
@@ -137,8 +183,8 @@ export class AudioEngine {
                     const arrayBuffer = e.target.result;
                     let audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
                     
-                    // Auto-Trim silence immediately after loading
-                    audioBuffer = this.trimBuffer(audioBuffer);
+                    // Default trim on load (using conservative settings)
+                    audioBuffer = this.trimBuffer(audioBuffer, 0.005, true);
 
                     track.customSample = {
                         name: file.name,

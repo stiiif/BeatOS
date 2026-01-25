@@ -139,6 +139,43 @@ document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
     btnWave.classList.remove('rounded-sm');
 });
 
+// NEW: Manual Trim Button Handler
+document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
+    const track = tracks[uiManager.getSelectedTrackIndex()];
+    if (!track || !track.buffer || track.type !== 'granular') return;
+
+    const btn = e.target;
+    const originalText = btn.innerText;
+    
+    // Visual feedback
+    btn.innerHTML = '<i class="fas fa-scissors"></i>';
+    btn.classList.add('text-white', 'bg-red-900/80');
+    btn.classList.remove('text-red-400', 'hover:bg-red-900/50');
+
+    // Perform Smart Trim
+    // Using default threshold (0.002) but with transient detection ENABLED
+    const newBuffer = audioEngine.trimBuffer(track.buffer, 0.005, true);
+    
+    if (newBuffer) {
+        track.buffer = newBuffer;
+        // Update sample duration if custom sample exists
+        if (track.customSample) {
+            track.customSample.buffer = newBuffer;
+            track.customSample.duration = newBuffer.duration;
+        }
+        // Re-analyze for visualizer
+        track.rmsMap = audioEngine.analyzeBuffer(newBuffer);
+        // Refresh display
+        visualizer.drawBufferDisplay();
+    }
+
+    setTimeout(() => {
+        btn.innerText = originalText;
+        btn.classList.remove('text-white', 'bg-red-900/80');
+        btn.classList.add('text-red-400', 'hover:bg-red-900/50');
+    }, 500);
+});
+
 document.getElementById('randomizeAllPatternsBtn').addEventListener('click', () => {
     uiManager.randomizeAllPatterns();
 });
