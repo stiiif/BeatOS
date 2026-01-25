@@ -1,3 +1,4 @@
+console.log("[Main] Module loaded.");
 import { AudioEngine } from './core/AudioEngine.js';
 import { GranularSynth } from './core/GranularSynth.js';
 import { Scheduler } from './core/Scheduler.js';
@@ -74,6 +75,7 @@ function addGroup() {
 }
 
 document.getElementById('initAudioBtn').addEventListener('click', async () => {
+    console.log("[Main] Init audio clicked.");
     await audioEngine.initialize();
     trackManager.createBuffersForAllTracks();
     document.getElementById('startOverlay').classList.add('hidden');
