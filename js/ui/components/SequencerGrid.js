@@ -155,7 +155,7 @@ export class SequencerGrid {
             const track = this.tracks[t];
             const div = track.clockDivider || 1;
             
-            const currentLit = this.matrixStepElements[t].filter(
+            const currentLit = (this.matrixStepElements[t] || []).filter(
                 el => el.classList.contains('step-playing')
             );
             currentLit.forEach(el => el.classList.remove('step-playing'));
