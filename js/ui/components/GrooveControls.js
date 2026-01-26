@@ -1,14 +1,15 @@
 // js/ui/components/GrooveControls.js
-import { NUM_STEPS, TRACKS_PER_GROUP } from '../../utils/constants.js';
+import { NUM_STEPS, TRACKS_PER_GROUP, MAX_TRACKS } from '../../utils/constants.js';
 import { PatternLibrary } from '../../modules/PatternLibrary.js';
-import { SearchModal } from '../SearchModal.js';
 
 export class GrooveControls {
     constructor() {
-        this.patternLibrary = new PatternLibrary();
-        this.searchModal = null;
         this.tracks = [];
         this.trackManager = null;
+        this.patternLibrary = new PatternLibrary();
+        this.matrixStepElements = [];
+        this.searchModal = null;
+        this.visualizerCallback = null;
     }
 
     setTracks(tracks) {
@@ -19,108 +20,275 @@ export class GrooveControls {
         this.trackManager = tm;
     }
 
-    initialize() {
-        this.initGrooveControls();
+    setGridElements(matrixStepElements) {
+        this.matrixStepElements = matrixStepElements;
     }
+
+    setSearchModal(modal) {
+        this.searchModal = modal;
+    }
+
+    setVisualizerCallback(cb) {
+        this.visualizerCallback = cb;
+    }
+
+    // ============================================================================
+    // INITIALIZE GROOVE CONTROLS
+    // ============================================================================
 
     initGrooveControls() {
         const patternSelect = document.getElementById('patternSelect');
         const targetGroupSelect = document.getElementById('targetGroupSelect');
         const patternInfluence = document.getElementById('patternInfluence');
-        const applyBtn = document.getElementById('applyGrooveBtn');
-        
-        // Populate pattern dropdown
-        if (patternSelect) {
-            patternSelect.innerHTML = '<option value="">-- Select Pattern --</option>';
-            this.patternLibrary.getPatterns().forEach(p => {
+        const patternInfluenceVal = document.getElementById('patternInfluenceVal');
+
+        if(patternSelect) {
+            patternSelect.innerHTML = '<option value="">Select Pattern...</option>';
+            const patterns = this.patternLibrary.getPatterns();
+            patterns.sort((a,b) => a.name.localeCompare(b.name));
+            patterns.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
-                opt.text = `${p.name} (${p.genre})`;
+                opt.innerText = `${p.name} (${p.genre || 'World'})`;
                 patternSelect.appendChild(opt);
             });
         }
-        
-        // Populate group dropdown
-        if (targetGroupSelect) {
-            const maxGroups = Math.ceil(this.tracks.length / TRACKS_PER_GROUP);
-            targetGroupSelect.innerHTML = '<option value="">-- Select Group --</option>';
-            for (let i = 0; i < maxGroups; i++) {
+
+        if(targetGroupSelect) {
+            targetGroupSelect.innerHTML = '';
+            const maxGroups = Math.ceil(MAX_TRACKS / TRACKS_PER_GROUP);
+            for(let i=0; i<maxGroups; i++) {
                 const opt = document.createElement('option');
                 opt.value = i;
-                opt.text = `Group ${i}`;
+                opt.innerText = `Group ${i+1} (Trk ${i*TRACKS_PER_GROUP+1}-${(i+1)*TRACKS_PER_GROUP})`;
                 targetGroupSelect.appendChild(opt);
             }
         }
-        
-        // Pattern influence slider
-        if (patternInfluence) {
+
+        if(patternInfluence) {
             patternInfluence.addEventListener('input', (e) => {
-                const val = document.getElementById('patternInfluenceVal');
-                if (val) val.innerText = e.target.value;
+                if(patternInfluenceVal) patternInfluenceVal.innerText = e.target.value;
             });
         }
         
-        // Apply button
-        if (applyBtn) {
+        const applyBtn = document.getElementById('applyGrooveBtn');
+        if(applyBtn) {
             applyBtn.onclick = () => this.applyGroove();
         }
-        
-        // ✅ CORRECTED: Add AUTO-KIT (FREESOUND) button with proper styling
+
+        // CREATE THE AUTO-KIT (FREESOUND) BUTTON WITH EXACT STYLING
         const groovePanel = document.querySelector('#applyGrooveBtn')?.parentElement;
         if (groovePanel && !document.getElementById('applyGrooveFsBtn')) {
             const fsBtn = document.createElement('button');
             fsBtn.id = 'applyGrooveFsBtn';
-            // ✅ EXACT ORIGINAL STYLING PRESERVED
+            // EXACT STYLING FROM ORIGINAL - DO NOT CHANGE!
             fsBtn.className = 'w-full text-[10px] bg-indigo-900/40 hover:bg-indigo-800 text-indigo-300 py-1 rounded transition border border-indigo-900/50 font-bold mt-1 flex items-center justify-center gap-2';
-            // ✅ EXACT ORIGINAL TEXT AND ICON PRESERVED
             fsBtn.innerHTML = '<i class="fas fa-cloud-download-alt"></i> AUTO-KIT (FREESOUND)';
             fsBtn.onclick = () => this.applyGrooveFreesound();
             groovePanel.appendChild(fsBtn);
         }
     }
 
-    applyGroove() {
-        const patId = parseInt(document.getElementById('patternSelect')?.value);
-        const grpId = parseInt(document.getElementById('targetGroupSelect')?.value);
-        const influence = parseFloat(document.getElementById('patternInfluence')?.value || 1);
-        
-        if (isNaN(patId)) {
-            alert("Please select a pattern first.");
-            return;
-        }
-        if (isNaN(grpId)) {
-            alert("Please select a target group.");
-            return;
-        }
-        
+    // ============================================================================
+    // APPLY GROOVE
+    // ============================================================================
+
+    applyGroove(onUpdateGridVisuals, onSelectTrack) {
+        const patId = parseInt(document.getElementById('patternSelect').value);
+        const grpId = parseInt(document.getElementById('targetGroupSelect').value);
+        const influence = parseInt(document.getElementById('patternInfluence').value) / 100.0;
+
+        if (isNaN(patId)) { alert("Please select a pattern first."); return; }
+        if (isNaN(grpId)) { alert("Please select a target group."); return; }
+
         const pattern = this.patternLibrary.getPatternById(patId);
         if (!pattern) return;
+
+        const startTrack = grpId * TRACKS_PER_GROUP;
         
-        // Apply pattern to tracks
+        // Update grid visuals for time signature
+        if (onUpdateGridVisuals) {
+            onUpdateGridVisuals(pattern.time_sig);
+        }
+
         for (let i = 0; i < TRACKS_PER_GROUP; i++) {
-            const targetTrackId = grpId * TRACKS_PER_GROUP + i;
-            const track = this.tracks[targetTrackId];
+            const targetTrackId = startTrack + i;
+            const patternTrack = pattern.tracks[i];
             
-            if (track && !track.stepLock && track.type !== 'automation') {
-                const patternTrack = pattern.tracks[i];
+            if (this.tracks[targetTrackId] && !this.tracks[targetTrackId].stepLock && this.tracks[targetTrackId].type !== 'automation') {
                 
+                const targetTrackObj = this.tracks[targetTrackId];
+
+                targetTrackObj.steps.fill(0);
+                targetTrackObj.microtiming.fill(0);
+
                 if (patternTrack) {
-                    // Apply steps based on influence
-                    this.applyPatternToTrack(track, patternTrack, influence, targetTrackId);
+                    if (this.trackManager) {
+                        this.trackManager.autoConfigureTrack(targetTrackObj, patternTrack.instrument_type || patternTrack.instrument);
+                    }
+
+                    const stepString = patternTrack.steps;
+                    const microtimingArray = patternTrack.microtiming;
+
+                    for (let s = 0; s < NUM_STEPS; s++) {
+                        const charIndex = s % stepString.length;
+                        const velocity = parseInt(stepString[charIndex]);
+                        
+                        const roll = Math.random();
+                        
+                        if (roll < influence) {
+                            if (!isNaN(velocity) && velocity > 0) {
+                                targetTrackObj.steps[s] = velocity;
+                                if (microtimingArray && microtimingArray[charIndex] !== undefined) {
+                                    targetTrackObj.microtiming[s] = microtimingArray[charIndex];
+                                }
+                            }
+                        } else {
+                            if (Math.random() < 0.05) {
+                                targetTrackObj.steps[s] = 1; 
+                            }
+                        }
+                        
+                        const btn = this.matrixStepElements[targetTrackId][s];
+                        if (btn) {
+                            btn.classList.remove('active', 'vel-1', 'vel-2', 'vel-3');
+                            const val = targetTrackObj.steps[s];
+                            if (val > 0) {
+                                btn.classList.add(`vel-${val}`);
+                            }
+                        }
+                    }
+                } else {
+                    for (let s = 0; s < NUM_STEPS; s++) {
+                        const btn = this.matrixStepElements[targetTrackId][s];
+                        if(btn) btn.classList.remove('active', 'vel-1', 'vel-2', 'vel-3');
+                    }
                 }
             }
         }
         
-        console.log(`Applied pattern: ${pattern.name} to group ${grpId}`);
+        if (onSelectTrack) {
+            onSelectTrack(startTrack, this.visualizerCallback);
+        }
     }
 
-    applyPatternToTrack(track, patternTrack, influence, trackId) {
-        // [Full implementation in actual file]
-        // Applies pattern data to track with influence factor
-    }
+    // ============================================================================
+    // APPLY GROOVE WITH FREESOUND AUTO-KIT
+    // ============================================================================
 
-    async applyGrooveFreesound() {
-        // [Full implementation in actual file]
-        // Similar to applyGroove but searches Freesound for samples
+    async applyGrooveFreesound(onUpdateGridVisuals, onSelectTrack, selectedTrackIndex) {
+        if (!this.searchModal) {
+            alert("Search module not ready.");
+            return;
+        }
+
+        const patId = parseInt(document.getElementById('patternSelect').value);
+        const grpId = parseInt(document.getElementById('targetGroupSelect').value);
+        
+        if (isNaN(patId)) { alert("Please select a pattern first."); return; }
+        if (isNaN(grpId)) { alert("Please select a target group."); return; }
+
+        const pattern = this.patternLibrary.getPatternById(patId);
+        if (!pattern) return;
+
+        // First apply the groove pattern
+        this.applyGroove(onUpdateGridVisuals, null); 
+
+        const btn = document.getElementById('applyGrooveFsBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> FETCHING SOUNDS...';
+        btn.disabled = true;
+
+        const startTrack = grpId * TRACKS_PER_GROUP;
+
+        console.log(`[GrooveFS] Starting Freesound Auto-Kit for Pattern: ${pattern.name}`);
+
+        try {
+            for (let i = 0; i < TRACKS_PER_GROUP; i++) {
+                const targetTrackId = startTrack + i;
+                const patternTrack = pattern.tracks[i];
+                
+                if (this.tracks[targetTrackId] && !this.tracks[targetTrackId].stepLock && patternTrack) {
+                    const trackObj = this.tracks[targetTrackId];
+                    let query = patternTrack.instrument_type.replace(/_/g, ' ');
+                    
+                    console.log(`[GrooveFS] Processing Track ${targetTrackId} (${query})`);
+
+                    let filters = 'duration:[0.05 TO 1.0] license:"Creative Commons 0"';
+                    if (patternTrack.role === 'ghost') filters += ' ac_brightness:[0 TO 50]';
+                    else filters += ' ac_brightness:[10 TO 100]';
+
+                    let results = await this.searchModal.client.textSearch(query, filters);
+                    
+                    if (results.results.length === 0) {
+                        console.log(`[GrooveFS] Attempt 2: Relaxed Filters for ${query}`);
+                        const relaxed = 'duration:[0.05 TO 3.0] license:"Creative Commons 0"';
+                        results = await this.searchModal.client.textSearch(query, relaxed);
+                    }
+
+                    if (results.results.length === 0) {
+                         const fallbacks = {
+                            'tambora': 'tom drum',
+                            'guacharaca': 'guiro',
+                            'conga': 'percussion',
+                            'bongo': 'percussion',
+                            'timbales': 'percussion',
+                            'cowbell': 'bell',
+                            'industrial_perc': 'metallic hit',
+                            'glitch': 'noise',
+                            'dembow': 'reggaeton',
+                            'conga_high': 'conga',
+                            'conga_low': 'conga',
+                            'bongo_high': 'bongo',
+                            'shaker': 'shaker loop'
+                        };
+                        const fallbackQuery = fallbacks[query] || patternTrack.instrument.replace(/_/g, ' ');
+                        
+                        if (fallbackQuery !== query) {
+                             console.log(`[GrooveFS] Attempt 3: Fallback Query "${fallbackQuery}"`);
+                             results = await this.searchModal.client.textSearch(fallbackQuery, 'duration:[0.05 TO 2.0] license:"Creative Commons 0"');
+                             if (results.results.length > 0) query = fallbackQuery; 
+                        }
+                    }
+
+                    if (results.results && results.results.length > 0) {
+                        const pickIdx = Math.floor(Math.random() * Math.min(5, results.results.length));
+                        const sound = results.results[pickIdx];
+                        
+                        console.log(`[GrooveFS] Success! Loading: ${sound.name}`);
+                        const url = sound.previews['preview-hq-mp3'];
+                        await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
+                        
+                        trackObj.type = 'granular';
+                        trackObj.params.position = 0;
+                        trackObj.params.grainSize = 0.2; 
+                        trackObj.params.density = 20;    
+                        trackObj.params.spray = 0;
+                        trackObj.params.pitch = 1.0;
+                        trackObj.params.overlap = 3.0;   
+
+                        trackObj.customSample.name = sound.name;
+                    } else {
+                        console.warn(`[GrooveFS] FAILED to find sample for ${query}. Keeping default.`);
+                    }
+                }
+            }
+            
+            if (onSelectTrack && selectedTrackIndex !== undefined) {
+                onSelectTrack(selectedTrackIndex);
+            }
+            
+            btn.innerHTML = '<i class="fas fa-check"></i> KIT LOADED!';
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }, 2000);
+
+        } catch (e) {
+            console.error(e);
+            alert("Error: " + e.message);
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
     }
 }
