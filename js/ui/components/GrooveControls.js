@@ -291,8 +291,31 @@ export class GrooveControls {
                         const sound = results.results[pickIdx];
                         
                         console.log(`[GrooveFS] Success! Loading: ${sound.name}`);
+                        
+                        // Update UI BEFORE heavy operation
+                        btn.innerHTML = `<i class="fas fa-download"></i> DOWNLOADING ${i+1}/${TRACKS_PER_GROUP}: ${sound.name.substring(0, 20)}...`;
+                        await new Promise(resolve => requestAnimationFrame(resolve));
+                        await new Promise(resolve => setTimeout(resolve, 100)); // Give UI time to render
+                        
                         const url = sound.previews['preview-hq-mp3'];
-                        await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
+                        
+                        // Wrap in setTimeout to push heavy work to next event loop cycle
+                        await new Promise(async (resolve) => {
+                            setTimeout(async () => {
+                                try {
+                                    await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
+                                    console.log(`[GrooveFS] Loaded: ${sound.name}`);
+                                    resolve();
+                                } catch (error) {
+                                    console.error('[GrooveFS] Load error:', error);
+                                    resolve(); // Continue even if one fails
+                                }
+                            }, 50);
+                        });
+                        
+                        // Update UI AFTER heavy operation
+                        await new Promise(resolve => requestAnimationFrame(resolve));
+                        await new Promise(resolve => setTimeout(resolve, 50));
                         
                         trackObj.type = 'granular';
                         trackObj.params.position = 0;
