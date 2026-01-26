@@ -114,9 +114,116 @@ export class SequencerGrid {
         });
     }
 
-    appendTrackRow(trackId, randomChokeMode, randomChokeGroups) {
-        // Implementation moved from UIManagerClean
-        // [Full implementation in actual file]
+    appendTrackRow(trk, visualizerCallback = null) {
+        const container = document.getElementById('matrixContainer');
+        const buttonRow = document.getElementById('matrixButtonRow');
+        const trackObj = this.tracks[trk];
+        const groupIdx = Math.floor(trk / TRACKS_PER_GROUP);
+        if (this.randomChokeMode && this.randomChokeGroups.length === trk) {
+            this.randomChokeGroups.push(Math.floor(Math.random() * 8));
+        }
+        
+        const effectiveGroup = this.randomChokeMode ? this.randomChokeGroups[trk] : groupIdx;
+        const groupColor = `hsl(${effectiveGroup * 45}, 70%, 50%)`;
+        const groupColorGlow = `hsla(${effectiveGroup * 45}, 70%, 50%, 0.4)`;
+
+        const rowDiv = document.createElement('div');
+        rowDiv.className = 'sequencer-grid'; 
+        const rowElements = [];
+        
+        const label = document.createElement('div');
+        label.className = `track-label ${trk===0 ? 'selected' : ''}`;
+        const displayNum = trk + 1;
+        label.innerText = displayNum < 10 ? `0${displayNum}` : displayNum;
+        label.title = `Group ${effectiveGroup}`;
+        label.onclick = () => this.selectTrack(trk, visualizerCallback);
+        label.style.borderRight = `3px solid ${groupColor}`;
+        rowDiv.appendChild(label);
+        this.trackLabelElements[trk] = label;
+        this.matrixStepElements[trk] = [];
+        rowElements.push(label);
+
+        for(let step=0; step<NUM_STEPS; step++) {
+            const btn = document.createElement('div');
+            btn.className = 'step-btn';
+            btn.dataset.step = step;
+            btn.dataset.track = trk;
+            btn.onclick = () => this.toggleStep(trk, step);
+            btn.style.setProperty('--step-group-color', groupColor);
+            btn.style.setProperty('--step-group-color-glow', groupColorGlow);
+            
+            if ((step + 1) % 16 === 0 && step !== NUM_STEPS - 1) {
+                btn.classList.add('bar-divider');
+            } else if ((step + 1) % 4 === 0 && step !== NUM_STEPS - 1) {
+                btn.classList.add('beat-divider');
+            }
+            
+            if (trackObj.type === 'automation') {
+                const val = trackObj.steps[step];
+                if (val > 0) {
+                    btn.classList.add('active');
+                    btn.classList.add(`auto-level-${val}`);
+                }
+            } else {
+                const val = trackObj.steps[step];
+                if (val > 0) {
+                    btn.classList.add(`vel-${val}`);
+                }
+            }
+
+            rowDiv.appendChild(btn);
+            this.matrixStepElements[trk][step] = btn;
+            rowElements.push(btn);
+        }
+
+        const rndBtn = document.createElement('div');
+        rndBtn.className = 'track-rnd-btn';
+        rndBtn.innerHTML = '<i class="fas fa-random"></i>';
+        rndBtn.onclick = () => this.randomizeTrackPattern(trk);
+        rowDiv.appendChild(rndBtn);
+        rowElements.push(rndBtn);
+
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'track-actions';
+        const createAction = (txt, fn, title, cls='') => {
+            const b = document.createElement('button');
+            b.className = 'action-btn ' + cls;
+            b.innerHTML = txt; b.title = title;
+            b.onclick = (e) => { e.stopPropagation(); fn(trk); };
+            return b;
+        };
+        const btnM = createAction('M', (t) => this.toggleMute(t), 'Mute Track'); btnM.id = `btnM_${trk}`;
+        const btnS = createAction('S', (t) => this.toggleSolo(t), 'Solo Track'); btnS.id = `btnS_${trk}`;
+        const btnL = createAction('L', (t) => this.toggleStepLock(t), 'Lock Steps'); btnL.id = `btnL_${trk}`;
+        actionsDiv.appendChild(btnL); actionsDiv.appendChild(btnM);
+        actionsDiv.appendChild(createAction('Mg', () => this.toggleMuteGroup(groupIdx), 'Mute Group'));
+        actionsDiv.appendChild(btnS);
+        actionsDiv.appendChild(createAction('Sg', () => this.toggleSoloGroup(groupIdx), 'Solo Group'));
+        actionsDiv.appendChild(createAction('C', () => this.clearTrack(trk), 'Clear Track', 'erase'));
+        actionsDiv.appendChild(createAction('Cg', () => this.clearGroup(groupIdx), 'Clear Group', 'erase'));
+        
+        const btnX = createAction('X', (t) => this.toggleIgnoreRandom(t), 'Exclude from Auto Randomization (Rand Prms)');
+        btnX.id = `btnX_${trk}`;
+        if(trackObj.ignoreRandom) btnX.classList.add('exclude-active');
+        actionsDiv.appendChild(btnX);
+
+        rowDiv.appendChild(actionsDiv);
+        rowElements.push(actionsDiv);
+
+        const visCanvas = document.createElement('canvas');
+        visCanvas.className = 'track-vis-canvas';
+        visCanvas.id = `vis-canvas-${trk}`;
+        visCanvas.width = 40; 
+        visCanvas.height = 16;
+        
+        visCanvas.style.cursor = 'pointer';
+        visCanvas.onclick = () => this.selectTrack(trk, visualizerCallback);
+
+        rowDiv.appendChild(visCanvas);
+        rowElements.push(visCanvas);
+        
+        if (buttonRow) container.insertBefore(rowDiv, buttonRow); else container.appendChild(rowDiv);
+        this.trackRowElements[trk] = rowElements;
     }
 
     toggleStep(trackId, stepIndex) {
