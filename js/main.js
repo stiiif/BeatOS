@@ -5,7 +5,7 @@ import { Scheduler } from './core/Scheduler.js';
 import { TrackManager } from './modules/TrackManager.js';
 import { PresetManager } from './modules/PresetManager.js';
 import { TrackLibrary } from './modules/TrackLibrary.js';
-import { UIManager } from './ui/UIManagerClean.js'; // IMPORTING THE NEW CLEAN FILE
+import { UIManager } from './ui/UIManager.js'; // IMPORTING THE NEW CLEAN FILE
 import { Visualizer } from './ui/Visualizer.js';
 import { LayoutManager } from './ui/LayoutManager.js';
 import { NUM_LFOS, TRACKS_PER_GROUP } from './utils/constants.js';

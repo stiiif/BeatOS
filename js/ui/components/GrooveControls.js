@@ -62,17 +62,19 @@ export class GrooveControls {
         
         // Apply button
         if (applyBtn) {
-            applyBtn.addEventListener('click', () => this.applyGroove());
+            applyBtn.onclick = () => this.applyGroove();
         }
         
-        // Add Freesound button if not exists
-        const groovePanel = document.getElementById('groovePanel');
+        // ✅ CORRECTED: Add AUTO-KIT (FREESOUND) button with proper styling
+        const groovePanel = document.querySelector('#applyGrooveBtn')?.parentElement;
         if (groovePanel && !document.getElementById('applyGrooveFsBtn')) {
             const fsBtn = document.createElement('button');
             fsBtn.id = 'applyGrooveFsBtn';
-            fsBtn.className = 'w-full mt-2';
-            fsBtn.innerHTML = '<i class="fas fa-search mr-2"></i>Apply with Freesound';
-            fsBtn.addEventListener('click', () => this.applyGrooveFreesound());
+            // ✅ EXACT ORIGINAL STYLING PRESERVED
+            fsBtn.className = 'w-full text-[10px] bg-indigo-900/40 hover:bg-indigo-800 text-indigo-300 py-1 rounded transition border border-indigo-900/50 font-bold mt-1 flex items-center justify-center gap-2';
+            // ✅ EXACT ORIGINAL TEXT AND ICON PRESERVED
+            fsBtn.innerHTML = '<i class="fas fa-cloud-download-alt"></i> AUTO-KIT (FREESOUND)';
+            fsBtn.onclick = () => this.applyGrooveFreesound();
             groovePanel.appendChild(fsBtn);
         }
     }
