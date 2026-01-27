@@ -36,7 +36,7 @@ export class GrooveControls {
     // INITIALIZE GROOVE CONTROLS
     // ============================================================================
 
-    initGrooveControls(onApplyGrooveFreesound) {
+    initGrooveControls() {
         const patternSelect = document.getElementById('patternSelect');
         const targetGroupSelect = document.getElementById('targetGroupSelect');
         const patternInfluence = document.getElementById('patternInfluence');
@@ -84,19 +84,8 @@ export class GrooveControls {
             // EXACT STYLING FROM ORIGINAL - DO NOT CHANGE!
             fsBtn.className = 'w-full text-[10px] bg-indigo-900/40 hover:bg-indigo-800 text-indigo-300 py-1 rounded transition border border-indigo-900/50 font-bold mt-1 flex items-center justify-center gap-2';
             fsBtn.innerHTML = '<i class="fas fa-cloud-download-alt"></i> AUTO-KIT (FREESOUND)';
-            fsBtn.onclick = async () => {
-                try {
-                    // Call the callback from UIManager which has all the proper callbacks
-                    if (onApplyGrooveFreesound) {
-                        await onApplyGrooveFreesound();
-                    }
-                } catch (error) {
-                    console.error('AUTO-KIT error:', error);
-                    fsBtn.innerHTML = '<i class="fas fa-cloud-download-alt"></i> AUTO-KIT (FREESOUND)';
-                    fsBtn.disabled = false;
-                    alert('Error loading AUTO-KIT: ' + error.message);
-                }
-            };
+            // CALL DIRECTLY LIKE THE ORIGINAL - NO ASYNC WRAPPER!
+            fsBtn.onclick = () => this.applyGrooveFreesound();
             groovePanel.appendChild(fsBtn);
         }
     }
@@ -189,15 +178,10 @@ export class GrooveControls {
     // ============================================================================
 
     async applyGrooveFreesound(onUpdateGridVisuals, onSelectTrack, selectedTrackIndex) {
-        console.log('[GrooveFS] applyGrooveFreesound called');
-        
         if (!this.searchModal) {
-            console.error('[GrooveFS] searchModal is null!');
             alert("Search module not ready.");
             return;
         }
-        
-        console.log('[GrooveFS] searchModal exists:', this.searchModal);
 
         const patId = parseInt(document.getElementById('patternSelect').value);
         const grpId = parseInt(document.getElementById('targetGroupSelect').value);
@@ -212,20 +196,9 @@ export class GrooveControls {
         this.applyGroove(onUpdateGridVisuals, null); 
 
         const btn = document.getElementById('applyGrooveFsBtn');
-        if (!btn) {
-            console.error('[GrooveFS] Button not found!');
-            return;
-        }
-        
         const originalText = btn.innerHTML;
-        console.log('[GrooveFS] Setting button to FETCHING SOUNDS...');
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> FETCHING SOUNDS...';
         btn.disabled = true;
-        
-        // Force UI update before proceeding
-        await new Promise(resolve => requestAnimationFrame(resolve));
-        await new Promise(resolve => setTimeout(resolve, 100));
-        console.log('[GrooveFS] Button updated, starting track processing');
 
         const startTrack = grpId * TRACKS_PER_GROUP;
 
@@ -239,13 +212,6 @@ export class GrooveControls {
                 if (this.tracks[targetTrackId] && !this.tracks[targetTrackId].stepLock && patternTrack) {
                     const trackObj = this.tracks[targetTrackId];
                     let query = patternTrack.instrument_type.replace(/_/g, ' ');
-                    
-                    // Update progress in UI and wait for it to render
-                    btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> LOADING ${i+1}/${TRACKS_PER_GROUP}...`;
-                    
-                    // Force UI update by waiting for next frame AND a small delay
-                    await new Promise(resolve => requestAnimationFrame(resolve));
-                    await new Promise(resolve => setTimeout(resolve, 100));
                     
                     console.log(`[GrooveFS] Processing Track ${targetTrackId} (${query})`);
 
@@ -291,31 +257,8 @@ export class GrooveControls {
                         const sound = results.results[pickIdx];
                         
                         console.log(`[GrooveFS] Success! Loading: ${sound.name}`);
-                        
-                        // Update UI BEFORE heavy operation
-                        btn.innerHTML = `<i class="fas fa-download"></i> DOWNLOADING ${i+1}/${TRACKS_PER_GROUP}: ${sound.name.substring(0, 20)}...`;
-                        await new Promise(resolve => requestAnimationFrame(resolve));
-                        await new Promise(resolve => setTimeout(resolve, 100)); // Give UI time to render
-                        
                         const url = sound.previews['preview-hq-mp3'];
-                        
-                        // Wrap in setTimeout to push heavy work to next event loop cycle
-                        await new Promise(async (resolve) => {
-                            setTimeout(async () => {
-                                try {
-                                    await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
-                                    console.log(`[GrooveFS] Loaded: ${sound.name}`);
-                                    resolve();
-                                } catch (error) {
-                                    console.error('[GrooveFS] Load error:', error);
-                                    resolve(); // Continue even if one fails
-                                }
-                            }, 50);
-                        });
-                        
-                        // Update UI AFTER heavy operation
-                        await new Promise(resolve => requestAnimationFrame(resolve));
-                        await new Promise(resolve => setTimeout(resolve, 50));
+                        await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
                         
                         trackObj.type = 'granular';
                         trackObj.params.position = 0;

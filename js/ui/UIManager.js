@@ -55,7 +55,7 @@ export class UIManager {
             () => this.updateLfoUI()
         );
 
-        this.grooveControls.initGrooveControls(() => this.applyGrooveFreesound());
+        this.grooveControls.initGrooveControls();
         this.syncGridElements();
 
         if (this.trackManager && this.trackManager.audioEngine) {
