@@ -57,12 +57,13 @@ export class SampleLoader {
             console.log('[LOADER-7] Channels:', audioBuffer.numberOfChannels);
             console.log('[LOADER-7] Sample rate:', audioBuffer.sampleRate);
             
-            // Auto-Trim Silence if method exists
-            if (this.audioEngine.trimBuffer) {
-                console.log('[LOADER-8] Trimming silence...');
-                audioBuffer = this.audioEngine.trimBuffer(audioBuffer, 0.01);
-                console.log('[LOADER-8] Trimming complete');
-            }
+            // SKIP TRIMMING TO TEST
+            console.log('[LOADER-8] SKIPPING trimming (testing)...');
+            // if (this.audioEngine.trimBuffer) {
+            //     console.log('[LOADER-8] Trimming silence...');
+            //     audioBuffer = this.audioEngine.trimBuffer(audioBuffer, 0.01);
+            //     console.log('[LOADER-8] Trimming complete');
+            // }
             
             console.log('[LOADER-9] Updating track object...');
             // Update Track with new sample data
@@ -73,9 +74,12 @@ export class SampleLoader {
             };
             track.buffer = audioBuffer;
             
-            console.log('[LOADER-10] Analyzing buffer...');
-            track.rmsMap = this.audioEngine.analyzeBuffer(audioBuffer);
-            console.log('[LOADER-10] Analysis complete');
+            // SKIP ANALYSIS TO TEST
+            console.log('[LOADER-10] SKIPPING analysis (testing)...');
+            // console.log('[LOADER-10] Analyzing buffer...');
+            // track.rmsMap = this.audioEngine.analyzeBuffer(audioBuffer);
+            // console.log('[LOADER-10] Analysis complete');
+            track.rmsMap = [];  // Empty array for now
             
             // DON'T set type here - let GrooveControls do it
             // track.type = 'granular';
