@@ -270,7 +270,21 @@ export class GranularSynthWorklet {
 
         // Calculate when to trigger grain in worklet
         const currentTime = audioCtx.currentTime;
-        const delayMs = Math.max(0, (time - currentTime) * 1000);
+        const scheduledTime = Math.max(currentTime, time);
+        const timeDelta = scheduledTime - currentTime;
+        
+        // Prevent scheduling too far in future (causes drift/crackles)
+        const MAX_LOOKAHEAD = 0.5; // 500ms max
+        if (timeDelta > MAX_LOOKAHEAD) {
+            return; // Skip this grain
+        }
+        
+        // Check voice limit to prevent overload
+        if (this.activeGrains >= this.MAX_GRAINS) {
+            return; // Skip grain if at limit
+        }
+        
+        const delayMs = timeDelta * 1000;
         
         // Schedule grain trigger
         setTimeout(() => {

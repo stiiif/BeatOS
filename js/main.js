@@ -9,9 +9,13 @@ import { UIManager } from './ui/UIManager.js'; // IMPORTING THE NEW CLEAN FILE
 import { Visualizer } from './ui/Visualizer.js';
 import { LayoutManager } from './ui/LayoutManager.js';
 import { NUM_LFOS, TRACKS_PER_GROUP } from './utils/constants.js';
+import { AudioWorkletMonitor } from './ui/AudioWorkletMonitor.js';
 
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
+
+let workletMonitor = null;
+
 const scheduler = new Scheduler(audioEngine, granularSynth);
 const trackManager = new TrackManager(audioEngine);
 const presetManager = new PresetManager();
@@ -77,12 +81,16 @@ function addGroup() {
 document.getElementById('initAudioBtn').addEventListener('click', async () => {
     console.log("[Main] Init audio clicked.");
     await audioEngine.initialize();
-    
+
     // Initialize AudioWorklet granular synth
     console.log("[Main] Initializing AudioWorklet...");
     await granularSynth.init();
     console.log("[Main] ✅ AudioWorklet ready!");
-    
+    await granularSynth.init();
+    console.log('[Main] ✅ AudioWorklet ready!');
+
+    workletMonitor = new AudioWorkletMonitor(granularSynth);
+
     trackManager.createBuffersForAllTracks();
     document.getElementById('startOverlay').classList.add('hidden');
     visualizer.drawVisuals();
@@ -152,7 +160,7 @@ document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
 
     const btn = e.target;
     const originalText = btn.innerText;
-    
+
     // Visual feedback
     btn.innerHTML = '<i class="fas fa-scissors"></i>';
     btn.classList.add('text-white', 'bg-red-900/80');
@@ -161,7 +169,7 @@ document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
     // Perform Smart Trim
     // Using default threshold (0.002) but with transient detection ENABLED
     const newBuffer = audioEngine.trimBuffer(track.buffer, 0.005, true);
-    
+
     if (newBuffer) {
         track.buffer = newBuffer;
         // Update sample duration if custom sample exists
@@ -197,7 +205,7 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
     else if (clickRatio < 0.6) { releaseMin = 0.6; releaseMax = 1.2; zoneName = 'MEDIUM'; }
     else if (clickRatio < 0.8) { releaseMin = 1.2; releaseMax = 1.6; zoneName = 'LONG'; }
     else { releaseMin = 1.6; releaseMax = 2.0; zoneName = 'VERY LONG'; }
-    
+
     const btn = e.currentTarget;
     const originalText = btn.innerHTML;
     btn.innerHTML = `${zoneName} REL`;
@@ -208,10 +216,10 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
         btn.style.backgroundColor = '';
         btn.innerHTML = originalText;
     }, 300);
-    
+
     tracks.forEach(t => {
-        if(t.ignoreRandom) return;
-        if(t.type === 'granular') {
+        if (t.ignoreRandom) return;
+        if (t.type === 'granular') {
             trackManager.randomizeTrackParams(t, releaseMin, releaseMax);
             trackManager.randomizeTrackModulators(t);
         } else if (t.type === 'simple-drum') {
@@ -245,7 +253,7 @@ document.getElementById('randPanBtn').addEventListener('click', () => {
     document.getElementById('panShiftValue').innerText = '0%';
     const btn = document.getElementById('randPanBtn');
     const originalBg = btn.style.backgroundColor;
-    btn.style.backgroundColor = '#0891b2'; 
+    btn.style.backgroundColor = '#0891b2';
     setTimeout(() => { btn.style.backgroundColor = originalBg; }, 200);
 });
 
@@ -284,7 +292,7 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
             const typeLabel = document.getElementById('trackTypeLabel');
             typeLabel.textContent = type.toUpperCase() + ' (Synth)';
             const originalBg = e.target.style.backgroundColor;
-            e.target.style.backgroundColor = '#059669'; 
+            e.target.style.backgroundColor = '#059669';
             setTimeout(() => { e.target.style.backgroundColor = originalBg; }, 200);
         }
     });
@@ -299,7 +307,7 @@ document.getElementById('load909Btn').addEventListener('click', () => {
     uiManager.updateKnobs();
     const bufCanvas = document.getElementById('bufferDisplay');
     const ctx = bufCanvas.getContext('2d');
-    ctx.fillStyle = '#111'; ctx.fillRect(0,0,bufCanvas.width, bufCanvas.height);
+    ctx.fillStyle = '#111'; ctx.fillRect(0, 0, bufCanvas.width, bufCanvas.height);
     ctx.font = '10px monospace'; ctx.fillStyle = '#f97316'; ctx.fillText("909 ENGINE ACTIVE", 10, 40);
 });
 
@@ -316,13 +324,13 @@ if (btnContainer && !document.getElementById('loadAutoBtn')) {
         t.type = 'automation';
         t.steps.fill(0);
         const stepElements = uiManager.matrixStepElements[t.id];
-        if(stepElements) {
-             stepElements.forEach(el => { el.className = 'step-btn'; el.classList.remove('active'); });
+        if (stepElements) {
+            stepElements.forEach(el => { el.className = 'step-btn'; el.classList.remove('active'); });
         }
         updateTrackControlsVisibility();
         const bufCanvas = document.getElementById('bufferDisplay');
         const ctx = bufCanvas.getContext('2d');
-        ctx.fillStyle = '#111'; ctx.fillRect(0,0,bufCanvas.width, bufCanvas.height);
+        ctx.fillStyle = '#111'; ctx.fillRect(0, 0, bufCanvas.width, bufCanvas.height);
         ctx.font = '10px monospace'; ctx.fillStyle = '#818cf8'; ctx.fillText("AUTOMATION TRACK", 10, 40);
     });
 }
@@ -339,7 +347,7 @@ document.querySelectorAll('.drum-sel-btn').forEach(btn => {
 
 const loadSampleBtnInline = document.getElementById('loadSampleBtnInline');
 const sampleInput = document.getElementById('sampleInput');
-if(loadSampleBtnInline && sampleInput) {
+if (loadSampleBtnInline && sampleInput) {
     loadSampleBtnInline.addEventListener('click', () => {
         if (!tracks || tracks.length === 0 || !audioEngine.getContext()) { alert('Init Audio First'); return; }
         sampleInput.click();
@@ -356,7 +364,7 @@ if(loadSampleBtnInline && sampleInput) {
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; btn.disabled = true;
             await audioEngine.loadCustomSample(file, currentTrack);
             const typeLabel = document.getElementById('trackTypeLabel');
-            if(typeLabel) { typeLabel.textContent = currentTrack.customSample.name; typeLabel.title = currentTrack.customSample.name; }
+            if (typeLabel) { typeLabel.textContent = currentTrack.customSample.name; typeLabel.title = currentTrack.customSample.name; }
             visualizer.drawBufferDisplay();
             btn.innerHTML = '<i class="fas fa-check"></i>'; btn.classList.add('bg-sky-600');
             setTimeout(() => { btn.innerHTML = originalText; btn.classList.remove('bg-sky-600'); btn.disabled = false; }, 1500);
@@ -379,7 +387,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     const btn = document.getElementById('saveBtn');
     const originalHtml = btn.innerHTML;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; btn.disabled = true;
-    try { await presetManager.savePreset(tracks, scheduler.getBPM()); } catch (e) { alert("Save failed"); } 
+    try { await presetManager.savePreset(tracks, scheduler.getBPM()); } catch (e) { alert("Save failed"); }
     finally { btn.innerHTML = originalHtml; btn.disabled = false; }
 });
 
@@ -400,7 +408,7 @@ document.querySelectorAll('.param-slider').forEach(el => {
         const t = tracks[uiManager.getSelectedTrackIndex()];
         t.params[e.target.dataset.param] = parseFloat(e.target.value);
         uiManager.updateKnobs();
-        if(t.type === 'granular') visualizer.drawBufferDisplay();
+        if (t.type === 'granular') visualizer.drawBufferDisplay();
     });
 });
 
@@ -430,7 +438,7 @@ document.getElementById('saveTrackBtn').addEventListener('click', () => {
 });
 
 document.getElementById('exportCurrentTrackBtn').addEventListener('click', async () => { await trackLibrary.exportTrackToZip(tracks[uiManager.getSelectedTrackIndex()]); });
-document.getElementById('loadTrackBtn').addEventListener('click', () => { if(tracks.length > 0) { document.getElementById('trackLibraryModal').classList.remove('hidden'); renderTrackLibrary(); } });
+document.getElementById('loadTrackBtn').addEventListener('click', () => { if (tracks.length > 0) { document.getElementById('trackLibraryModal').classList.remove('hidden'); renderTrackLibrary(); } });
 
 function renderTrackLibrary() {
     const list = document.getElementById('trackLibraryList');
@@ -457,7 +465,7 @@ function renderTrackLibrary() {
             const delBtn = document.createElement('button');
             delBtn.className = 'text-neutral-400 hover:text-red-500 transition px-2';
             delBtn.innerHTML = '<i class="fas fa-trash"></i>';
-            delBtn.onclick = (e) => { e.stopPropagation(); if(confirm('Delete?')) { trackLibrary.deleteTrack(index); renderTrackLibrary(); } };
+            delBtn.onclick = (e) => { e.stopPropagation(); if (confirm('Delete?')) { trackLibrary.deleteTrack(index); renderTrackLibrary(); } };
             const exportBtn = document.createElement('button');
             exportBtn.className = 'text-neutral-400 hover:text-indigo-400 transition px-2';
             exportBtn.innerHTML = '<i class="fas fa-file-export"></i>';
@@ -479,9 +487,9 @@ function loadTrackFromLibrary(index) {
         uiManager.updateKnobs();
         uiManager.updateLfoUI();
         visualizer.drawBufferDisplay();
-        for(let s=0; s<NUM_STEPS; s++) {
-             const btn = uiManager.matrixStepElements[currentTrackIdx][s];
-             if(targetTrack.steps[s]) btn.classList.add('active'); else btn.classList.remove('active');
+        for (let s = 0; s < NUM_STEPS; s++) {
+            const btn = uiManager.matrixStepElements[currentTrackIdx][s];
+            if (targetTrack.steps[s]) btn.classList.add('active'); else btn.classList.remove('active');
         }
         document.getElementById('trackLibraryModal').classList.add('hidden');
     }
@@ -491,7 +499,7 @@ document.getElementById('importTrackBtn').addEventListener('click', () => { docu
 document.getElementById('importTrackInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file && (file.name.endsWith('.beattrk') || file.name.endsWith('.zip'))) {
-         trackLibrary.importTrackFromZip(file, async (success, trackData, arrayBuffer) => {
+        trackLibrary.importTrackFromZip(file, async (success, trackData, arrayBuffer) => {
             if (success) {
                 const currentTrack = tracks[uiManager.getSelectedTrackIndex()];
                 const audioCtx = audioEngine.getContext();
@@ -499,27 +507,27 @@ document.getElementById('importTrackInput').addEventListener('change', (e) => {
                 currentTrack.steps = [...trackData.steps];
                 currentTrack.type = trackData.type || 'granular';
                 if (arrayBuffer && audioCtx) {
-                     try {
+                    try {
                         const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
                         currentTrack.customSample = { name: trackData.sampleName, buffer: audioBuffer, duration: audioBuffer.duration };
                         currentTrack.buffer = audioBuffer;
                         currentTrack.rmsMap = audioEngine.analyzeBuffer(audioBuffer);
-                     } catch (err) { console.error(err); }
+                    } catch (err) { console.error(err); }
                 }
                 updateTrackControlsVisibility();
                 uiManager.updateKnobs();
                 document.getElementById('trackLibraryModal').classList.add('hidden');
             }
-         });
+        });
     }
 });
 
 const grainMonitorEl = document.getElementById('grainMonitor');
 const maxGrainsInput = document.getElementById('maxGrainsInput');
-if(maxGrainsInput) {
+if (maxGrainsInput) {
     maxGrainsInput.addEventListener('change', (e) => {
         let val = parseInt(e.target.value);
-        if(isNaN(val) || val < 10) val = 400;
+        if (isNaN(val) || val < 10) val = 400;
         granularSynth.setMaxGrains(val);
     });
 }
