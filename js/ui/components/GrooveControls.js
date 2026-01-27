@@ -294,14 +294,25 @@ export class GrooveControls {
                         
                         console.log(`[DEBUG-14.${i}] ✅ AFTER loadSampleFromUrl - IT WORKED!`);
                         console.log(`[DEBUG-14.${i}] Time:`, new Date().toISOString());
+                        console.log(`[DEBUG-14.${i}] trackObj.buffer exists:`, !!trackObj.buffer);
+                        console.log(`[DEBUG-14.${i}] trackObj.buffer duration:`, trackObj.buffer?.duration);
+                        console.log(`[DEBUG-14.${i}] trackObj.customSample exists:`, !!trackObj.customSample);
                         
+                        // CRITICAL FIX: Yield to event loop to prevent freeze!
+                        console.log(`[DEBUG-14.5.${i}] Yielding to event loop...`);
+                        await new Promise(resolve => setTimeout(resolve, 0));
+                        console.log(`[DEBUG-14.6.${i}] Event loop yield complete`);
+                        
+                        console.log(`[DEBUG-14.7.${i}] Setting trackObj.type...`);
                         trackObj.type = 'granular';
+                        console.log(`[DEBUG-14.8.${i}] Setting params...`);
                         trackObj.params.position = 0;
                         trackObj.params.grainSize = 0.2; 
                         trackObj.params.density = 20;    
                         trackObj.params.spray = 0;
                         trackObj.params.pitch = 1.0;
                         trackObj.params.overlap = 3.0;   
+                        console.log(`[DEBUG-14.9.${i}] Setting customSample.name...`);
 
                         trackObj.customSample.name = sound.name;
                         console.log(`[DEBUG-15.${i}] Track configured successfully`);
