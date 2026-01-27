@@ -77,11 +77,20 @@ export class SampleLoader {
             track.rmsMap = this.audioEngine.analyzeBuffer(audioBuffer);
             console.log('[LOADER-10] Analysis complete');
             
-            // Ensure track is set to granular/sample mode
-            track.type = 'granular';
+            // DON'T set type here - let GrooveControls do it
+            // track.type = 'granular';
+            console.log('[LOADER-11] Skipping type set (will be done by caller)');
             
-            console.log('[LOADER-11] ✅ loadSampleFromUrl: SUCCESS');
-            return audioBuffer;
+            console.log('[LOADER-12] ✅ loadSampleFromUrl: SUCCESS');
+            console.log('[LOADER-13] About to return audioBuffer...');
+            console.log('[LOADER-13] Time:', new Date().toISOString());
+            
+            const returnValue = audioBuffer;
+            
+            console.log('[LOADER-14] Returning NOW...');
+            console.log('[LOADER-14] Time:', new Date().toISOString());
+            
+            return returnValue;
         } catch (error) {
             console.error('[LOADER-ERROR] Exception:', error);
             console.error('[LOADER-ERROR] Stack:', error.stack);
