@@ -1,6 +1,6 @@
 console.log("[Main] Module loaded.");
 import { AudioEngine } from './core/AudioEngine.js';
-import { GranularSynth } from './core/GranularSynth.js';
+import { GranularSynthWorklet as GranularSynth } from './core/GranularSynthWorklet.js';
 import { Scheduler } from './core/Scheduler.js';
 import { TrackManager } from './modules/TrackManager.js';
 import { PresetManager } from './modules/PresetManager.js';
@@ -77,6 +77,12 @@ function addGroup() {
 document.getElementById('initAudioBtn').addEventListener('click', async () => {
     console.log("[Main] Init audio clicked.");
     await audioEngine.initialize();
+    
+    // Initialize AudioWorklet granular synth
+    console.log("[Main] Initializing AudioWorklet...");
+    await granularSynth.init();
+    console.log("[Main] ✅ AudioWorklet ready!");
+    
     trackManager.createBuffersForAllTracks();
     document.getElementById('startOverlay').classList.add('hidden');
     visualizer.drawVisuals();
