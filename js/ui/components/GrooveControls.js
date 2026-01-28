@@ -173,8 +173,51 @@ export class GrooveControls {
             });
             
             trackRow.appendChild(toggleGroup);
+            
+            // Add search button for individual track
+            const searchBtn = document.createElement('button');
+            searchBtn.className = 'px-2 py-0.5 rounded text-[8px] transition-all border bg-emerald-900/40 hover:bg-emerald-700 text-emerald-300 border-emerald-900/50 ml-1 flex-shrink-0';
+            searchBtn.title = 'Search sound for this track';
+            searchBtn.textContent = '🔍';
+            searchBtn.dataset.trackIdx = i;
+            searchBtn.dataset.instrumentName = instrumentName;
+            
+            searchBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.openSearchForTrack(i, instrumentName);
+            });
+            
+            trackRow.appendChild(searchBtn);
             container.appendChild(trackRow);
         }
+    }
+    
+    openSearchForTrack(trackIndex, instrumentName) {
+        const grpId = parseInt(document.getElementById('targetGroupSelect').value);
+        
+        if (isNaN(grpId)) {
+            alert("Please select a target group first.");
+            return;
+        }
+        
+        if (!this.searchModal) {
+            alert("Search module not ready.");
+            return;
+        }
+        
+        const startTrack = grpId * TRACKS_PER_GROUP;
+        const targetTrackId = startTrack + trackIndex;
+        const trackObj = this.tracks[targetTrackId];
+        
+        if (!trackObj) {
+            alert("Track not available.");
+            return;
+        }
+        
+        console.log(`[GrooveFS] Opening search for Track ${targetTrackId}: ${instrumentName}`);
+        
+        // Open search modal with pre-filled query
+        this.searchModal.open(trackObj, instrumentName);
     }
 
     applyGroove(onUpdateGridVisuals, onSelectTrack) {
