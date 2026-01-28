@@ -148,6 +148,29 @@ export class GrooveControls {
             const toggleGroup = document.createElement('div');
             toggleGroup.className = 'flex gap-0.5 flex-1';
             
+            // Add "none" option first
+            const noneBtn = document.createElement('button');
+            noneBtn.className = 'flex-1 px-1 py-0.5 rounded text-[8px] transition-all border';
+            noneBtn.dataset.trackIdx = i;
+            noneBtn.dataset.descriptor = 'none';
+            noneBtn.title = 'No descriptor filter';
+            
+            if (this.trackDescriptors[i] === 'none') {
+                noneBtn.classList.add('bg-neutral-600', 'text-white', 'border-neutral-500');
+            } else {
+                noneBtn.classList.add('bg-neutral-800', 'text-neutral-500', 'border-neutral-700', 'hover:bg-neutral-700');
+            }
+            
+            noneBtn.textContent = '∅';
+            
+            noneBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.trackDescriptors[i] = 'none';
+                this.updateDescriptorSelectorUI();
+            });
+            
+            toggleGroup.appendChild(noneBtn);
+            
             descriptorOptions.forEach((desc, idx) => {
                 const btn = document.createElement('button');
                 btn.className = 'flex-1 px-1 py-0.5 rounded text-[8px] transition-all border';
@@ -337,19 +360,21 @@ export class GrooveControls {
 
                     // Get selected descriptor for this track
                     const selectedDescriptor = this.trackDescriptors[i];
-                    const descriptorFilter = `${selectedDescriptor}:[80 TO 100]`;
+                    const descriptorFilter = selectedDescriptor !== 'none' ? `${selectedDescriptor}:[80 TO 100]` : '';
                     
-                    let filters = `duration:[0.05 TO 1.0] license:"Creative Commons 0" ${descriptorFilter}`;
+                    let filters = `duration:[0.05 TO 1.0] license:"Creative Commons 0"`;
+                    if (descriptorFilter) filters += ` ${descriptorFilter}`;
                     if (patternTrack.role === 'ghost') filters += ' ac_brightness:[0 TO 50]';
                     else filters += ' ac_brightness:[10 TO 100]';
 
-                    console.log(`[GrooveFS] Using descriptor: ${selectedDescriptor}=[80-100]`);
+                    console.log(`[GrooveFS] Using descriptor: ${selectedDescriptor === 'none' ? 'none' : selectedDescriptor + '=[80-100]'}`);
 
                     let results = await this.searchModal.client.textSearch(query, filters);
                     
                     if (results.results.length === 0) {
                         console.log(`[GrooveFS] Attempt 2: Relaxed Filters for ${query}`);
-                        const relaxed = `duration:[0.05 TO 3.0] license:"Creative Commons 0" ${descriptorFilter}`;
+                        let relaxed = `duration:[0.05 TO 3.0] license:"Creative Commons 0"`;
+                        if (descriptorFilter) relaxed += ` ${descriptorFilter}`;
                         results = await this.searchModal.client.textSearch(query, relaxed);
                     }
 
@@ -373,7 +398,9 @@ export class GrooveControls {
                         
                         if (fallbackQuery !== query) {
                              console.log(`[GrooveFS] Attempt 3: Fallback Query "${fallbackQuery}"`);
-                             results = await this.searchModal.client.textSearch(fallbackQuery, `duration:[0.05 TO 2.0] license:"Creative Commons 0" ${descriptorFilter}`);
+                             let fallbackFilters = `duration:[0.05 TO 2.0] license:"Creative Commons 0"`;
+                             if (descriptorFilter) fallbackFilters += ` ${descriptorFilter}`;
+                             results = await this.searchModal.client.textSearch(fallbackQuery, fallbackFilters);
                              if (results.results.length > 0) query = fallbackQuery; 
                         }
                     }
