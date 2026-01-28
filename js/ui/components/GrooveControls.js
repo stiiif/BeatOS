@@ -10,6 +10,7 @@ export class GrooveControls {
         this.matrixStepElements = [];
         this.searchModal = null;
         this.visualizerCallback = null;
+        this.trackDescriptors = new Array(TRACKS_PER_GROUP).fill('brightness'); // Default descriptor per track
     }
 
     setTracks(tracks) {
@@ -48,6 +49,9 @@ export class GrooveControls {
                 opt.innerText = `${p.name} (${p.genre || 'World'})`;
                 patternSelect.appendChild(opt);
             });
+            
+            // Listen for pattern changes to update descriptor selector UI
+            patternSelect.addEventListener('change', () => this.updateDescriptorSelectorUI());
         }
 
         if(targetGroupSelect) {
@@ -74,6 +78,12 @@ export class GrooveControls {
 
         const groovePanel = document.querySelector('#applyGrooveBtn')?.parentElement;
         if (groovePanel && !document.getElementById('applyGrooveFsBtn')) {
+            // Create descriptor selector container
+            const descriptorContainer = document.createElement('div');
+            descriptorContainer.id = 'descriptorSelectorContainer';
+            descriptorContainer.className = 'mt-2 mb-2 hidden';
+            groovePanel.appendChild(descriptorContainer);
+            
             const fsBtn = document.createElement('button');
             fsBtn.id = 'applyGrooveFsBtn';
             fsBtn.className = 'w-full text-[10px] bg-indigo-900/40 hover:bg-indigo-800 text-indigo-300 py-1 rounded transition border border-indigo-900/50 font-bold mt-1 flex items-center justify-center gap-2';
@@ -82,6 +92,88 @@ export class GrooveControls {
                 this.applyGrooveFreesound();
             };
             groovePanel.appendChild(fsBtn);
+        }
+    }
+
+    updateDescriptorSelectorUI() {
+        const patId = parseInt(document.getElementById('patternSelect').value);
+        const container = document.getElementById('descriptorSelectorContainer');
+        
+        if (!container) return;
+        
+        if (isNaN(patId)) {
+            container.classList.add('hidden');
+            return;
+        }
+        
+        const pattern = this.patternLibrary.getPatternById(patId);
+        if (!pattern) return;
+        
+        container.classList.remove('hidden');
+        container.innerHTML = '';
+        
+        // Create header
+        const header = document.createElement('div');
+        header.className = 'text-[9px] font-bold text-indigo-300 mb-1 uppercase tracking-wider';
+        header.textContent = 'Sound Profile Selector';
+        container.appendChild(header);
+        
+        // Create track descriptor rows
+        const descriptorOptions = ['boominess', 'brightness', 'loudness', 'roughness', 'warmth'];
+        const descriptorIcons = {
+            'boominess': '💥',
+            'brightness': '✨',
+            'loudness': '🔊',
+            'roughness': '⚡',
+            'warmth': '🔥'
+        };
+        
+        for (let i = 0; i < TRACKS_PER_GROUP; i++) {
+            const patternTrack = pattern.tracks[i];
+            if (!patternTrack) continue;
+            
+            const trackRow = document.createElement('div');
+            trackRow.className = 'flex items-center gap-1 mb-1 text-[9px]';
+            
+            // Track label
+            const label = document.createElement('div');
+            label.className = 'text-neutral-400 truncate flex-shrink-0';
+            label.style.width = '60px';
+            const instrumentName = (patternTrack.instrument_type || patternTrack.instrument || 'Track').replace(/_/g, ' ');
+            label.textContent = instrumentName.length > 9 ? instrumentName.substring(0, 9) + '.' : instrumentName;
+            label.title = instrumentName;
+            trackRow.appendChild(label);
+            
+            // Toggle buttons container
+            const toggleGroup = document.createElement('div');
+            toggleGroup.className = 'flex gap-0.5 flex-1';
+            
+            descriptorOptions.forEach((desc, idx) => {
+                const btn = document.createElement('button');
+                btn.className = 'flex-1 px-1 py-0.5 rounded text-[8px] transition-all border';
+                btn.dataset.trackIdx = i;
+                btn.dataset.descriptor = desc;
+                btn.title = desc.charAt(0).toUpperCase() + desc.slice(1);
+                
+                if (this.trackDescriptors[i] === desc) {
+                    btn.classList.add('bg-indigo-600', 'text-white', 'border-indigo-500');
+                } else {
+                    btn.classList.add('bg-neutral-800', 'text-neutral-500', 'border-neutral-700', 'hover:bg-neutral-700');
+                }
+                
+                btn.textContent = descriptorIcons[desc];
+                
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.trackDescriptors[i] = desc;
+                    this.updateDescriptorSelectorUI();
+                });
+                
+                toggleGroup.appendChild(btn);
+            });
+            
+            trackRow.appendChild(toggleGroup);
+            container.appendChild(trackRow);
         }
     }
 
@@ -200,15 +292,21 @@ export class GrooveControls {
                     
                     console.log(`[GrooveFS] Processing Track ${targetTrackId} (${query})`);
 
-                    let filters = 'roughness: [80 TO 100] duration:[0.01 TO 1.0] license:"Creative Commons 0"';
+                    // Get selected descriptor for this track
+                    const selectedDescriptor = this.trackDescriptors[i];
+                    const descriptorFilter = `${selectedDescriptor}:[80 TO 100]`;
+                    
+                    let filters = `duration:[0.05 TO 1.0] license:"Creative Commons 0" ${descriptorFilter}`;
                     if (patternTrack.role === 'ghost') filters += ' ac_brightness:[0 TO 50]';
                     else filters += ' ac_brightness:[10 TO 100]';
+
+                    console.log(`[GrooveFS] Using descriptor: ${selectedDescriptor}=[80-100]`);
 
                     let results = await this.searchModal.client.textSearch(query, filters);
                     
                     if (results.results.length === 0) {
                         console.log(`[GrooveFS] Attempt 2: Relaxed Filters for ${query}`);
-                        const relaxed = 'roughness: [80 TO 100] duration:[0.01 TO 5.0] license:"Creative Commons 0"';
+                        const relaxed = `duration:[0.05 TO 3.0] license:"Creative Commons 0" ${descriptorFilter}`;
                         results = await this.searchModal.client.textSearch(query, relaxed);
                     }
 
@@ -232,7 +330,7 @@ export class GrooveControls {
                         
                         if (fallbackQuery !== query) {
                              console.log(`[GrooveFS] Attempt 3: Fallback Query "${fallbackQuery}"`);
-                             results = await this.searchModal.client.textSearch(fallbackQuery, 'duration:[0.05 TO 2.0] license:"Creative Commons 0"');
+                             results = await this.searchModal.client.textSearch(fallbackQuery, `duration:[0.05 TO 2.0] license:"Creative Commons 0" ${descriptorFilter}`);
                              if (results.results.length > 0) query = fallbackQuery; 
                         }
                     }
