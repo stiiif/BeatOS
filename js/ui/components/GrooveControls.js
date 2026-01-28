@@ -200,7 +200,7 @@ export class GrooveControls {
                     
                     console.log(`[GrooveFS] Processing Track ${targetTrackId} (${query})`);
 
-                    let filters = 'duration:[0.05 TO 1.0] license:"Creative Commons 0"';
+                    let filters = 'warmth: [80 TO 100] duration:[0.01 TO 1.0] license:"Creative Commons 0"';
                     if (patternTrack.role === 'ghost') filters += ' ac_brightness:[0 TO 50]';
                     else filters += ' ac_brightness:[10 TO 100]';
 
@@ -208,7 +208,7 @@ export class GrooveControls {
                     
                     if (results.results.length === 0) {
                         console.log(`[GrooveFS] Attempt 2: Relaxed Filters for ${query}`);
-                        const relaxed = 'duration:[0.05 TO 3.0] license:"Creative Commons 0"';
+                        const relaxed = 'warmth: [80 TO 100] duration:[0.05 TO 3.0] license:"Creative Commons 0"';
                         results = await this.searchModal.client.textSearch(query, relaxed);
                     }
 
