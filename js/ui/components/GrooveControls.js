@@ -336,6 +336,7 @@ export class GrooveControls {
         const pattern = this.patternLibrary.getPatternById(patId);
         if (!pattern) return;
 
+        // 1. Apply Pattern Structure (Notes, Velocities)
         this.applyGroove(onUpdateGridVisuals, null); 
 
         const btn = document.getElementById('applyGrooveFsBtn');
@@ -413,10 +414,11 @@ export class GrooveControls {
                         const url = sound.previews['preview-hq-mp3'];
                         await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
                         
-                        // Force Engine Type
+                        // --- CRITICAL FIX START ---
+                        // Force Granular Engine immediately
                         trackObj.type = 'granular';
                         
-                        // Reset params for one-shot
+                        // Reset params for clean one-shot playback
                         trackObj.params.position = 0;
                         trackObj.params.grainSize = 0.2; 
                         trackObj.params.density = 20;    
@@ -429,14 +431,20 @@ export class GrooveControls {
                         trackObj.params.ampRelease = 0.2;
 
                         trackObj.customSample.name = sound.name;
+                        // --- CRITICAL FIX END ---
                     } else {
                         console.warn(`[GrooveFS] FAILED to find sample for ${query}. Keeping default.`);
                     }
                 }
             }
             
+            // 2. Final UI Refresh - This is crucial
             if (onSelectTrack && selectedTrackIndex !== undefined) {
+                // Re-select the track to force UI update
                 onSelectTrack(selectedTrackIndex);
+                
+                // Dispatch event as a backup measure to update headers
+                window.dispatchEvent(new CustomEvent('trackSampleLoaded', { detail: { trackId: selectedTrackIndex } }));
             }
             
             btn.innerHTML = '<i class="fas fa-check"></i> KIT LOADED!';
