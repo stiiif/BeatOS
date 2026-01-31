@@ -1,4 +1,3 @@
-// Mixer Component - (Re-output to ensure sync)
 import { TRACKS_PER_GROUP } from '../../utils/constants.js';
 
 export class Mixer {
@@ -23,14 +22,17 @@ export class Mixer {
         
         const tracks = this.trackManager.getTracks();
         
+        // 1. Tracks
         tracks.forEach(track => {
             mixerContainer.appendChild(this.createTrackStrip(track));
         });
 
+        // 2. Groups
         for(let i=0; i<4; i++) {
             mixerContainer.appendChild(this.createGroupStrip(i));
         }
 
+        // 3. Master
         mixerContainer.appendChild(this.createMasterStrip());
 
         this.container.appendChild(mixerContainer);
@@ -146,9 +148,13 @@ export class Mixer {
         const controls = document.createElement('div');
         controls.className = 'strip-controls custom-scrollbar';
 
+        // Helper to access bus safely
+        const getBus = () => track.bus;
+
         controls.appendChild(this.createKnob('Gain', track.params.gain || 1, 0, 2, 0.01, (v) => {
             track.params.gain = v;
-            if(track.bus.trim) track.bus.trim.gain.value = v;
+            const bus = getBus();
+            if(bus && bus.trim) bus.trim.gain.value = v;
         }, 'knob-color-green'));
 
         const eqSec = document.createElement('div');
@@ -157,22 +163,26 @@ export class Mixer {
         
         eqSec.appendChild(this.createKnob('Hi', track.params.eqHigh || 0, -15, 15, 0.1, (v) => {
             track.params.eqHigh = v;
-            if(track.bus.eq.high) track.bus.eq.high.gain.value = v;
+            const bus = getBus();
+            if(bus && bus.eq && bus.eq.high) bus.eq.high.gain.value = v;
         }, 'knob-color-blue'));
         
         eqSec.appendChild(this.createKnob('Mid', track.params.eqMid || 0, -15, 15, 0.1, (v) => {
             track.params.eqMid = v;
-            if(track.bus.eq.mid) track.bus.eq.mid.gain.value = v;
+            const bus = getBus();
+            if(bus && bus.eq && bus.eq.mid) bus.eq.mid.gain.value = v;
         }, 'knob-color-green'));
         
         eqSec.appendChild(this.createKnob('Freq', track.params.eqMidFreq || 1000, 200, 5000, 10, (v) => {
             track.params.eqMidFreq = v;
-            if(track.bus.eq.mid) track.bus.eq.mid.frequency.value = v;
+            const bus = getBus();
+            if(bus && bus.eq && bus.eq.mid) bus.eq.mid.frequency.value = v;
         }, 'knob-color-green'));
 
         eqSec.appendChild(this.createKnob('Lo', track.params.eqLow || 0, -15, 15, 0.1, (v) => {
             track.params.eqLow = v;
-            if(track.bus.eq.low) track.bus.eq.low.gain.value = v;
+            const bus = getBus();
+            if(bus && bus.eq && bus.eq.low) bus.eq.low.gain.value = v;
         }, 'knob-color-red'));
         
         controls.appendChild(eqSec);
@@ -186,17 +196,20 @@ export class Mixer {
 
         controls.appendChild(this.createKnob('Drive', track.params.drive || 0, 0, 1, 0.01, (v) => {
             track.params.drive = v;
-            if(track.bus.drive && track.bus.drive.input) this.audioEngine.setDriveAmount(track.bus.drive.input, v);
+            const bus = getBus();
+            if(bus && bus.drive && bus.drive.input) this.audioEngine.setDriveAmount(bus.drive.input, v);
         }, 'knob-color-red'));
 
         controls.appendChild(this.createKnob('Comp', track.params.comp || 0, 0, 1, 0.01, (v) => {
             track.params.comp = v;
-            if(track.bus.comp) this.audioEngine.setCompAmount(track.bus.comp, v);
+            const bus = getBus();
+            if(bus && bus.comp) this.audioEngine.setCompAmount(bus.comp, v);
         }, 'knob-color-purple'));
 
         controls.appendChild(this.createKnob('Pan', track.params.pan, -1, 1, 0.01, (v) => {
             track.params.pan = v;
-            if(track.bus.pan) track.bus.pan.pan.value = v;
+            const bus = getBus();
+            if(bus && bus.pan) bus.pan.pan.value = v;
         }, 'knob-color-blue'));
 
         strip.appendChild(controls);
@@ -232,11 +245,11 @@ export class Mixer {
         fader.className = 'v-fader';
         fader.min = 0; fader.max = 1.2; fader.step = 0.01;
         fader.value = track.params.volume;
-        fader.title = "Volume";
         fader.oninput = (e) => {
             const v = parseFloat(e.target.value);
             track.params.volume = v;
-            if(track.bus.vol) track.bus.vol.gain.value = v;
+            const bus = getBus();
+            if(bus && bus.vol) bus.vol.gain.value = v;
         };
         faderSection.appendChild(fader);
 
@@ -248,7 +261,9 @@ export class Mixer {
     createGroupStrip(index) {
         const strip = document.createElement('div');
         strip.className = 'mixer-strip group-strip';
-        const bus = this.audioEngine.groupBuses[index];
+        
+        // FIXED: Dynamic bus lookup
+        const getBus = () => this.audioEngine.groupBuses[index];
         
         const header = document.createElement('div');
         header.className = 'strip-header';
@@ -259,6 +274,7 @@ export class Mixer {
         controls.className = 'strip-controls custom-scrollbar';
 
         controls.appendChild(this.createKnob('Comp', 0, 0, 1, 0.01, (v) => {
+            const bus = getBus();
             if(bus && bus.comp) this.audioEngine.setCompAmount(bus.comp, v);
         }, 'knob-color-purple'));
 
@@ -274,6 +290,7 @@ export class Mixer {
             driveSel.appendChild(opt);
         });
         driveSel.onchange = (e) => {
+            const bus = getBus();
             if(bus && bus.drive && bus.drive.shaper) {
                 bus.drive.shaper.curve = this.audioEngine.driveCurves[e.target.value];
             }
@@ -281,6 +298,7 @@ export class Mixer {
         driveDiv.appendChild(driveSel);
         
         driveDiv.appendChild(this.createKnob('Amt', 0, 0, 1, 0.01, (v) => {
+            const bus = getBus();
             if(bus && bus.drive && bus.drive.input) this.audioEngine.setDriveAmount(bus.drive.input, v);
         }, 'knob-color-red'));
         
@@ -307,6 +325,7 @@ export class Mixer {
                 btn.classList.toggle('active');
                 const isKill = btn.classList.contains('active');
                 const gainVal = isKill ? -40 : 0; 
+                const bus = getBus();
                 if(bus && bus.eq) {
                     if(band === 'HI') bus.eq.high.gain.value = gainVal;
                     if(band === 'MID') bus.eq.mid.gain.value = gainVal;
@@ -330,6 +349,7 @@ export class Mixer {
         muteBtn.innerText = 'M';
         muteBtn.onclick = () => {
              muteBtn.classList.toggle('active');
+             const bus = getBus();
              if(bus && bus.volume) {
                  bus.volume.gain.value = muteBtn.classList.contains('active') ? 0 : 1;
              }
@@ -343,6 +363,7 @@ export class Mixer {
         fader.min = 0; fader.max = 1.2; fader.step = 0.01;
         fader.value = 1.0;
         fader.oninput = (e) => {
+            const bus = getBus();
             if(bus && bus.volume) bus.volume.gain.value = parseFloat(e.target.value);
         };
         faderSection.appendChild(fader);
@@ -386,6 +407,7 @@ export class Mixer {
         fader.min = 0; fader.max = 1.2; fader.step = 0.01;
         fader.value = 1.0;
         fader.oninput = (e) => {
+            // FIX: Dynamic lookup for Master too
             if(this.audioEngine.masterBus && this.audioEngine.masterBus.volume) 
                 this.audioEngine.masterBus.volume.gain.value = parseFloat(e.target.value);
         };

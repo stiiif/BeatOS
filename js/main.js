@@ -5,7 +5,7 @@ import { Scheduler } from './core/Scheduler.js';
 import { TrackManager } from './modules/TrackManager.js';
 import { PresetManager } from './modules/PresetManager.js';
 import { TrackLibrary } from './modules/TrackLibrary.js';
-import { UIManager } from './ui/UIManager.js'; // IMPORTING THE NEW CLEAN FILE
+import { UIManager } from './ui/UIManager.js'; 
 import { Visualizer } from './ui/Visualizer.js';
 import { LayoutManager } from './ui/LayoutManager.js';
 import { NUM_LFOS, TRACKS_PER_GROUP } from './utils/constants.js';
@@ -82,18 +82,22 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     console.log("[Main] Init audio clicked.");
     await audioEngine.initialize();
 
-    // Initialize AudioWorklet granular synth
     console.log("[Main] Initializing AudioWorklet...");
     await granularSynth.init();
     console.log("[Main] ✅ AudioWorklet ready!");
-    await granularSynth.init();
-    console.log('[Main] ✅ AudioWorklet ready!');
 
     workletMonitor = new AudioWorkletMonitor(granularSynth);
 
     trackManager.createBuffersForAllTracks();
     document.getElementById('startOverlay').classList.add('hidden');
     visualizer.drawVisuals();
+    
+    // Refresh Mixer to ensure it binds to the newly created Audio Buses
+    if (uiManager.mixer) {
+        console.log("[Main] Refreshing Mixer...");
+        uiManager.mixer.render();
+    }
+
     uiManager.selectTrack(0, () => {
         visualizer.setSelectedTrackIndex(0);
         visualizer.drawBufferDisplay();
@@ -118,16 +122,11 @@ document.getElementById('stopBtn').addEventListener('click', () => {
     uiManager.clearPlayheadForStop();
 });
 
-document.getElementById('bpmInput').addEventListener('change', e => {
-    scheduler.setBPM(e.target.value);
-});
-
+// ... rest of event listeners same as before ...
+// Kept concise for brevity, assume remaining event listeners follow standard pattern
+document.getElementById('bpmInput').addEventListener('change', e => { scheduler.setBPM(e.target.value); });
 const applyGrooveBtn = document.getElementById('applyGrooveBtn');
-if (applyGrooveBtn) {
-    applyGrooveBtn.addEventListener('click', () => {
-        uiManager.applyGroove();
-    });
-}
+if (applyGrooveBtn) applyGrooveBtn.addEventListener('click', () => uiManager.applyGroove());
 
 document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
     visualizer.setScopeMode('wave');
@@ -153,36 +152,24 @@ document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
     btnWave.classList.remove('rounded-sm');
 });
 
-// NEW: Manual Trim Button Handler
 document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
     const track = tracks[uiManager.getSelectedTrackIndex()];
     if (!track || !track.buffer || track.type !== 'granular') return;
-
     const btn = e.target;
     const originalText = btn.innerText;
-
-    // Visual feedback
     btn.innerHTML = '<i class="fas fa-scissors"></i>';
     btn.classList.add('text-white', 'bg-red-900/80');
     btn.classList.remove('text-red-400', 'hover:bg-red-900/50');
-
-    // Perform Smart Trim
-    // Using default threshold (0.002) but with transient detection ENABLED
     const newBuffer = audioEngine.trimBuffer(track.buffer, 0.005, true);
-
     if (newBuffer) {
         track.buffer = newBuffer;
-        // Update sample duration if custom sample exists
         if (track.customSample) {
             track.customSample.buffer = newBuffer;
             track.customSample.duration = newBuffer.duration;
         }
-        // Re-analyze for visualizer
         track.rmsMap = audioEngine.analyzeBuffer(newBuffer);
-        // Refresh display
         visualizer.drawBufferDisplay();
     }
-
     setTimeout(() => {
         btn.innerText = originalText;
         btn.classList.remove('text-white', 'bg-red-900/80');
@@ -190,10 +177,7 @@ document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
     }, 500);
 });
 
-document.getElementById('randomizeAllPatternsBtn').addEventListener('click', () => {
-    uiManager.randomizeAllPatterns();
-});
-
+document.getElementById('randomizeAllPatternsBtn').addEventListener('click', () => uiManager.randomizeAllPatterns());
 document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -205,7 +189,6 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
     else if (clickRatio < 0.6) { releaseMin = 0.6; releaseMax = 1.2; zoneName = 'MEDIUM'; }
     else if (clickRatio < 0.8) { releaseMin = 1.2; releaseMax = 1.6; zoneName = 'LONG'; }
     else { releaseMin = 1.6; releaseMax = 2.0; zoneName = 'VERY LONG'; }
-
     const btn = e.currentTarget;
     const originalText = btn.innerHTML;
     btn.innerHTML = `${zoneName} REL`;
@@ -216,7 +199,6 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
         btn.style.backgroundColor = '';
         btn.innerHTML = originalText;
     }, 300);
-
     tracks.forEach(t => {
         if (t.ignoreRandom) return;
         if (t.type === 'granular') {
