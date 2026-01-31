@@ -191,7 +191,7 @@ export class SearchModal {
                 const url = sound.previews['preview-hq-mp3'];
                 await this.loader.loadSampleFromUrl(url, this.activeTrack);
                 
-                // --- CRITICAL FIX: Force Granular Engine & Reset Params ---
+                // FORCE ENGINE TYPE TO GRANULAR
                 this.activeTrack.type = 'granular';
                 
                 // Reset parameters for clean one-shot playback
@@ -200,8 +200,8 @@ export class SearchModal {
                 this.activeTrack.params.density = 20;    
                 this.activeTrack.params.spray = 0;
                 this.activeTrack.params.pitch = 1.0;
-                this.activeTrack.params.overlap = 3.0;
-                this.activeTrack.params.scanSpeed = 0; // Disable auto-scan
+                this.activeTrack.params.overlap = 3.0;   
+                this.activeTrack.params.scanSpeed = 0;
                 this.activeTrack.params.ampAttack = 0.01;
                 this.activeTrack.params.ampDecay = 0.2;
                 this.activeTrack.params.ampRelease = 0.2;
