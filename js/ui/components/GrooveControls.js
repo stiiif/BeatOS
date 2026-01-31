@@ -322,6 +322,8 @@ export class GrooveControls {
     }
 
     async applyGrooveFreesound(onUpdateGridVisuals, onSelectTrack, selectedTrackIndex) {
+        console.log(`[GrooveControls] applyGrooveFreesound started. selectedTrackIndex: ${selectedTrackIndex}`);
+        
         if (!this.searchModal) {
             alert("Search module not ready.");
             return;
@@ -410,7 +412,7 @@ export class GrooveControls {
                         const pickIdx = Math.floor(Math.random() * Math.min(5, results.results.length));
                         const sound = results.results[pickIdx];
                         
-                        console.log(`[GrooveFS] Success! Loading: ${sound.name}`);
+                        console.log(`[GrooveFS] Success! Loading: ${sound.name} into Track ${targetTrackId}`);
                         const url = sound.previews['preview-hq-mp3'];
                         await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
                         
@@ -432,18 +434,22 @@ export class GrooveControls {
 
                         trackObj.customSample.name = sound.name;
                         // --- CRITICAL FIX END ---
+                        console.log(`[GrooveFS] Track ${targetTrackId} set to granular. Sample: ${sound.name}`);
                     } else {
                         console.warn(`[GrooveFS] FAILED to find sample for ${query}. Keeping default.`);
                     }
                 }
             }
             
+            console.log(`[GrooveFS] All tracks processed. Refreshing UI...`);
             // 2. Final UI Refresh - This is crucial
             if (onSelectTrack && selectedTrackIndex !== undefined) {
+                console.log(`[GrooveFS] Re-selecting track ${selectedTrackIndex} to refresh UI.`);
                 // Re-select the track to force UI update
                 onSelectTrack(selectedTrackIndex);
                 
                 // Dispatch event as a backup measure to update headers
+                console.log(`[GrooveFS] Dispatching trackSampleLoaded for ${selectedTrackIndex}`);
                 window.dispatchEvent(new CustomEvent('trackSampleLoaded', { detail: { trackId: selectedTrackIndex } }));
             }
             
