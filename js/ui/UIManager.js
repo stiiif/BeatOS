@@ -7,6 +7,7 @@ import { TrackOperations } from './components/TrackOperations.js';
 import { SnapshotManager } from './components/SnapshotManager.js';
 import { AutomationPanel } from './components/AutomationPanel.js';
 import { SearchModal } from './SearchModal.js';
+import { globalBus } from '../events/EventBus.js';
 
 export class UIManager {
     constructor() {
@@ -15,13 +16,25 @@ export class UIManager {
         this.visualizerCallback = null;
         this.searchModal = null;
         
-        // Initialize all components
         this.grid = new SequencerGrid();
         this.trackControls = new TrackControls();
         this.grooveControls = new GrooveControls();
         this.trackOps = new TrackOperations();
         this.snapshotManager = new SnapshotManager();
         this.automationPanel = new AutomationPanel();
+
+        this.setupVisualEvents();
+    }
+
+    setupVisualEvents() {
+        // Listen for the stabilized visual clock
+        globalBus.on('UI_UPDATE_STEP', (data) => {
+            this.grid.updateMatrixHead(data.step);
+        });
+
+        globalBus.on('TRANSPORT_STOP', () => {
+            this.grid.clearPlayheadForStop();
+        });
     }
 
     setTracks(tracks) {
@@ -104,7 +117,9 @@ export class UIManager {
         this.grid.toggleStep(trk, step, () => this.trackOps.applyRandomChokeDimming(), randomChokeInfo.mode);
     }
 
-    updateMatrixHead(currentStep, totalStepsPlayed) { this.grid.updateMatrixHead(currentStep, totalStepsPlayed); }
+    // updateMatrixHead is now handled via setupVisualEvents()
+    updateMatrixHead(currentStep, totalStepsPlayed) { /* Logic moved to UI_UPDATE_STEP */ }
+    
     clearPlayheadForStop() { this.grid.clearPlayheadForStop(); }
     updateGridVisuals(timeSig) { this.grid.updateGridVisuals(timeSig); }
 
