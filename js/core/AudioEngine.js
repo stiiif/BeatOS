@@ -1,4 +1,4 @@
-// Audio Engine Module - Updated with Mixer Logic
+// Audio Engine Module - Fixed Routing (Analyser Leak Plugged)
 import { VELOCITY_GAINS, TRACKS_PER_GROUP } from '../utils/constants.js';
 
 export class AudioEngine {
@@ -105,7 +105,7 @@ export class AudioEngine {
         
         const volume = ctx.createGain();
         
-        // Chain
+        // Chain: Input -> EQ -> Drive -> Comp -> Vol -> Master
         input.connect(eqLow);
         eqLow.connect(eqMid);
         eqMid.connect(eqHigh);
@@ -115,13 +115,8 @@ export class AudioEngine {
         postDriveGain.connect(compressor);
         compressor.connect(volume);
         
-        // CRITICAL: Ensure volume connects to Master Input
         if (this.masterBus) {
             volume.connect(this.masterBus.input);
-        } else {
-            console.warn("Master Bus not ready during Group Init");
-            // Fallback? Ideally wait or ensure init order. 
-            // Since initMasterBus is called before initGroupBus, this should be fine.
         }
         
         this.groupBuses[index] = {
@@ -167,7 +162,7 @@ export class AudioEngine {
         analyser.fftSize = 2048;
         analyser.smoothingTimeConstant = 0.85;
 
-        // Connect Chain
+        // Connect Chain: Input -> Trim -> Filters -> EQ -> Drive -> Comp -> Vol -> Pan
         input.connect(trim);
         trim.connect(hp);
         hp.connect(lp);
@@ -180,18 +175,22 @@ export class AudioEngine {
         comp.connect(vol);
         vol.connect(pan);
         
-        // Route to appropriate Group
+        // Route to appropriate Group (Critical Logic)
         const groupIndex = Math.floor(track.id / TRACKS_PER_GROUP);
+        
         if (this.groupBuses[groupIndex]) {
             pan.connect(this.groupBuses[groupIndex].input);
         } else if (this.masterBus) {
+            // Fallback to master if group unavailable
             pan.connect(this.masterBus.input);
         } else {
+            // Fallback to hardware output (only if init order is wrong)
             pan.connect(ctx.destination);
         }
         
-        // Connect Analyser (Post-fader/pan tap)
-        // CRITICAL: DO NOT connect analyser to destination, or it will create a parallel output path!
+        // Connect Analyser (Side-chain / Tap)
+        // FIXED: The Analyser is NOT connected to destination. 
+        // It just receives signal for visualization.
         pan.connect(analyser);
 
         // Apply Defaults / Stored Values

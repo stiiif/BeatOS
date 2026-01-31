@@ -1,3 +1,4 @@
+// Mixer Component - (Re-output to ensure sync)
 import { TRACKS_PER_GROUP } from '../../utils/constants.js';
 
 export class Mixer {
