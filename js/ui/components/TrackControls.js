@@ -333,14 +333,24 @@ export class TrackControls {
             const param = el.dataset.param;
             if(t.params[param] !== undefined) {
                 el.value = t.params[param];
+                
                 let suffix = '';
-                if(param === 'density') suffix = 'hz';
+                let displayValue = t.params[param].toFixed(2); // Default to 2 decimals
+
+                if(param === 'density') {
+                    suffix = 'hz';
+                    displayValue = t.params[param].toFixed(0); // Integer for Density
+                }
                 if(param === 'grainSize') suffix = 's';
                 if(param === 'pitch') suffix = 'x';
                 if(param === 'overlap') suffix = 'x';
                 if(param === 'scanSpeed') suffix = '';
+                if(param === 'position') {
+                    displayValue = t.params[param].toFixed(3); // 3 decimals for Position
+                }
+
                 if(el.nextElementSibling) {
-                    el.nextElementSibling.innerText = t.params[param].toFixed(2) + suffix;
+                    el.nextElementSibling.innerText = displayValue + suffix;
                 }
             }
         });

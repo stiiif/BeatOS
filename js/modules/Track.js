@@ -45,12 +45,12 @@ export class Track {
             // --- Common / Granular ---
             position: 0.0, 
             spray: 0.00, 
-            scanSpeed: 0.0,
-            density: 15, 
-            overlap: 3, 
-            grainSize: 0.25,
+            scanSpeed: 1.00, // Updated Default
+            density: 20,     // Updated Default
+            overlap: 2.0,    // Updated Default
+            grainSize: 0.10, // Updated Default
             pitch: 1.0, 
-            relGrain: 0.4,
+            relGrain: 2.00,  // Updated Default
             
             // --- 909 / Simple Drum Params ---
             drumType: 'kick', 

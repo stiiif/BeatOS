@@ -514,7 +514,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         voice.position = finalPosition;
         voice.phase = 0;
         voice.grainLength = Math.max(128, Math.floor(grainSize * sampleRate));
-        voice.pitch = Math.max(0.1, Math.min(4.0, pitch));
+        voice.pitch = Math.max(0.05, Math.min(8.0, pitch)); // Updated Limits
         voice.velocity = Math.max(0, Math.min(2.0, velocity));
         voice.startFrame = this.currentFrame;
         voice.trackId = trackId;
