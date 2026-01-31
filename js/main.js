@@ -25,8 +25,6 @@ const visualizer = new Visualizer('visualizer', 'bufferDisplay', audioEngine);
 
 const layoutManager = new LayoutManager();
 
-uiManager.setGranularSynth(granularSynth);
-
 scheduler.setTrackManager(trackManager);
 scheduler.setTracks(trackManager.getTracks());
 
@@ -423,17 +421,7 @@ document.getElementById('lfoWave').addEventListener('change', e => { tracks[uiMa
 document.getElementById('lfoRate').addEventListener('input', e => { const v = parseFloat(e.target.value); tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].rate = v; document.getElementById('lfoRateVal').innerText = v.toFixed(1); });
 document.getElementById('lfoAmt').addEventListener('input', e => { const v = parseFloat(e.target.value); tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].amount = v; document.getElementById('lfoAmtVal').innerText = v.toFixed(2); });
 
-
-
-
-
-
-
-uiManager.initUI(addTrack, addGroup, () => {
-    visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex());
-    visualizer.drawBufferDisplay(); updateTrackControlsVisibility();
-});
-
+uiManager.initUI(addTrack, addGroup, () => { visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex()); visualizer.drawBufferDisplay(); updateTrackControlsVisibility(); });
 window.addEventListener('resize', () => visualizer.resizeCanvas());
 visualizer.resizeCanvas();
 

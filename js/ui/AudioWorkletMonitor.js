@@ -1,5 +1,5 @@
-// js/ui/AudioWorkletMonitor.js
-// AudioWorklet Performance Monitor with drag functionality
+// AudioWorklet Performance Monitor
+// Add this to your UI to visualize worklet performance in real-time
 
 export class AudioWorkletMonitor {
     constructor(granularSynth) {
@@ -14,14 +14,8 @@ export class AudioWorkletMonitor {
             glitchCount: 0
         };
         
-        // Drag state
-        this.isDragging = false;
-        this.dragOffsetX = 0;
-        this.dragOffsetY = 0;
-        
         this.createUI();
         this.startMonitoring();
-        this.initDragHandlers();
     }
     
     createUI() {
@@ -42,14 +36,11 @@ export class AudioWorkletMonitor {
             z-index: 10000;
             min-width: 300px;
             box-shadow: 0 4px 20px rgba(0, 255, 0, 0.3);
-            cursor: move;
-            user-select: none;
         `;
         
         panel.innerHTML = `
-            <div style="font-weight: bold; margin-bottom: 10px; font-size: 14px; color: #0ff; display: flex; justify-content: space-between; align-items: center;">
-                <span>🎵 AudioWorklet Monitor</span>
-                <button id="awm-close" style="background: transparent; border: 1px solid #f00; color: #f00; padding: 2px 6px; border-radius: 3px; cursor: pointer; font-size: 10px;">✕</button>
+            <div style="font-weight: bold; margin-bottom: 10px; font-size: 14px; color: #0ff;">
+                🎵 AudioWorklet Monitor
             </div>
             <div id="awm-content"></div>
             <canvas id="awm-graph" width="280" height="60" style="margin-top: 10px; border: 1px solid #0f0;"></canvas>
@@ -62,66 +53,9 @@ export class AudioWorkletMonitor {
         this.canvas = document.getElementById('awm-graph');
         this.ctx = this.canvas.getContext('2d');
         
-        // Close button handler
-        document.getElementById('awm-close').addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.destroy();
-        });
-        
         // History for graph
         this.voiceHistory = [];
         this.maxHistory = 280;
-    }
-    
-    initDragHandlers() {
-        this.panel.addEventListener('mousedown', (e) => {
-            // Don't start drag if clicking close button
-            if (e.target.id === 'awm-close') return;
-            
-            this.isDragging = true;
-            const rect = this.panel.getBoundingClientRect();
-            this.dragOffsetX = e.clientX - rect.left;
-            this.dragOffsetY = e.clientY - rect.top;
-            
-            // Add dragging class for visual feedback
-            this.panel.style.cursor = 'grabbing';
-            this.panel.style.opacity = '0.9';
-        });
-        
-        document.addEventListener('mousemove', (e) => {
-            if (!this.isDragging) return;
-            
-            e.preventDefault();
-            
-            // Calculate new position
-            let newX = e.clientX - this.dragOffsetX;
-            let newY = e.clientY - this.dragOffsetY;
-            
-            // Keep panel within viewport bounds
-            const rect = this.panel.getBoundingClientRect();
-            const maxX = window.innerWidth - rect.width;
-            const maxY = window.innerHeight - rect.height;
-            
-            newX = Math.max(0, Math.min(newX, maxX));
-            newY = Math.max(0, Math.min(newY, maxY));
-            
-            this.panel.style.left = newX + 'px';
-            this.panel.style.top = newY + 'px';
-            this.panel.style.right = 'auto'; // Override right positioning
-        });
-        
-        document.addEventListener('mouseup', () => {
-            if (this.isDragging) {
-                this.isDragging = false;
-                this.panel.style.cursor = 'move';
-                this.panel.style.opacity = '1';
-            }
-        });
-        
-        // Prevent text selection while dragging
-        this.panel.addEventListener('dragstart', (e) => {
-            e.preventDefault();
-        });
     }
     
     startMonitoring() {

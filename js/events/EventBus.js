@@ -1,35 +1,34 @@
 /**
- * EventBus.js
- * UNIVERSAL SINGLETON IMPLEMENTATION
- * * This robust implementation guarantees that all parts of the app
- * communicate on the exact same channel, regardless of import style.
+ * EventBus - A simple Publish/Subscribe system for decoupling components.
+ * * Usage:
+ * import { globalBus } from './EventBus.js';
+ * globalBus.on('EVENT_NAME', (data) => { ... });
+ * globalBus.emit('EVENT_NAME', { some: 'data' });
  */
-
-class EventBus {
+export class EventBus {
     constructor() {
-        // Singleton pattern: If an instance exists, return it.
-        // This ensures 'new EventBus()' in main.js returns the SAME object
-        // as the one used in Scheduler.js
-        if (EventBus.instance) {
-            return EventBus.instance;
-        }
-
         this.listeners = {};
-        EventBus.instance = this;
     }
 
     /**
      * Subscribe to an event
+     * @param {string} event - The event name
+     * @param {Function} callback - The function to call when event is emitted
      */
     on(event, callback) {
         if (!this.listeners[event]) {
             this.listeners[event] = [];
         }
         this.listeners[event].push(callback);
+        
+        // Return unsubscribe function for convenience
+        return () => this.off(event, callback);
     }
 
     /**
      * Unsubscribe from an event
+     * @param {string} event 
+     * @param {Function} callback 
      */
     off(event, callback) {
         if (!this.listeners[event]) return;
@@ -38,47 +37,28 @@ class EventBus {
 
     /**
      * Emit an event to all subscribers
+     * @param {string} event 
+     * @param {any} data 
      */
     emit(event, data) {
         if (this.listeners[event]) {
-            this.listeners[event].forEach(callback => callback(data));
+            this.listeners[event].forEach(callback => {
+                try {
+                    callback(data);
+                } catch (error) {
+                    console.error(`Error in EventBus listener for "${event}":`, error);
+                }
+            });
         }
     }
-
+    
     /**
-     * Dispatch alias (for compatibility with some event bus patterns)
+     * Clear all listeners (useful for testing/reset)
      */
-    dispatch(event, data) {
-        this.emit(event, data);
-    }
-
-    // ============================================================
-    // STATIC PROXIES
-    // These allow calls like 'EventBus.emit()' to work directly
-    // without needing to instantiate the class first.
-    // ============================================================
-
-    static on(event, callback) {
-        if (!this.instance) new EventBus();
-        this.instance.on(event, callback);
-    }
-
-    static off(event, callback) {
-        if (!this.instance) new EventBus();
-        this.instance.off(event, callback);
-    }
-
-    static emit(event, data) {
-        if (!this.instance) new EventBus();
-        this.instance.emit(event, data);
+    clear() {
+        this.listeners = {};
     }
 }
 
-// Initialize the singleton immediately
-const eventBusInstance = new EventBus();
-
-// Export the Class (which behaves as a Singleton factory)
-export { EventBus };
-
-// Export the Instance as default (for robust importing)
-export default eventBusInstance;
+// Export a singleton instance for global use
+export const globalBus = new EventBus();

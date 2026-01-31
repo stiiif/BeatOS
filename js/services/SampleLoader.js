@@ -1,12 +1,7 @@
-// js/services/SampleLoader.js
+// Sample Loader Service
 export class SampleLoader {
     constructor(audioEngine) {
         this.audioEngine = audioEngine;
-        this.granularSynth = null;
-    }
-
-    setGranularSynth(synth) {
-        this.granularSynth = synth;
     }
 
     async loadSampleFromUrl(url, track) {
@@ -23,8 +18,8 @@ export class SampleLoader {
 
             let audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
             
-            // ✅ FIX: Always switch to granular when loading a sample
-            track.type = 'granular';
+            // Skip trimming - preserves full sample
+            // Auto-Trim removed to prevent potential issues
             
             // Update Track with new sample data
             track.customSample = {
@@ -34,19 +29,9 @@ export class SampleLoader {
             };
             track.buffer = audioBuffer;
             
-            // Skip RMS analysis to prevent freezes
+            // Skip RMS analysis - it was causing 15-37 second freezes!
+            // GranularSynth handles empty rmsMap gracefully
             track.rmsMap = [];
-            
-            // ✅ CRITICAL: Reload buffer in AudioWorklet
-            if (this.granularSynth && this.granularSynth.isInitialized) {
-                console.log(`[SampleLoader] Switching track ${track.id} to granular & reloading buffer`);
-                
-                // Force worklet to forget old buffer
-                this.granularSynth.loadedBuffers.delete(track.id);
-                
-                // Load new buffer
-                await this.granularSynth.ensureBufferLoaded(track);
-            }
             
             return audioBuffer;
         } catch (error) {

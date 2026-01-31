@@ -37,55 +37,49 @@ export class TrackControls {
         this.searchModal = modal;
     }
 
-    setGranularSynth(synth) {
-        if (this.searchModal && this.searchModal.loader) {
-            this.searchModal.loader.setGranularSynth(synth);
-        }
-    }
-
     // ============================================================================
     // TRACK SELECTION
     // ============================================================================
 
     selectTrack(idx, visualizerCallback = null) {
-        if (this.trackLabelElements[this.selectedTrackIndex])
+        if(this.trackLabelElements[this.selectedTrackIndex])
             this.trackLabelElements[this.selectedTrackIndex].classList.remove('selected');
         this.selectedTrackIndex = idx;
-        if (this.trackLabelElements[this.selectedTrackIndex])
+        if(this.trackLabelElements[this.selectedTrackIndex])
             this.trackLabelElements[this.selectedTrackIndex].classList.add('selected');
-
+        
         const displayNum = idx + 1;
         const numEl = document.getElementById('currentTrackNum');
-        if (numEl) numEl.innerText = displayNum < 10 ? '0' + displayNum : displayNum;
-
+        if(numEl) numEl.innerText = displayNum < 10 ? '0'+displayNum : displayNum;
+        
         const normalGrp = Math.floor(idx / TRACKS_PER_GROUP);
         const grp = this.randomChokeMode ? this.randomChokeGroups[idx] : normalGrp;
         const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
         const groupColorGlow = `hsla(${grp * 45}, 70%, 50%, 0.4)`;
-
+        
         const grpLbl = document.getElementById('trackGroupLabel');
-        if (grpLbl) {
+        if(grpLbl) {
             grpLbl.innerText = `GRP ${grp}`;
             grpLbl.style.color = groupColor;
         }
-
+        
         this.updateCustomTrackHeader(idx, grp, groupColor);
 
         const indicator = document.getElementById('trackIndicator');
-        if (indicator) {
+        if(indicator) {
             indicator.style.backgroundColor = groupColor;
             indicator.style.boxShadow = `0 0 8px ${groupColorGlow}`;
         }
-
+        
         const rightPanel = document.querySelector('.right-pane');
         if (rightPanel) {
             rightPanel.style.setProperty('--group-color', groupColor);
             rightPanel.style.setProperty('--group-color-glow', groupColorGlow);
         }
-
+        
         this.updateKnobs();
         this.updateLfoUI();
-        this.updateTrackControlsVisibility();
+        this.updateTrackControlsVisibility(); 
         if (visualizerCallback) visualizerCallback();
     }
 
@@ -104,7 +98,7 @@ export class TrackControls {
         const displayNum = idx + 1 < 10 ? `0${idx + 1}` : idx + 1;
         let trackName = `Track ${displayNum}`;
         let trackType = 'Synth';
-
+        
         if (t.customSample) {
             trackName = t.customSample.name;
             trackType = 'Sample';
@@ -122,7 +116,7 @@ export class TrackControls {
         // Row 1: Track info and search
         const row1 = document.createElement('div');
         row1.className = 'flex items-center gap-2 w-full';
-
+        
         const indicator = document.createElement('span');
         indicator.id = 'trackIndicator';
         indicator.className = 'w-3 h-3 rounded-full transition-colors duration-200 shrink-0';
@@ -158,7 +152,7 @@ export class TrackControls {
                 else if (t.customSample) query = t.customSample.name.replace('.wav', '').replace('.mp3', '');
                 else if (t.autoName) query = t.autoName;
                 else query = "drum hit";
-
+                
                 this.searchModal.open(t, query);
             } else {
                 alert("Search module not initialized");
@@ -171,22 +165,22 @@ export class TrackControls {
         // Row 2: Type buttons
         const row2 = document.createElement('div');
         row2.className = 'flex gap-1 w-full justify-between';
-
+        
         const rstBtn = document.createElement('button');
         rstBtn.id = 'resetParamBtn';
         rstBtn.className = 'text-[9px] bg-neutral-700 hover:bg-neutral-600 text-neutral-300 px-1.5 py-1 rounded transition border border-neutral-600 min-w-[24px]';
         rstBtn.innerHTML = '<i class="fas fa-undo"></i>';
         rstBtn.title = 'Reset Parameters';
         rstBtn.onclick = () => {
-            const t = this.tracks[this.selectedTrackIndex];
-            if (t.type === 'granular') {
-                t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
-                t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
-            } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
-            t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
-            t.lfos.forEach(lfo => { lfo.target = 'none'; });
-            this.updateKnobs();
-            this.updateLfoUI();
+             const t = this.tracks[this.selectedTrackIndex];
+             if (t.type === 'granular') {
+                 t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
+                 t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
+             } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
+             t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
+             t.lfos.forEach(lfo => { lfo.target = 'none'; });
+             this.updateKnobs();
+             this.updateLfoUI();
         };
         row2.appendChild(rstBtn);
 
@@ -198,16 +192,16 @@ export class TrackControls {
                 if (!this.trackManager || !this.trackManager.audioEngine) return;
                 const ae = this.trackManager.audioEngine;
                 const t = this.tracks[this.selectedTrackIndex];
-
+                
                 if (isAuto) {
                     t.type = 'automation';
                     t.steps.fill(0);
                     const stepElements = this.matrixStepElements[t.id];
-                    if (stepElements) {
-                        stepElements.forEach(el => {
-                            el.className = 'step-btn';
-                            el.classList.remove('active', 'vel-1', 'vel-2', 'vel-3');
-                        });
+                    if(stepElements) {
+                         stepElements.forEach(el => { 
+                             el.className = 'step-btn'; 
+                             el.classList.remove('active', 'vel-1', 'vel-2', 'vel-3'); 
+                         });
                     }
                     this.updateTrackControlsVisibility();
                 } else if (is909) {
@@ -217,7 +211,7 @@ export class TrackControls {
                     this.updateKnobs();
                 } else if (label === 'SMP') {
                     const sampleInput = document.getElementById('sampleInput');
-                    if (sampleInput) sampleInput.click();
+                    if(sampleInput) sampleInput.click();
                 } else {
                     t.type = 'granular';
                     this.updateTrackControlsVisibility();
@@ -228,7 +222,7 @@ export class TrackControls {
                         t.rmsMap = ae.analyzeBuffer(newBuf);
                     }
                 }
-                this.selectTrack(this.selectedTrackIndex);
+                this.selectTrack(this.selectedTrackIndex); 
             };
             return btn;
         };
@@ -246,36 +240,36 @@ export class TrackControls {
         // Row 3: Choke groups
         const row3 = document.createElement('div');
         row3.className = 'flex gap-0.5 w-full';
-
+        
         const grpLabel = document.createElement('span');
         grpLabel.innerText = 'CHK';
         grpLabel.className = 'text-[9px] font-bold text-neutral-500 mr-1 flex items-center';
         row3.appendChild(grpLabel);
 
-        for (let i = 0; i < 8; i++) {
+        for(let i=0; i<8; i++) {
             const btn = document.createElement('button');
             const targetGroup = i + 1;
             const isAssigned = t.chokeGroup === targetGroup;
-
+            
             const bgClass = isAssigned ? '' : 'bg-neutral-800 text-neutral-500';
             const style = isAssigned ? `background-color: #ef4444; color: #fff; border-color: #b91c1c;` : '';
-
+            
             btn.className = `flex-1 h-4 text-[8px] border border-neutral-700 rounded flex items-center justify-center hover:bg-neutral-700 transition ${bgClass}`;
             btn.style.cssText = style;
             btn.innerText = targetGroup;
-
+            
             btn.onclick = () => {
                 if (t.chokeGroup === targetGroup) {
-                    t.chokeGroup = 0;
+                    t.chokeGroup = 0; 
                 } else {
-                    t.chokeGroup = targetGroup;
+                    t.chokeGroup = targetGroup; 
                 }
-                this.selectTrack(this.selectedTrackIndex);
+                this.selectTrack(this.selectedTrackIndex); 
             };
-
+            
             row3.appendChild(btn);
         }
-
+        
         container.appendChild(row3);
     }
 
@@ -293,19 +287,19 @@ export class TrackControls {
         const lfoSection = document.getElementById('lfoSection');
         const typeLabel = document.getElementById('trackTypeLabel');
         const speedSel = document.getElementById('autoSpeedSelect');
-        const chokeSel = document.getElementById('chokeGroupSelect');
+        const chokeSel = document.getElementById('chokeGroupSelect'); 
 
-        if (granularControls) granularControls.classList.add('hidden');
-        if (drumControls) drumControls.classList.add('hidden');
-        if (lfoSection) lfoSection.classList.add('hidden');
-        if (autoControls) autoControls.classList.add('hidden');
+        if(granularControls) granularControls.classList.add('hidden');
+        if(drumControls) drumControls.classList.add('hidden');
+        if(lfoSection) lfoSection.classList.add('hidden');
+        if(autoControls) autoControls.classList.add('hidden');
 
         if (t.type === 'automation') {
-            if (autoControls) autoControls.classList.remove('hidden');
-            if (speedSel) speedSel.value = t.clockDivider || 1;
-        }
+            if(autoControls) autoControls.classList.remove('hidden');
+            if(speedSel) speedSel.value = t.clockDivider || 1;
+        } 
         else if (t.type === 'simple-drum') {
-            if (drumControls) drumControls.classList.remove('hidden');
+            if(drumControls) drumControls.classList.remove('hidden');
             document.querySelectorAll('.drum-sel-btn').forEach(btn => {
                 if (btn.dataset.drum === t.params.drumType) {
                     btn.classList.replace('text-neutral-400', 'text-white');
@@ -318,11 +312,11 @@ export class TrackControls {
         }
         else {
             const wasHidden = granularControls && granularControls.classList.contains('hidden');
-
-            if (granularControls) granularControls.classList.remove('hidden');
-            if (lfoSection) lfoSection.classList.remove('hidden');
-
-            if (wasHidden) {
+            
+            if(granularControls) granularControls.classList.remove('hidden');
+            if(lfoSection) lfoSection.classList.remove('hidden');
+            
+            if(wasHidden) {
                 setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
             }
         }
@@ -334,18 +328,18 @@ export class TrackControls {
 
     updateKnobs() {
         const t = this.tracks[this.selectedTrackIndex];
-        if (!t) return;
+        if(!t) return;
         document.querySelectorAll('.param-slider').forEach(el => {
             const param = el.dataset.param;
-            if (t.params[param] !== undefined) {
+            if(t.params[param] !== undefined) {
                 el.value = t.params[param];
                 let suffix = '';
-                if (param === 'density') suffix = 'hz';
-                if (param === 'grainSize') suffix = 's';
-                if (param === 'pitch') suffix = 'x';
-                if (param === 'overlap') suffix = 'x';
-                if (param === 'scanSpeed') suffix = '';
-                if (el.nextElementSibling) {
+                if(param === 'density') suffix = 'hz';
+                if(param === 'grainSize') suffix = 's';
+                if(param === 'pitch') suffix = 'x';
+                if(param === 'overlap') suffix = 'x';
+                if(param === 'scanSpeed') suffix = '';
+                if(el.nextElementSibling) {
                     el.nextElementSibling.innerText = t.params[param].toFixed(2) + suffix;
                 }
             }
@@ -357,15 +351,15 @@ export class TrackControls {
     // ============================================================================
 
     updateLfoUI() {
-        if (!this.tracks[this.selectedTrackIndex]) return;
+        if(!this.tracks[this.selectedTrackIndex]) return;
         const lfo = this.tracks[this.selectedTrackIndex].lfos[this.selectedLfoIndex];
         const normalGrp = Math.floor(this.selectedTrackIndex / TRACKS_PER_GROUP);
         const grp = this.randomChokeMode ? this.randomChokeGroups[this.selectedTrackIndex] : normalGrp;
         const groupColorDark = `hsl(${grp * 45}, 70%, 35%)`;
-
+        
         document.querySelectorAll('.lfo-tab').forEach(b => {
             const i = parseInt(b.dataset.lfo);
-            if (i === this.selectedLfoIndex) {
+            if(i === this.selectedLfoIndex) {
                 b.classList.remove('text-neutral-400', 'hover:bg-neutral-700');
                 b.classList.add('text-white');
                 b.style.backgroundColor = groupColorDark;
@@ -375,16 +369,16 @@ export class TrackControls {
                 b.style.backgroundColor = '';
             }
         });
-
+        
         const rateVal = document.getElementById('lfoRateVal');
         const amtVal = document.getElementById('lfoAmtVal');
-
+        
         document.getElementById('lfoTarget').value = lfo.target;
         document.getElementById('lfoWave').value = lfo.wave;
         document.getElementById('lfoRate').value = lfo.rate;
-        if (rateVal) rateVal.innerText = lfo.rate.toFixed(1);
+        if(rateVal) rateVal.innerText = lfo.rate.toFixed(1);
         document.getElementById('lfoAmt').value = lfo.amount;
-        if (amtVal) amtVal.innerText = lfo.amount.toFixed(2);
+        if(amtVal) amtVal.innerText = lfo.amount.toFixed(2);
     }
 
     // ============================================================================

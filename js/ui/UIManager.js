@@ -14,7 +14,7 @@ export class UIManager {
         this.trackManager = null;
         this.visualizerCallback = null;
         this.searchModal = null;
-
+        
         // Initialize all components
         this.grid = new SequencerGrid();
         this.trackControls = new TrackControls();
@@ -42,7 +42,7 @@ export class UIManager {
 
     initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
-
+        
         this.grid.initializeGrid(
             addTrackCallback,
             addGroupCallback,
@@ -58,47 +58,21 @@ export class UIManager {
         this.grooveControls.initGrooveControls();
         this.syncGridElements();
 
-    if (this.trackManager && this.trackManager.audioEngine) {
-        this.searchModal = new SearchModal(this.trackManager.audioEngine);
-        this.trackControls.setSearchModal(this.searchModal);
-        this.grooveControls.setSearchModal(this.searchModal);
-        
-        // ✅ ADD THESE TWO LINES:
-        this.trackControls.setGranularSynth(this.granularSynth);
-        this.grooveControls.setGranularSynth(this.granularSynth);
-    }
+        if (this.trackManager && this.trackManager.audioEngine) {
+            this.searchModal = new SearchModal(this.trackManager.audioEngine);
+            this.trackControls.setSearchModal(this.searchModal);
+            this.grooveControls.setSearchModal(this.searchModal);
+        }
 
-    this.tracks.forEach(t => {
-        this.appendTrackRow(t.id, visualizerCallback);
-    });
+        this.tracks.forEach(t => {
+            this.appendTrackRow(t.id, visualizerCallback);
+        });
 
         window.addEventListener('trackSampleLoaded', (e) => {
-            const { trackId, sampleName, switchedToGranular } = e.detail;
-
-            if (trackId === this.getSelectedTrackIndex()) {
-                console.log(`[UIManager] Sample loaded for track ${trackId}: ${sampleName}`);
-
-                // ✅ Force control panel refresh
-                this.updateTrackControlsVisibility();
-                this.updateKnobs();
-
-                // ✅ Update track header to show sample name
+            if (e.detail.trackId === this.getSelectedTrackIndex()) {
                 this.selectTrack(this.getSelectedTrackIndex());
-
-                // ✅ Trigger visualizer update
-                if (this.visualizerCallback) {
-                    this.visualizerCallback();
-                }
             }
         });
-    }
-
-    setGranularSynth(synth) {
-        this.granularSynth = synth;
-        // If search modal already exists, wire it up
-        if (this.searchModal && this.searchModal.loader) {
-            this.searchModal.loader.setGranularSynth(synth);
-        }
     }
 
     syncGridElements() {
@@ -114,7 +88,7 @@ export class UIManager {
 
     appendTrackRow(trk, visualizerCallback = null) {
         const randomChokeInfo = this.trackOps.getRandomChokeInfo();
-
+        
         this.grid.appendTrackRow(
             trk, visualizerCallback, randomChokeInfo.mode, randomChokeInfo.groups,
             (t, s) => this.toggleStep(t, s), (t) => this.toggleMute(t), (t) => this.toggleSolo(t),
