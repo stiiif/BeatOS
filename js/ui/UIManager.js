@@ -1,4 +1,3 @@
-// js/ui/UIManager.js
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS, MAX_TRACKS } from '../utils/constants.js';
 import { SequencerGrid } from './components/SequencerGrid.js';
 import { TrackControls } from './components/TrackControls.js';
@@ -17,7 +16,6 @@ export class UIManager {
         this.searchModal = null;
         this.mixer = null;
         
-        // Initialize all components
         this.grid = new SequencerGrid();
         this.trackControls = new TrackControls();
         this.grooveControls = new GrooveControls();
@@ -71,7 +69,7 @@ export class UIManager {
             this.trackControls.setSearchModal(this.searchModal);
             this.grooveControls.setSearchModal(this.searchModal);
             
-            // Init Mixer
+            // Initialize Mixer
             this.mixer = new Mixer('.future-panel', this.trackManager, this.trackManager.audioEngine);
             this.mixer.render();
         }
@@ -109,7 +107,7 @@ export class UIManager {
             (t) => this.randomizeTrackPattern(t), (t, cb) => this.selectTrack(t, cb)
         );
         this.syncGridElements();
-        if(this.mixer) this.mixer.render(); // Update mixer
+        if(this.mixer) this.mixer.render();
     }
 
     toggleStep(trk, step) {

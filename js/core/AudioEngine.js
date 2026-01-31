@@ -20,6 +20,7 @@ export class AudioEngine {
         
         this.generateDriveCurves();
         this.initMasterBus();
+        // Initialize 4 Group Buses
         for(let i=0; i<4; i++) {
             this.initGroupBus(i);
         }
@@ -63,9 +64,14 @@ export class AudioEngine {
         if(!this.audioCtx) return;
         const ctx = this.audioCtx;
         const input = ctx.createGain();
+        
+        // Master Limiter
         const limiter = ctx.createDynamicsCompressor(); 
         limiter.threshold.value = -1.0;
         limiter.ratio.value = 20.0;
+        limiter.attack.value = 0.003;
+        limiter.release.value = 0.25;
+        
         const volume = ctx.createGain();
         
         input.connect(limiter);
@@ -80,22 +86,26 @@ export class AudioEngine {
         const ctx = this.audioCtx;
         const input = ctx.createGain();
         
+        // Group EQ (Kill Switches essentially)
         const eqLow = ctx.createBiquadFilter(); eqLow.type = 'lowshelf'; eqLow.frequency.value = 250;
         const eqMid = ctx.createBiquadFilter(); eqMid.type = 'peaking'; eqMid.frequency.value = 1000; eqMid.Q.value = 1;
         const eqHigh = ctx.createBiquadFilter(); eqHigh.type = 'highshelf'; eqHigh.frequency.value = 4000;
         
+        // Drive Section
         const preDriveGain = ctx.createGain(); 
         const shaper = ctx.createWaveShaper();
         shaper.curve = this.driveCurves['Soft Clipping']; 
         shaper.oversample = '2x';
         const postDriveGain = ctx.createGain(); 
         
+        // Compressor
         const compressor = ctx.createDynamicsCompressor();
         compressor.threshold.value = 0; 
         compressor.ratio.value = 1;
         
         const volume = ctx.createGain();
         
+        // Chain
         input.connect(eqLow);
         eqLow.connect(eqMid);
         eqMid.connect(eqHigh);
@@ -122,17 +132,21 @@ export class AudioEngine {
         const input = ctx.createGain();
         const trim = ctx.createGain(); 
         
+        // Global Track Filters (from TrackControls)
         const hp = ctx.createBiquadFilter(); hp.type = 'highpass';
         const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
         
+        // Mixer EQ (3-Band)
         const eqLow = ctx.createBiquadFilter(); eqLow.type = 'lowshelf'; eqLow.frequency.value = 200;
         const eqMid = ctx.createBiquadFilter(); eqMid.type = 'peaking'; eqMid.frequency.value = 1000; eqMid.Q.value = 1;
         const eqHigh = ctx.createBiquadFilter(); eqHigh.type = 'highshelf'; eqHigh.frequency.value = 3000;
         
+        // Drive
         const preDrive = ctx.createGain();
         const shaper = ctx.createWaveShaper();
         shaper.curve = this.driveCurves['Soft Clipping'];
         
+        // Compressor
         const comp = ctx.createDynamicsCompressor();
         comp.threshold.value = -10; 
         comp.ratio.value = 1; 
@@ -140,10 +154,12 @@ export class AudioEngine {
         const vol = ctx.createGain();
         const pan = ctx.createStereoPanner();
         
+        // Analyser for visualizer
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 2048;
         analyser.smoothingTimeConstant = 0.85;
 
+        // Connect Chain
         input.connect(trim);
         trim.connect(hp);
         hp.connect(lp);
@@ -156,6 +172,7 @@ export class AudioEngine {
         comp.connect(vol);
         vol.connect(pan);
         
+        // Route to appropriate Group
         const groupIndex = Math.floor(track.id / TRACKS_PER_GROUP);
         if (this.groupBuses[groupIndex]) {
             pan.connect(this.groupBuses[groupIndex].input);
@@ -167,12 +184,13 @@ export class AudioEngine {
         
         pan.connect(analyser);
 
-        // Defaults
+        // Apply Defaults / Stored Values
         hp.frequency.value = this.getMappedFrequency(track.params.hpFilter || 20, 'hp');
         lp.frequency.value = this.getMappedFrequency(track.params.filter || 20000, 'lp');
         vol.gain.value = track.params.volume || 0.8;
         pan.pan.value = track.params.pan || 0;
 
+        // Store references for automation/UI
         track.bus = { 
             input, trim, hp, lp, 
             eq: { low: eqLow, mid: eqMid, high: eqHigh },
@@ -182,6 +200,7 @@ export class AudioEngine {
     }
 
     setDriveAmount(node, amount) {
+        // Simple 0 to +20dB boost into shaper
         const gain = 1 + (amount * 20); 
         node.gain.value = gain;
     }
@@ -191,6 +210,7 @@ export class AudioEngine {
             node.ratio.value = 1;
             node.threshold.value = 0;
         } else {
+            // One-knob compression logic
             node.ratio.value = 1 + (amount * 12);
             node.threshold.value = 0 - (amount * 40);
         }
@@ -208,6 +228,7 @@ export class AudioEngine {
         else return min + (max - min) * (1 - Math.pow(1 - norm, 3));
     }
 
+    // --- UTILS (Kept from previous) ---
     trimBuffer(buffer, staticThreshold = 0.002, useTransientDetection = true) {
         if (!buffer) return null;
         const numChannels = buffer.numberOfChannels;
@@ -258,7 +279,6 @@ export class AudioEngine {
                 newData[i] = oldData[i + startIndex];
             }
         }
-        console.log(`[AudioEngine] Smart Trim: Removed ${(startIndex / buffer.sampleRate).toFixed(4)}s`);
         return newBuffer;
     }
 
@@ -384,13 +404,13 @@ export class AudioEngine {
         const out = track.bus.input;
 
         if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.getMappedFrequency(Math.max(20, track.params.hpFilter), 'hp'), t);
+        
         let lpFreq = this.getMappedFrequency(Math.max(100, track.params.filter), 'lp');
         let targetLp = lpFreq + filterOffset;
         targetLp = Math.max(100, Math.min(22000, targetLp));
+        
         if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(targetLp, t);
 
-        // Similar Drum Synth Logic as before...
-        // Simplified re-insertion for brevity but keeping functional logic:
         if (type === 'kick') {
             const osc = ctx.createOscillator(); const gain = ctx.createGain();
             const baseFreq = 50 + (tune * 100); const finalDecay = (0.01 + (decayVal * 0.6)) * decayMult;

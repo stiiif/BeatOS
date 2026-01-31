@@ -5,38 +5,32 @@ import { NUM_STEPS, NUM_LFOS } from '../utils/constants.js';
 export class Track {
     constructor(id) {
         this.id = id;
-        this.type = 'granular'; // 'granular', 'simple-drum', or 'automation'
-        
-        // Automation specific
-        this.clockDivider = 1; // 1=1x, 2=1/2x, 4=1/4x, 8=1/8x
-        this.lastAutoValue = 0; // To track state changes
+        this.type = 'granular'; 
+        this.clockDivider = 1; 
+        this.lastAutoValue = 0; 
         
         this.buffer = null;
         this.rmsMap = []; 
-        
-        // V2 Engine: Steps use integers 0-3 (0=Off, 1=Ghost, 2=Normal, 3=Accent)
         this.steps = new Uint8Array(NUM_STEPS).fill(0);
-        
-        // V2 Engine: Microtiming offsets in milliseconds
         this.microtiming = new Float32Array(NUM_STEPS).fill(0);
-        
         this.lfos = Array.from({ length: NUM_LFOS }, () => new LFO());
         
         this.playhead = 0; 
-        
         this.muted = false;
         this.soloed = false;
         this.stepLock = false; 
         this.ignoreRandom = false; 
-        
-        // --- NEW: Choke Group Logic ---
-        this.chokeGroup = 0; // 0 = None, 1-8 = Shared Choke Groups
-        this.activeSources = new Set(); // Store active WebAudio nodes to stop them
+        this.chokeGroup = 0; 
+        this.activeSources = new Set(); 
 
         this.bus = {
             input: null,
+            trim: null, 
             hp: null,
             lp: null,
+            eq: { low: null, mid: null, high: null }, 
+            drive: { input: null, shaper: null }, 
+            comp: null, 
             vol: null,
             pan: null
         };
@@ -45,12 +39,12 @@ export class Track {
             // --- Common / Granular ---
             position: 0.0, 
             spray: 0.00, 
-            scanSpeed: 1.00, // Updated Default
-            density: 20,     // Updated Default
-            overlap: 2.0,    // Updated Default
-            grainSize: 0.10, // Updated Default
+            scanSpeed: 1.00, 
+            density: 20,     
+            overlap: 2.0,    
+            grainSize: 0.10, 
             pitch: 1.0, 
-            relGrain: 2.00,  // Updated Default
+            relGrain: 2.00,  
             
             // --- 909 / Simple Drum Params ---
             drumType: 'kick', 
@@ -62,11 +56,22 @@ export class Track {
             ampDecay: 0.01,
             ampRelease: 0.1,
             
-            // --- Track Bus ---
+            // --- Track Bus (Mixer) ---
             hpFilter: 20,
             filter: 20000, 
             volume: 0.8, 
-            pan: 0 
+            pan: 0,
+            
+            // --- New Mixer Params ---
+            gain: 1.0, 
+            eqLow: 0,  
+            eqMid: 0,  
+            eqHigh: 0, 
+            eqMidFreq: 1000,
+            drive: 0, 
+            comp: 0,  
+            sendA: 0,
+            sendB: 0
         };
     }
 
@@ -80,12 +85,9 @@ export class Track {
     stopAllSources(time = 0) {
         this.activeSources.forEach(src => {
             try {
-                // Schedule stop if time is provided, otherwise stop immediately
                 if (time > 0) src.stop(time);
                 else src.stop();
-            } catch(e) {
-                // Ignore errors if source already stopped
-            }
+            } catch(e) {}
         });
         this.activeSources.clear();
     }

@@ -17,55 +17,42 @@ export class Mixer {
         if (!this.container) return;
         this.container.innerHTML = '';
         
-        // Main Horizontal Container
         const mixerContainer = document.createElement('div');
         mixerContainer.className = 'mixer-container custom-scrollbar';
         
         const tracks = this.trackManager.getTracks();
         
-        // 1. Render all Track Lanes side-by-side
         tracks.forEach(track => {
             mixerContainer.appendChild(this.createTrackStrip(track));
         });
 
-        // 2. Render Group Lanes
         for(let i=0; i<4; i++) {
             mixerContainer.appendChild(this.createGroupStrip(i));
         }
 
-        // 3. Render Master Lane
         mixerContainer.appendChild(this.createMasterStrip());
 
         this.container.appendChild(mixerContainer);
         this.isRendered = true;
     }
 
-    /**
-     * Creates a Rotary Knob DOM Element
-     * Handles vertical drag for value changes
-     */
     createKnob(label, value, min, max, step, onChange, colorClass = '') {
         const wrapper = document.createElement('div');
         wrapper.className = 'mixer-pot';
         
-        // Label
         const lbl = document.createElement('label');
         lbl.innerText = label;
         wrapper.appendChild(lbl);
 
-        // Knob Visual Container
         const knobOuter = document.createElement('div');
         knobOuter.className = `knob-outer ${colorClass}`;
         
-        // Rotating Inner Part
         const knobInner = document.createElement('div');
         knobInner.className = 'knob-inner';
         
-        // Indicator Line
         const line = document.createElement('div');
         line.className = 'knob-line';
         
-        // Value Tooltip
         const tooltip = document.createElement('div');
         tooltip.className = 'knob-value-tip';
         tooltip.innerText = value.toFixed(step < 1 ? 2 : 0);
@@ -75,13 +62,11 @@ export class Mixer {
         knobOuter.appendChild(tooltip);
         wrapper.appendChild(knobOuter);
 
-        // State
         let currentValue = value;
         let startY = 0;
         let startVal = 0;
         let isDragging = false;
 
-        // Visual Rotation Logic (-135deg to +135deg)
         const updateRotation = (val) => {
             const range = max - min;
             const pct = (val - min) / range;
@@ -90,39 +75,30 @@ export class Mixer {
             tooltip.innerText = val.toFixed(step < 1 ? 2 : 0);
         };
 
-        // Initial set
         updateRotation(currentValue);
 
-        // Mouse Down (Start Drag)
         knobOuter.addEventListener('mousedown', (e) => {
             isDragging = true;
             startY = e.clientY;
             startVal = currentValue;
             wrapper.classList.add('dragging');
             document.body.style.cursor = 'ns-resize'; 
-            e.preventDefault(); // Prevent text selection
+            e.preventDefault();
             
-            // Attach global listeners
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
 
-        // Mouse Move (Drag)
         const onMouseMove = (e) => {
             if (!isDragging) return;
-            
-            const deltaY = startY - e.clientY; // Up is positive
+            const deltaY = startY - e.clientY;
             const range = max - min;
-            // Sensitivity: 200px drag = full range
             const sensitivity = range / 200; 
             
             let newVal = startVal + (deltaY * sensitivity);
-            newVal = Math.max(min, Math.min(max, newVal)); // Clamp
+            newVal = Math.max(min, Math.min(max, newVal));
             
-            // Snap to step
-            if (step > 0) {
-                newVal = Math.round(newVal / step) * step;
-            }
+            if (step > 0) newVal = Math.round(newVal / step) * step;
 
             if (newVal !== currentValue) {
                 currentValue = newVal;
@@ -131,7 +107,6 @@ export class Mixer {
             }
         };
 
-        // Mouse Up (End Drag)
         const onMouseUp = () => {
             isDragging = false;
             wrapper.classList.remove('dragging');
@@ -140,12 +115,10 @@ export class Mixer {
             document.removeEventListener('mouseup', onMouseUp);
         };
 
-        // Double Click to Reset
         knobOuter.addEventListener('dblclick', () => {
             let target = 0;
-            // Simple heuristics for defaults
-            if (min >= 0) target = min; // Unipolar defaults to min
-            if (min < 0 && max > 0) target = 0; // Bipolar defaults to 0
+            if (min >= 0) target = min; 
+            if (min < 0 && max > 0) target = 0; 
             if (label === 'Freq') target = 1000;
             if (label === 'Gain') target = 1.0;
             
@@ -161,7 +134,6 @@ export class Mixer {
         const strip = document.createElement('div');
         strip.className = 'mixer-strip';
         
-        // Header
         const header = document.createElement('div');
         header.className = 'strip-header';
         header.innerHTML = `
@@ -170,17 +142,14 @@ export class Mixer {
         `;
         strip.appendChild(header);
 
-        // -- SCROLLABLE CONTROLS AREA --
         const controls = document.createElement('div');
         controls.className = 'strip-controls custom-scrollbar';
 
-        // Gain (Trim)
         controls.appendChild(this.createKnob('Gain', track.params.gain || 1, 0, 2, 0.01, (v) => {
             track.params.gain = v;
             if(track.bus.trim) track.bus.trim.gain.value = v;
         }, 'knob-color-green'));
 
-        // EQ Section
         const eqSec = document.createElement('div');
         eqSec.className = 'eq-section';
         eqSec.innerHTML = `<div class="section-label">EQ</div>`;
@@ -207,7 +176,6 @@ export class Mixer {
         
         controls.appendChild(eqSec);
 
-        // Sends Section
         const sendSec = document.createElement('div');
         sendSec.className = 'eq-section';
         sendSec.innerHTML = `<div class="section-label">SENDS</div>`;
@@ -215,7 +183,6 @@ export class Mixer {
         sendSec.appendChild(this.createKnob('B', track.params.sendB || 0, 0, 1, 0.01, (v) => track.params.sendB = v, 'knob-color-yellow'));
         controls.appendChild(sendSec);
 
-        // Drive & Comp
         controls.appendChild(this.createKnob('Drive', track.params.drive || 0, 0, 1, 0.01, (v) => {
             track.params.drive = v;
             if(track.bus.drive && track.bus.drive.input) this.audioEngine.setDriveAmount(track.bus.drive.input, v);
@@ -226,7 +193,6 @@ export class Mixer {
             if(track.bus.comp) this.audioEngine.setCompAmount(track.bus.comp, v);
         }, 'knob-color-purple'));
 
-        // Pan
         controls.appendChild(this.createKnob('Pan', track.params.pan, -1, 1, 0.01, (v) => {
             track.params.pan = v;
             if(track.bus.pan) track.bus.pan.pan.value = v;
@@ -234,11 +200,9 @@ export class Mixer {
 
         strip.appendChild(controls);
 
-        // -- FIXED BOTTOM SECTION (Mute/Solo/Fader) --
         const faderSection = document.createElement('div');
         faderSection.className = 'strip-fader-section';
 
-        // Mute/Solo Row
         const btnRow = document.createElement('div');
         btnRow.className = 'strip-btn-row';
         
@@ -248,7 +212,6 @@ export class Mixer {
         muteBtn.onclick = () => {
             track.muted = !track.muted;
             muteBtn.classList.toggle('active');
-            // Logic handled in Scheduler mostly, but could apply immediate gain cut here if desired
         };
 
         const soloBtn = document.createElement('button');
@@ -263,7 +226,6 @@ export class Mixer {
         btnRow.appendChild(soloBtn);
         faderSection.appendChild(btnRow);
 
-        // Vertical Volume Fader
         const fader = document.createElement('input');
         fader.type = 'range';
         fader.className = 'v-fader';
@@ -299,7 +261,6 @@ export class Mixer {
             if(bus && bus.comp) this.audioEngine.setCompAmount(bus.comp, v);
         }, 'knob-color-purple'));
 
-        // Drive Select & Pot
         const driveDiv = document.createElement('div');
         driveDiv.className = 'eq-section';
         driveDiv.innerHTML = `<div class="section-label">DIST</div>`;
@@ -324,7 +285,13 @@ export class Mixer {
         
         controls.appendChild(driveDiv);
 
-        // EQ Kill Section
+        const sendSec = document.createElement('div');
+        sendSec.className = 'eq-section';
+        sendSec.innerHTML = `<div class="section-label">SENDS</div>`;
+        sendSec.appendChild(this.createKnob('A', 0, 0, 1, 0.01, () => {}, 'knob-color-yellow'));
+        sendSec.appendChild(this.createKnob('B', 0, 0, 1, 0.01, () => {}, 'knob-color-yellow'));
+        controls.appendChild(sendSec);
+
         const eqSec = document.createElement('div');
         eqSec.className = 'eq-section';
         eqSec.innerHTML = `<div class="section-label">KILL</div>`;
@@ -352,11 +319,9 @@ export class Mixer {
 
         strip.appendChild(controls);
 
-        // Fader Section
         const faderSection = document.createElement('div');
         faderSection.className = 'strip-fader-section';
         
-        // Group Mute
         const btnRow = document.createElement('div');
         btnRow.className = 'strip-btn-row';
         const muteBtn = document.createElement('button');
@@ -364,7 +329,6 @@ export class Mixer {
         muteBtn.innerText = 'M';
         muteBtn.onclick = () => {
              muteBtn.classList.toggle('active');
-             // Simplistic group mute logic
              if(bus && bus.volume) {
                  bus.volume.gain.value = muteBtn.classList.contains('active') ? 0 : 1;
              }

@@ -1,8 +1,9 @@
-/* Mixer Layout - Horizontal Scrolling Container */
+/* Mixer Styles - Authentic Layout */
+
 .mixer-container {
     display: flex;
     flex-direction: row; /* Force horizontal layout */
-    flex-wrap: nowrap;   /* Prevent wrapping to next line */
+    flex-wrap: nowrap;   /* Prevent wrapping */
     height: 100%;
     width: 100%;
     background-color: #121212;
@@ -10,15 +11,15 @@
     overflow-y: hidden;
     padding: 8px;
     gap: 4px;
-    align-items: flex-start; /* Align strips to top */
+    align-items: flex-start;
 }
 
 /* Individual Channel Strip */
 .mixer-strip {
     display: flex;
     flex-direction: column;
-    width: 80px;         /* Fixed width for classic strip look */
-    min-width: 80px;     /* Prevent shrinking */
+    width: 80px;         /* Fixed width */
+    min-width: 80px;     
     height: 100%;
     background-color: #1e1e1e;
     border: 1px solid #333;
@@ -28,7 +29,6 @@
     flex-shrink: 0;
 }
 
-/* Group and Master Strip Variations */
 .mixer-strip.group-strip {
     background-color: #252525;
     border-color: #444;
@@ -39,7 +39,7 @@
     background-color: #1a1515;
     border-color: #552222;
     min-width: 100px;
-    margin-left: 10px; /* Separation */
+    margin-left: 10px; 
     box-shadow: -2px 0 5px rgba(0,0,0,0.5);
 }
 
@@ -71,7 +71,7 @@
 /* Scrollable Controls Area (Knobs) */
 .strip-controls {
     flex: 1;
-    overflow-y: auto; /* Allow vertical scroll within strip if too tall */
+    overflow-y: auto; 
     overflow-x: hidden;
     padding: 8px 0;
     display: flex;
@@ -110,7 +110,7 @@
     flex-direction: column;
     align-items: center;
     gap: 3px;
-    cursor: ns-resize; /* Vertical drag cursor */
+    cursor: ns-resize; 
     width: 100%;
 }
 
@@ -139,16 +139,14 @@
     border-radius: 50%;
     position: absolute;
     top: 0; left: 0;
-    /* Rotation handled by JS transform */
 }
 
-/* The indicator line */
 .knob-line {
     width: 2px;
     height: 12px;
     background: #ccc;
     position: absolute;
-    top: 4px; /* Offset from top */
+    top: 4px; 
     left: 50%;
     margin-left: -1px;
     border-radius: 1px;
@@ -184,7 +182,7 @@
 
 /* Fader Section (Fixed Bottom) */
 .strip-fader-section {
-    height: 160px; /* Fixed height for fader area */
+    height: 160px;
     width: 100%;
     background: #111;
     border-top: 1px solid #000;
@@ -196,7 +194,6 @@
     flex-shrink: 0;
 }
 
-/* Mute/Solo Buttons */
 .strip-btn-row {
     display: flex;
     width: 90%;
@@ -230,7 +227,6 @@ input[type=range].v-fader {
     cursor: pointer;
 }
 
-/* Track Background */
 input[type=range].v-fader::-webkit-slider-runnable-track {
     width: 6px;
     background: #000;
@@ -238,7 +234,6 @@ input[type=range].v-fader::-webkit-slider-runnable-track {
     border-radius: 3px;
 }
 
-/* Thumb */
 input[type=range].v-fader::-webkit-slider-thumb {
     -webkit-appearance: none;
     height: 20px;
@@ -246,9 +241,9 @@ input[type=range].v-fader::-webkit-slider-thumb {
     background: linear-gradient(90deg, #333, #666, #333);
     border: 1px solid #000;
     border-radius: 2px;
-    margin-left: -17px; /* Center thumb */
+    margin-left: -17px; 
     box-shadow: 0 2px 4px rgba(0,0,0,0.8);
-    border-top: 1px solid #888; /* Highlight */
+    border-top: 1px solid #888;
 }
 
 .drive-select {
