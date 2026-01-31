@@ -11,6 +11,13 @@ export class GrooveControls {
         this.searchModal = null;
         this.visualizerCallback = null;
         this.trackDescriptors = new Array(TRACKS_PER_GROUP).fill('brightness'); // Default descriptor per track
+        
+        // Callbacks for external interactions
+        this.callbacks = {
+            onUpdateGridVisuals: null,
+            onSelectTrack: null,
+            getSelectedTrackIndex: null
+        };
     }
 
     setTracks(tracks) {
@@ -31,6 +38,12 @@ export class GrooveControls {
 
     setVisualizerCallback(cb) {
         this.visualizerCallback = cb;
+    }
+
+    setCallbacks(onUpdateGridVisuals, onSelectTrack, getSelectedTrackIndex) {
+        this.callbacks.onUpdateGridVisuals = onUpdateGridVisuals;
+        this.callbacks.onSelectTrack = onSelectTrack;
+        this.callbacks.getSelectedTrackIndex = getSelectedTrackIndex;
     }
 
     initGrooveControls() {
@@ -256,8 +269,10 @@ export class GrooveControls {
 
         const startTrack = grpId * TRACKS_PER_GROUP;
         
-        if (onUpdateGridVisuals) {
-            onUpdateGridVisuals(pattern.time_sig);
+        const _onUpdateGridVisuals = onUpdateGridVisuals || this.callbacks.onUpdateGridVisuals;
+        
+        if (_onUpdateGridVisuals) {
+            _onUpdateGridVisuals(pattern.time_sig);
         }
 
         for (let i = 0; i < TRACKS_PER_GROUP; i++) {
@@ -316,13 +331,22 @@ export class GrooveControls {
             }
         }
         
-        if (onSelectTrack) {
-            onSelectTrack(startTrack, this.visualizerCallback);
+        const _onSelectTrack = onSelectTrack || this.callbacks.onSelectTrack;
+        if (_onSelectTrack) {
+            _onSelectTrack(startTrack, this.visualizerCallback);
         }
     }
 
     async applyGrooveFreesound(onUpdateGridVisuals, onSelectTrack, selectedTrackIndex) {
-        console.log(`[GrooveControls] applyGrooveFreesound started. selectedTrackIndex: ${selectedTrackIndex}`);
+        // Resolve parameters from arguments or stored callbacks
+        const _onUpdateGridVisuals = onUpdateGridVisuals || this.callbacks.onUpdateGridVisuals;
+        const _onSelectTrack = onSelectTrack || this.callbacks.onSelectTrack;
+        let _selectedTrackIndex = selectedTrackIndex;
+        if (_selectedTrackIndex === undefined && this.callbacks.getSelectedTrackIndex) {
+            _selectedTrackIndex = this.callbacks.getSelectedTrackIndex();
+        }
+
+        console.log(`[GrooveControls] applyGrooveFreesound started. selectedTrackIndex: ${_selectedTrackIndex}`);
         
         if (!this.searchModal) {
             alert("Search module not ready.");
@@ -339,7 +363,7 @@ export class GrooveControls {
         if (!pattern) return;
 
         // 1. Apply Pattern Structure (Notes, Velocities)
-        this.applyGroove(onUpdateGridVisuals, null); 
+        this.applyGroove(_onUpdateGridVisuals, null); 
 
         const btn = document.getElementById('applyGrooveFsBtn');
         const originalText = btn.innerHTML;
@@ -443,14 +467,14 @@ export class GrooveControls {
             
             console.log(`[GrooveFS] All tracks processed. Refreshing UI...`);
             // 2. Final UI Refresh - This is crucial
-            if (onSelectTrack && selectedTrackIndex !== undefined) {
-                console.log(`[GrooveFS] Re-selecting track ${selectedTrackIndex} to refresh UI.`);
+            if (_onSelectTrack && _selectedTrackIndex !== undefined) {
+                console.log(`[GrooveFS] Re-selecting track ${_selectedTrackIndex} to refresh UI.`);
                 // Re-select the track to force UI update
-                onSelectTrack(selectedTrackIndex);
+                _onSelectTrack(_selectedTrackIndex, this.visualizerCallback);
                 
                 // Dispatch event as a backup measure to update headers
-                console.log(`[GrooveFS] Dispatching trackSampleLoaded for ${selectedTrackIndex}`);
-                window.dispatchEvent(new CustomEvent('trackSampleLoaded', { detail: { trackId: selectedTrackIndex } }));
+                console.log(`[GrooveFS] Dispatching trackSampleLoaded for ${_selectedTrackIndex}`);
+                window.dispatchEvent(new CustomEvent('trackSampleLoaded', { detail: { trackId: _selectedTrackIndex } }));
             }
             
             btn.innerHTML = '<i class="fas fa-check"></i> KIT LOADED!';

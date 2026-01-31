@@ -55,6 +55,13 @@ export class UIManager {
             () => this.updateLfoUI()
         );
 
+        // Inject callbacks into GrooveControls to handle button clicks correctly
+        this.grooveControls.setCallbacks(
+            (timeSig) => this.updateGridVisuals(timeSig),
+            (idx, visCb) => this.selectTrack(idx, visCb || visualizerCallback),
+            () => this.getSelectedTrackIndex()
+        );
+
         this.grooveControls.initGrooveControls();
         this.syncGridElements();
 
