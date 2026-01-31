@@ -413,13 +413,20 @@ export class GrooveControls {
                         const url = sound.previews['preview-hq-mp3'];
                         await this.searchModal.loader.loadSampleFromUrl(url, trackObj);
                         
+                        // Force Engine Type
                         trackObj.type = 'granular';
+                        
+                        // Reset params for one-shot
                         trackObj.params.position = 0;
                         trackObj.params.grainSize = 0.2; 
                         trackObj.params.density = 20;    
                         trackObj.params.spray = 0;
                         trackObj.params.pitch = 1.0;
                         trackObj.params.overlap = 3.0;   
+                        trackObj.params.scanSpeed = 0;
+                        trackObj.params.ampAttack = 0.01;
+                        trackObj.params.ampDecay = 0.2;
+                        trackObj.params.ampRelease = 0.2;
 
                         trackObj.customSample.name = sound.name;
                     } else {
