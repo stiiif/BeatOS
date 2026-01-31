@@ -39,7 +39,7 @@ export class AudioWorkletMonitor {
         `;
         
         panel.innerHTML = `
-            <div style="font-weight: bold; margin-bottom: 10px; font-size: 14px; color: #0ff;">
+            <div id="awm-header" style="font-weight: bold; margin-bottom: 10px; font-size: 14px; color: #0ff; cursor: move; user-select: none;">
                 🎵 AudioWorklet Monitor
             </div>
             <div id="awm-content"></div>
@@ -56,6 +56,50 @@ export class AudioWorkletMonitor {
         // History for graph
         this.voiceHistory = [];
         this.maxHistory = 280;
+
+        // Enable dragging
+        this.makeDraggable(panel);
+    }
+
+    makeDraggable(element) {
+        const header = element.querySelector('#awm-header');
+        let isDragging = false;
+        let startX, startY, initialLeft, initialTop;
+
+        header.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            
+            // Get current position
+            const rect = element.getBoundingClientRect();
+            initialLeft = rect.left;
+            initialTop = rect.top;
+            
+            // Switch to fixed positioning based on left/top to allow movement
+            // This overrides the initial 'right' CSS property
+            element.style.right = 'auto';
+            element.style.left = `${initialLeft}px`;
+            element.style.top = `${initialTop}px`;
+            
+            document.body.style.cursor = 'move';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            e.preventDefault(); // Prevent selection
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            element.style.left = `${initialLeft + dx}px`;
+            element.style.top = `${initialTop + dy}px`;
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                document.body.style.cursor = 'default';
+            }
+        });
     }
     
     startMonitoring() {
