@@ -196,12 +196,12 @@ export class SearchModal {
                 
                 // Reset parameters for clean one-shot playback
                 this.activeTrack.params.position = 0;
-                this.activeTrack.params.grainSize = 0.2; 
+                this.activeTrack.params.grainSize = 0.10; 
                 this.activeTrack.params.density = 20;    
                 this.activeTrack.params.spray = 0;
                 this.activeTrack.params.pitch = 1.0;
-                this.activeTrack.params.overlap = 3.0;   
-                this.activeTrack.params.scanSpeed = 0;
+                this.activeTrack.params.overlap = 2.0;   
+                this.activeTrack.params.scanSpeed = 1;
                 this.activeTrack.params.ampAttack = 0.01;
                 this.activeTrack.params.ampDecay = 0.2;
                 this.activeTrack.params.ampRelease = 0.2;

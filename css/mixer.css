@@ -1,0 +1,204 @@
+/* Mixer Styles */
+
+.mixer-container {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    background-color: #111;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 10px;
+    gap: 4px;
+}
+
+.mixer-strip {
+    display: flex;
+    flex-direction: column;
+    width: 70px;
+    min-width: 70px;
+    background-color: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 4px;
+    height: 100%;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.mixer-strip.group-strip {
+    background-color: #222;
+    border-color: #444;
+    width: 80px;
+    min-width: 80px;
+}
+
+.mixer-strip.master-strip {
+    background-color: #1a1515;
+    border-color: #552222;
+    width: 90px;
+    min-width: 90px;
+    margin-left: 10px;
+}
+
+/* Header */
+.strip-header {
+    width: 100%;
+    text-align: center;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #333;
+    margin-bottom: 4px;
+}
+
+.strip-name {
+    font-size: 0.6rem;
+    font-weight: bold;
+    color: #888;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
+
+.strip-num {
+    font-size: 0.5rem;
+    color: #555;
+}
+
+/* Controls Section */
+.strip-controls {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    overflow-y: auto;
+    padding-right: 2px; /* Scrollbar space */
+}
+
+/* Buttons */
+.strip-btn-row {
+    display: flex;
+    gap: 2px;
+    width: 100%;
+}
+
+.mixer-btn {
+    flex: 1;
+    font-size: 0.5rem;
+    padding: 2px 0;
+    background: #333;
+    color: #888;
+    border: none;
+    border-radius: 2px;
+    cursor: pointer;
+}
+.mixer-btn.active { color: #fff; }
+.mixer-btn.mute.active { background: #ef4444; }
+.mixer-btn.solo.active { background: #eab308; color: #000; }
+.mixer-btn.kill.active { background: #ef4444; color: #fff; }
+
+/* Pots/Knobs */
+.mixer-pot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+
+.mixer-pot label {
+    font-size: 0.45rem;
+    color: #666;
+    text-transform: uppercase;
+}
+
+.mixer-knob {
+    -webkit-appearance: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #262626;
+    border: 2px solid #444;
+    position: relative;
+    cursor: pointer;
+    /* Simplistic CSS Knob representation */
+}
+/* We use range inputs styled small for pots */
+input[type=range].mini-pot {
+    width: 100%;
+    height: 10px;
+    -webkit-appearance: none;
+    background: transparent;
+    margin: 2px 0;
+}
+input[type=range].mini-pot::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    height: 10px;
+    width: 10px;
+    border-radius: 50%;
+    background: #555;
+    cursor: pointer;
+    margin-top: -3px;
+    border: 1px solid #000;
+}
+input[type=range].mini-pot::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 4px;
+    background: #111;
+    border-radius: 2px;
+}
+
+/* EQ Section */
+.eq-section {
+    background: #111;
+    padding: 3px;
+    border-radius: 3px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* Fader Section */
+.strip-fader {
+    height: 120px;
+    display: flex;
+    justify-content: center;
+    padding: 5px 0;
+    background: #151515;
+    border-radius: 3px;
+    margin-top: auto; /* Push to bottom */
+}
+
+input[type=range].v-fader {
+    -webkit-appearance: none;
+    writing-mode: bt-lr; /* IE/Edge */
+    -webkit-appearance: slider-vertical; /* Webkit */
+    width: 20px;
+    height: 100%;
+    background: transparent;
+}
+
+/* Meter */
+.strip-meter {
+    height: 4px;
+    background: #222;
+    width: 100%;
+    margin-top: 2px;
+    border-radius: 2px;
+    overflow: hidden;
+}
+.meter-val {
+    height: 100%;
+    width: 0%;
+    background: #10b981;
+    transition: width 0.1s;
+}
+
+/* Group/Drive Select */
+.drive-select {
+    width: 100%;
+    background: #111;
+    color: #aaa;
+    font-size: 0.45rem;
+    border: 1px solid #333;
+    margin-bottom: 2px;
+}

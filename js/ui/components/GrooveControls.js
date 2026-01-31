@@ -446,12 +446,12 @@ export class GrooveControls {
                         
                         // Reset params for clean one-shot playback
                         trackObj.params.position = 0;
-                        trackObj.params.grainSize = 0.2; 
+                        trackObj.params.grainSize = 0.1; 
                         trackObj.params.density = 20;    
                         trackObj.params.spray = 0;
                         trackObj.params.pitch = 1.0;
                         trackObj.params.overlap = 3.0;   
-                        trackObj.params.scanSpeed = 0;
+                        trackObj.params.scanSpeed = 1;
                         trackObj.params.ampAttack = 0.01;
                         trackObj.params.ampDecay = 0.2;
                         trackObj.params.ampRelease = 0.2;

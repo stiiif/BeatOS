@@ -7,6 +7,7 @@ import { TrackOperations } from './components/TrackOperations.js';
 import { SnapshotManager } from './components/SnapshotManager.js';
 import { AutomationPanel } from './components/AutomationPanel.js';
 import { SearchModal } from './SearchModal.js';
+import { Mixer } from './components/Mixer.js';
 
 export class UIManager {
     constructor() {
@@ -14,6 +15,7 @@ export class UIManager {
         this.trackManager = null;
         this.visualizerCallback = null;
         this.searchModal = null;
+        this.mixer = null;
         
         // Initialize all components
         this.grid = new SequencerGrid();
@@ -55,7 +57,6 @@ export class UIManager {
             () => this.updateLfoUI()
         );
 
-        // Inject callbacks into GrooveControls to handle button clicks correctly
         this.grooveControls.setCallbacks(
             (timeSig) => this.updateGridVisuals(timeSig),
             (idx, visCb) => this.selectTrack(idx, visCb || visualizerCallback),
@@ -69,6 +70,10 @@ export class UIManager {
             this.searchModal = new SearchModal(this.trackManager.audioEngine);
             this.trackControls.setSearchModal(this.searchModal);
             this.grooveControls.setSearchModal(this.searchModal);
+            
+            // Init Mixer
+            this.mixer = new Mixer('.future-panel', this.trackManager, this.trackManager.audioEngine);
+            this.mixer.render();
         }
 
         this.tracks.forEach(t => {
@@ -104,6 +109,7 @@ export class UIManager {
             (t) => this.randomizeTrackPattern(t), (t, cb) => this.selectTrack(t, cb)
         );
         this.syncGridElements();
+        if(this.mixer) this.mixer.render(); // Update mixer
     }
 
     toggleStep(trk, step) {
