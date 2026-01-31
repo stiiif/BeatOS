@@ -188,26 +188,35 @@ export class SearchModal {
 
             try {
                 // Use the highest quality preview as the source (MP3)
-                // Note: Freesound API OAuth is needed for original HQ downloads, 
-                // but preview-hq-mp3 is decent for web prototypes.
                 const url = sound.previews['preview-hq-mp3'];
                 await this.loader.loadSampleFromUrl(url, this.activeTrack);
+                
+                // --- CRITICAL FIX: Force Granular Engine & Reset Params ---
+                this.activeTrack.type = 'granular';
+                
+                // Reset parameters for clean one-shot playback
+                this.activeTrack.params.position = 0;
+                this.activeTrack.params.grainSize = 0.2; 
+                this.activeTrack.params.density = 20;    
+                this.activeTrack.params.spray = 0;
+                this.activeTrack.params.pitch = 1.0;
+                this.activeTrack.params.overlap = 3.0;
+                this.activeTrack.params.scanSpeed = 0; // Disable auto-scan
+                this.activeTrack.params.ampAttack = 0.01;
+                this.activeTrack.params.ampDecay = 0.2;
+                this.activeTrack.params.ampRelease = 0.2;
                 
                 // Provide visual feedback
                 loadBtn.innerHTML = '<i class="fas fa-check"></i>';
                 loadBtn.classList.add('bg-emerald-600', 'text-white');
                 
                 // Update track name in UI
-                this.activeTrack.customSample.name = sound.name; // SampleLoader sets generic name, overwrite it
-                
-                // Trigger UI refresh via custom event or direct DOM manipulation if complex
-                // ideally UIManager should listen for updates, but for now we rely on the user seeing the result
+                this.activeTrack.customSample.name = sound.name; 
                 
                 // Close after brief delay
                 setTimeout(() => {
                     this.hide();
-                    // Force refresh of track header in UI Manager if possible, 
-                    // otherwise user clicks track again to refresh
+                    // Force refresh of track header/controls
                     window.dispatchEvent(new CustomEvent('trackSampleLoaded', { detail: { trackId: this.activeTrack.id } }));
                 }, 500);
 
