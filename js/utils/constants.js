@@ -25,3 +25,10 @@ export const VELOCITY_GAINS = {
     2: 0.75, // Normal (Medium Velocity)
     3: 1.0   // Accent (High Velocity)
 };
+
+export const EVENTS = {
+    PLAYBACK_START: 'playback:start',
+    PLAYBACK_STOP: 'playback:stop',
+    PLAYBACK_STEP: 'step', // Common event name for sequencer steps
+    CLOCK_TICK: 'clock:tick'
+};

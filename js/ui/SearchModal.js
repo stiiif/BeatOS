@@ -2,17 +2,21 @@ import { FreesoundClient } from '../services/FreesoundClient.js';
 import { SampleLoader } from '../services/SampleLoader.js';
 
 export class SearchModal {
-    constructor(audioEngine) {
+    constructor(audioEngine, granularSynth = null) { // Add granularSynth parameter
         this.client = new FreesoundClient();
-        // Use a default free API key for demonstration if one isn't provided.
-        // In production, this should be handled securely or require user input.
-        this.client.setApiKey("4DbvH6l42zd0JLdxwvSmGiS7UsCz4Qy1QzbvvTVQ"); 
-        
+        this.client.setApiKey("4DbvH6l42zd0JLdxwvSmGiS7UsCz4Qy1QzbvvTVQ");
+
         this.loader = new SampleLoader(audioEngine);
+
+        // ✅ Pass granularSynth reference to loader
+        if (granularSynth) {
+            this.loader.setGranularSynth(granularSynth);
+        }
+
         this.activeTrack = null;
         this.modalElement = null;
         this.audioPreview = new Audio();
-        
+
         this.init();
     }
 
@@ -21,7 +25,7 @@ export class SearchModal {
         const modal = document.createElement('div');
         modal.id = 'freesoundModal';
         modal.className = 'hidden fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4';
-        
+
         modal.innerHTML = `
             <div class="bg-neutral-900 rounded-lg shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col border border-neutral-700">
                 <!-- Header -->
@@ -76,7 +80,7 @@ export class SearchModal {
         document.getElementById('closeSearchModal').addEventListener('click', () => this.hide());
         document.getElementById('fsSearchBtn').addEventListener('click', () => this.performSearch());
         document.getElementById('fsSearchInput').addEventListener('keydown', (e) => {
-            if(e.key === 'Enter') this.performSearch();
+            if (e.key === 'Enter') this.performSearch();
         });
     }
 
@@ -84,14 +88,14 @@ export class SearchModal {
         this.activeTrack = track;
         this.modalElement.classList.remove('hidden');
         const input = document.getElementById('fsSearchInput');
-        
+
         if (initialQuery) {
             input.value = initialQuery;
             this.performSearch();
         } else if (track.autoName) {
             input.value = track.autoName; // Use instrument name as default
         }
-        
+
         input.focus();
     }
 
@@ -107,7 +111,7 @@ export class SearchModal {
         const list = document.getElementById('fsResultsList');
         const status = document.getElementById('fsStatus');
 
-        if(!query) return;
+        if (!query) return;
 
         list.innerHTML = '<div class="text-center text-neutral-500 mt-10"><i class="fas fa-spinner fa-spin text-2xl"></i><p class="mt-2">Searching...</p></div>';
         status.innerText = "Searching...";
@@ -139,9 +143,9 @@ export class SearchModal {
     renderSoundItem(sound, container) {
         const item = document.createElement('div');
         item.className = 'bg-neutral-800 p-3 rounded border border-neutral-700 hover:border-emerald-500/50 transition flex items-center justify-between group';
-        
+
         const duration = sound.duration.toFixed(2);
-        
+
         item.innerHTML = `
             <div class="flex items-center gap-4 flex-1 min-w-0">
                 <button class="play-preview-btn w-8 h-8 rounded-full bg-neutral-700 hover:bg-emerald-600 text-white flex items-center justify-center transition shrink-0" data-preview="${sound.previews['preview-hq-mp3']}">
@@ -181,34 +185,34 @@ export class SearchModal {
         const loadBtn = item.querySelector('.load-sound-btn');
         loadBtn.addEventListener('click', async () => {
             if (!this.activeTrack) return;
-            
+
             const originalText = loadBtn.innerText;
             loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             loadBtn.disabled = true;
 
             try {
-                // Use the highest quality preview as the source (MP3)
-                // Note: Freesound API OAuth is needed for original HQ downloads, 
-                // but preview-hq-mp3 is decent for web prototypes.
                 const url = sound.previews['preview-hq-mp3'];
                 await this.loader.loadSampleFromUrl(url, this.activeTrack);
-                
-                // Provide visual feedback
+
+                // Update sample name
+                this.activeTrack.customSample.name = sound.name;
+
+                // ✅ FIX: Trigger UI update to show granular controls
+                window.dispatchEvent(new CustomEvent('trackSampleLoaded', {
+                    detail: {
+                        trackId: this.activeTrack.id,
+                        sampleName: sound.name,
+                        switchedToGranular: true // Flag that we switched types
+                    }
+                }));
+
+                // Visual feedback
                 loadBtn.innerHTML = '<i class="fas fa-check"></i>';
                 loadBtn.classList.add('bg-emerald-600', 'text-white');
-                
-                // Update track name in UI
-                this.activeTrack.customSample.name = sound.name; // SampleLoader sets generic name, overwrite it
-                
-                // Trigger UI refresh via custom event or direct DOM manipulation if complex
-                // ideally UIManager should listen for updates, but for now we rely on the user seeing the result
-                
+
                 // Close after brief delay
                 setTimeout(() => {
                     this.hide();
-                    // Force refresh of track header in UI Manager if possible, 
-                    // otherwise user clicks track again to refresh
-                    window.dispatchEvent(new CustomEvent('trackSampleLoaded', { detail: { trackId: this.activeTrack.id } }));
                 }, 500);
 
             } catch (err) {
