@@ -3,36 +3,33 @@
     display: flex;
     flex: 1;
     overflow: hidden;
-    /* Height is viewport minus header (12 = 3rem) */
     height: calc(100vh - 3rem);
 }
 
-/* --- New Left Panel (Future Modules) --- */
+/* ... existing left/middle ... */
 .new-left-panel {
-    width: 300px; /* Default width */
+    width: 300px;
     min-width: 200px;
     max-width: 600px;
     display: flex;
     flex-direction: column;
     background-color: #0d0d0d;
-    flex-shrink: 0; /* Prevent auto-shrinking */
+    flex-shrink: 0;
     border-right: 1px solid #222;
 }
 
-/* --- Middle Pane (Sequencer + Future) --- */
 .middle-pane {
     display: flex;
     flex-direction: column;
     flex: 1;
-    min-width: 400px; /* Minimum width before breaking */
+    min-width: 400px;
     overflow: hidden;
 }
 
-/* Sequencer Panel (Top Left) */
 .sequencer-panel {
-    flex: 70; /* Starts taking up ~70% of height */
+    flex: 60; /* Adjusted for taller mixer */
     overflow-y: auto;
-    overflow-x: hidden; /* DISABLE HORIZONTAL SCROLLING to force fit */
+    overflow-x: hidden;
     background-color: #0a0a0a;
     position: relative;
     display: flex;
@@ -41,30 +38,27 @@
 
 /* Future Implementation Panel (Bottom Left) */
 .future-panel {
-    flex: 30; /* Starts taking up ~30% of height */
-    background-color: #0d0d0d;
+    flex: 40; /* Give mixer more space */
+    background-color: #121212; /* Darker bg for mixer context */
     overflow: hidden;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #333;
-    font-size: 0.8rem;
+    /* REMOVED: align-items: center; justify-content: center; */
+    /* Mixer needs to fill this space */
     border-top: 1px solid #222;
 }
 
-/* --- Right Pane (Controls/Inspector) --- */
+/* ... right pane and resizers ... */
 .right-pane {
-    width: 384px; /* Default width (w-96) */
+    width: 384px;
     min-width: 300px;
     max-width: 800px;
     display: flex;
     flex-direction: column;
     background-color: #171717;
-    flex-shrink: 0; /* Prevent auto-shrinking */
+    flex-shrink: 0;
     border-left: 1px solid #222;
 }
 
-/* --- Resizers --- */
 .resizer-v {
     width: 5px;
     background: #111;
@@ -94,11 +88,10 @@
 
 .resizer-v:hover, .resizer-v.resizing,
 .resizer-h:hover, .resizer-h.resizing {
-    background: #064e3b; /* Dark emerald */
+    background: #064e3b;
     border-color: #059669;
 }
 
-/* Grip lines for visual affordance */
 .resizer-v::after {
     content: "";
     height: 20px;
