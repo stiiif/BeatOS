@@ -3,6 +3,33 @@ export class PatternLibrary {
         // V2 Patterns from drum_patterns_v2_sample.json
         this.patterns = [
             {
+                "id": 0,
+                "name": "test",
+                "description": "The legendary 4-bar break from 'Amen, Brother' by The Winstons (1969). The most sampled drum break in history, featuring syncopated kick gallops and the iconic double-snare ending. Foundation of jungle, drum and bass, and breakbeat hip-hop.",
+                "genre": "Jungle/Drum and Bass/Breakbeat",
+                "bpm_range": "160-180",
+                "time_signature": "4/4",
+                "bars": 4,
+                "groove_characteristics": {
+                    "swing_amount": 0,
+                    "complexity": "high",
+                    "energy": "high",
+                    "density": "medium",
+                    "syncopation_level": "high",
+                    "humanization": 18
+                },
+                "tracks": [
+                    {
+                        "instrument": "kick",
+                        "instrument_type": "bass_drum",
+                        "role": "main",
+                        "steps": "3000000000300030300000003000000030000000003000303000000000300000",
+                        "microtiming": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0],
+                        "sample_variation": null,
+                        "description": "Syncopated kick with galloping rhythm on beats 3+ and 4+"
+                    }                ]
+            },            
+            {
                 "id": 1,
                 "name": "Amen Break",
                 "description": "The legendary 4-bar break from 'Amen, Brother' by The Winstons (1969). The most sampled drum break in history, featuring syncopated kick gallops and the iconic double-snare ending. Foundation of jungle, drum and bass, and breakbeat hip-hop.",
