@@ -114,7 +114,15 @@ export class AudioEngine {
         shaper.connect(postDriveGain);
         postDriveGain.connect(compressor);
         compressor.connect(volume);
-        volume.connect(this.masterBus.input);
+        
+        // CRITICAL: Ensure volume connects to Master Input
+        if (this.masterBus) {
+            volume.connect(this.masterBus.input);
+        } else {
+            console.warn("Master Bus not ready during Group Init");
+            // Fallback? Ideally wait or ensure init order. 
+            // Since initMasterBus is called before initGroupBus, this should be fine.
+        }
         
         this.groupBuses[index] = {
             input,
@@ -182,6 +190,8 @@ export class AudioEngine {
             pan.connect(ctx.destination);
         }
         
+        // Connect Analyser (Post-fader/pan tap)
+        // CRITICAL: DO NOT connect analyser to destination, or it will create a parallel output path!
         pan.connect(analyser);
 
         // Apply Defaults / Stored Values
@@ -228,7 +238,7 @@ export class AudioEngine {
         else return min + (max - min) * (1 - Math.pow(1 - norm, 3));
     }
 
-    // --- UTILS (Kept from previous) ---
+    // --- UTILS ---
     trimBuffer(buffer, staticThreshold = 0.002, useTransientDetection = true) {
         if (!buffer) return null;
         const numChannels = buffer.numberOfChannels;
@@ -279,6 +289,7 @@ export class AudioEngine {
                 newData[i] = oldData[i + startIndex];
             }
         }
+        console.log(`[AudioEngine] Smart Trim: Removed ${(startIndex / buffer.sampleRate).toFixed(4)}s`);
         return newBuffer;
     }
 
