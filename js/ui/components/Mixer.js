@@ -14,15 +14,20 @@ export class Mixer {
         
         // References to DOM elements for fast updates
         this.trackStripElements = new Map(); // trackId -> { muteBtn, soloBtn, ... }
+        this.groupStripElements = new Map(); // groupIndex -> { muteBtn, soloBtn, ... }
         
         // Callbacks
         this.onMute = null;
         this.onSolo = null;
+        this.onMuteGroup = null; // New callback for group mute
+        this.onSoloGroup = null; // New callback for group solo
     }
 
-    setCallbacks(onMute, onSolo) {
+    setCallbacks(onMute, onSolo, onMuteGroup, onSoloGroup) {
         this.onMute = onMute;
         this.onSolo = onSolo;
+        this.onMuteGroup = onMuteGroup;
+        this.onSoloGroup = onSoloGroup;
     }
 
     // Update UI state from Track Data
@@ -41,16 +46,41 @@ export class Mixer {
         }
     }
 
+    // New: Update Group UI State (Checks first track of group as proxy for group state)
+    updateGroupState(groupIndex) {
+        const startTrackId = groupIndex * TRACKS_PER_GROUP;
+        const track = this.trackManager.getTracks()[startTrackId];
+        const els = this.groupStripElements.get(groupIndex);
+
+        if (track && els) {
+            // Update Group Mute Button
+            if (track.muted) els.muteBtn.classList.add('active');
+            else els.muteBtn.classList.remove('active');
+
+            // Update Group Solo Button
+            if (track.soloed) els.soloBtn.classList.add('active');
+            else els.soloBtn.classList.remove('active');
+        }
+    }
+
     updateAllTrackStates() {
-        this.trackManager.getTracks().forEach(t => {
+        const tracks = this.trackManager.getTracks();
+        tracks.forEach(t => {
             this.updateTrackState(t.id);
         });
+        
+        // Also update group states
+        const numGroups = Math.ceil(tracks.length / TRACKS_PER_GROUP);
+        for(let i=0; i<numGroups; i++) {
+            this.updateGroupState(i);
+        }
     }
 
     render() {
         if (!this.container) return;
         this.container.innerHTML = '';
         this.trackStripElements.clear(); // Reset element cache
+        this.groupStripElements.clear(); // Reset group cache
         
         const mixerContainer = document.createElement('div');
         mixerContainer.className = 'mixer-container custom-scrollbar';
@@ -69,6 +99,9 @@ export class Mixer {
 
         this.container.appendChild(mixerContainer);
         this.isRendered = true;
+        
+        // Initial state update to sync buttons
+        this.updateAllTrackStates();
     }
 
     createKnob(label, value, min, max, step, onChange, colorClass = '') {
@@ -378,17 +411,28 @@ export class Mixer {
         
         const btnRow = document.createElement('div');
         btnRow.className = 'strip-btn-row';
+        
+        // Group Mute Button
         const muteBtn = document.createElement('button');
         muteBtn.className = 'mixer-btn mute';
         muteBtn.innerText = 'M';
         muteBtn.onclick = () => {
-             muteBtn.classList.toggle('active');
-             const bus = getBus();
-             if(bus && bus.volume) {
-                 bus.volume.gain.value = muteBtn.classList.contains('active') ? 0 : 1;
-             }
+             if (this.onMuteGroup) this.onMuteGroup(index); // Call global handler
         };
+
+        // Group Solo Button
+        const soloBtn = document.createElement('button');
+        soloBtn.className = 'mixer-btn solo';
+        soloBtn.innerText = 'S';
+        soloBtn.onclick = () => {
+             if (this.onSoloGroup) this.onSoloGroup(index); // Call global handler
+        };
+        
+        // Store references for updates
+        this.groupStripElements.set(index, { muteBtn, soloBtn });
+
         btnRow.appendChild(muteBtn);
+        btnRow.appendChild(soloBtn);
         faderSection.appendChild(btnRow);
 
         const fader = document.createElement('input');
