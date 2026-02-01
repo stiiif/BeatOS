@@ -123,24 +123,44 @@ export class Visualizer {
         // Draw the waveform based on selected style
         const data = t.buffer.getChannelData(0);
         
+        // Get Sample Window (Zoom)
+        let sampleStart = t.params.sampleStart || 0;
+        let sampleEnd = t.params.sampleEnd !== undefined ? t.params.sampleEnd : 1;
+        
+        // Ensure start < end
+        if (sampleStart > sampleEnd) {
+            const temp = sampleStart; sampleStart = sampleEnd; sampleEnd = temp;
+        }
+        
+        // Calculate sample indices
+        const startIdx = Math.floor(sampleStart * data.length);
+        const endIdx = Math.floor(sampleEnd * data.length);
+        const windowLength = Math.max(1, endIdx - startIdx); // Prevent division by zero
+        
+        // Create a view/slice for drawing if needed, or just pass indices to draw functions
+        // For performance, we'll modify the draw functions to accept start/end indices or adjust loops
+        // But for simplicity here, let's adapt the loop logic inside the styles slightly or pass a subarray if small enough
+        // Passing subarray creates garbage. Better to adapt draw logic.
+        // Let's modify the drawStyle calls to respect the window.
+        
         switch(this.waveStyle) {
-            case 'mirror': this.drawStyleMirror(ctx, data, w, h); break;
-            case 'neon':   this.drawStyleNeon(ctx, data, w, h); break;
-            case 'bars':   this.drawStyleBars(ctx, data, w, h); break;
-            case 'precision': this.drawStylePrecision(ctx, data, w, h); break;
-            default:       this.drawStyleMirror(ctx, data, w, h);
+            case 'mirror': this.drawStyleMirror(ctx, data, w, h, startIdx, windowLength); break;
+            case 'neon':   this.drawStyleNeon(ctx, data, w, h, startIdx, windowLength); break;
+            case 'bars':   this.drawStyleBars(ctx, data, w, h, startIdx, windowLength); break;
+            case 'precision': this.drawStylePrecision(ctx, data, w, h, startIdx, windowLength); break;
+            default:       this.drawStyleMirror(ctx, data, w, h, startIdx, windowLength);
         }
 
         // Draw Overlays (Grain Position, Spray, etc.)
-        this.drawOverlays(ctx, t, w, h, audioCtx.currentTime);
+        // Note: Overlays need to be re-mapped to the zoomed view
+        this.drawOverlays(ctx, t, w, h, audioCtx.currentTime, sampleStart, sampleEnd);
     }
 
-    // --- DRAWING STYLES ---
+    // --- DRAWING STYLES (Updated for Zoom) ---
 
     // Style 1: Mirror Gradient (SoundCloud style)
-    // Beautiful, filled, symmetrical, with a gradient fade.
-    drawStyleMirror(ctx, data, w, h) {
-        const step = Math.ceil(data.length / w);
+    drawStyleMirror(ctx, data, w, h, startIdx, windowLength) {
+        const step = Math.max(1, Math.ceil(windowLength / w));
         const amp = h / 2;
         const mid = h / 2;
 
@@ -156,10 +176,18 @@ export class Visualizer {
         for (let i = 0; i < w; i++) {
             let min = 1.0;
             let max = -1.0;
+            
+            const chunkStart = startIdx + (i * step);
+            // Safety check for bounds
+            if (chunkStart >= data.length) break;
+
             for (let j = 0; j < step; j++) {
-                const datum = data[(i * step) + j];
-                if (datum < min) min = datum;
-                if (datum > max) max = datum;
+                const idx = chunkStart + j;
+                if (idx < data.length) {
+                    const datum = data[idx];
+                    if (datum < min) min = datum;
+                    if (datum > max) max = datum;
+                }
             }
             // Clamp to avoid drawing nothing on silence
             if (max < min) { max = 0.01; min = -0.01; }
@@ -173,9 +201,8 @@ export class Visualizer {
     }
 
     // Style 2: Neon Pulse (Oscilloscope)
-    // Glowing, continuous line. Very sci-fi.
-    drawStyleNeon(ctx, data, w, h) {
-        const step = Math.ceil(data.length / w);
+    drawStyleNeon(ctx, data, w, h, startIdx, windowLength) {
+        const step = Math.max(1, Math.ceil(windowLength / w));
         const amp = h / 2;
         const mid = h / 2;
 
@@ -188,29 +215,33 @@ export class Visualizer {
 
         for (let i = 0; i < w; i++) {
             let val = 0;
-            // Average sampling for smoother line
+            const chunkStart = startIdx + (i * step);
+            if (chunkStart >= data.length) break;
+
+            let count = 0;
             for (let j = 0; j < step; j++) {
-                val += data[(i * step) + j];
+                const idx = chunkStart + j;
+                if (idx < data.length) {
+                    val += data[idx];
+                    count++;
+                }
             }
-            val /= step;
+            if (count > 0) val /= count;
             
             const y = mid - (val * amp * 0.9);
             if (i === 0) ctx.moveTo(i, y);
             else ctx.lineTo(i, y);
         }
         ctx.stroke();
-        
-        // Reset Shadow for other draws
         ctx.shadowBlur = 0;
     }
 
     // Style 3: Digital Bars
-    // Discrete columns, tech look.
-    drawStyleBars(ctx, data, w, h) {
+    drawStyleBars(ctx, data, w, h, startIdx, windowLength) {
         const barWidth = 2;
         const gap = 1;
         const totalBars = Math.floor(w / (barWidth + gap));
-        const step = Math.floor(data.length / totalBars);
+        const step = Math.max(1, Math.floor(windowLength / totalBars));
         const mid = h / 2;
         const amp = h / 2;
 
@@ -218,11 +249,19 @@ export class Visualizer {
 
         for (let i = 0; i < totalBars; i++) {
             let rms = 0;
+            const chunkStart = startIdx + (i * step);
+            if (chunkStart >= data.length) break;
+
+            let count = 0;
             for (let j = 0; j < step; j++) {
-                const s = data[(i * step) + j];
-                rms += s * s;
+                const idx = chunkStart + j;
+                if (idx < data.length) {
+                    const s = data[idx];
+                    rms += s * s;
+                    count++;
+                }
             }
-            rms = Math.sqrt(rms / step);
+            if (count > 0) rms = Math.sqrt(rms / count);
             
             const height = Math.max(2, rms * h * 1.5); // Boost gain slightly
             const x = i * (barWidth + gap);
@@ -236,9 +275,8 @@ export class Visualizer {
     }
 
     // Style 4: Precision Line
-    // Ultra-thin, white, anti-aliased. No glow.
-    drawStylePrecision(ctx, data, w, h) {
-        const step = Math.ceil(data.length / w);
+    drawStylePrecision(ctx, data, w, h, startIdx, windowLength) {
+        const step = Math.max(1, Math.ceil(windowLength / w));
         const amp = h / 2;
         const mid = h / 2;
 
@@ -247,15 +285,10 @@ export class Visualizer {
         ctx.beginPath();
 
         for (let i = 0; i < w; i++) {
-            // Peak sampling for detail
-            let max = 0;
-            for (let j = 0; j < step; j++) {
-                const d = Math.abs(data[(i * step) + j]);
-                if (d > max) max = d;
-            }
-            // Restore polarity roughly or just draw envelope? 
-            // Let's draw the raw sample at the step index for true precision
-            const raw = data[i * step];
+            const idx = startIdx + (i * step);
+            if (idx >= data.length) break;
+
+            const raw = data[idx];
             
             const y = mid - (raw * amp * 0.95);
             if (i === 0) ctx.moveTo(i, y);
@@ -306,9 +339,9 @@ export class Visualizer {
         ctx.fillText("No Signal", 10, 40);
     }
 
-    drawOverlays(ctx, t, w, h, time) {
+    drawOverlays(ctx, t, w, h, time, start, end) {
         // Calculate LFO Modulation for Visualization
-        let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0 };
+        let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0, sampleStart:0, sampleEnd:0 };
         
         t.lfos.forEach(lfo => {
             const v = lfo.getValue(time);
@@ -316,30 +349,100 @@ export class Visualizer {
         });
 
         const p = t.params;
+        
+        // --- Calculate ACTIVE Window (Parameter + LFO) ---
+        // This is what the Granular Engine actually plays
+        let actStart = Math.max(0, Math.min(1, (p.sampleStart || 0) + mod.sampleStart));
+        let actEnd = Math.max(0, Math.min(1, (p.sampleEnd !== undefined ? p.sampleEnd : 1) + mod.sampleEnd));
+        if (actStart > actEnd) { const temp = actStart; actStart = actEnd; actEnd = temp; }
+        
+        // --- Calculate View Window (Zoom) ---
+        // The display is already zoomed to 'start' and 'end' (the base params)
+        // We need to map positions relative to this view window.
+        // Formula: Pixel X = ((AbsolutePos - ViewStart) / (ViewEnd - ViewStart)) * Width
+        
+        const viewStart = start;
+        const viewEnd = end;
+        const viewRange = Math.max(0.0001, viewEnd - viewStart);
+
+        const mapToView = (absPos) => {
+            return ((absPos - viewStart) / viewRange) * w;
+        };
+
+        // --- Calculate Playhead Position ---
         // Use playhead if scanning, otherwise param position
         const effectivePos = (p.scanSpeed !== 0) ? t.playhead : p.position;
         
-        const finalPos = Math.max(0, Math.min(1, effectivePos + mod.position));
-        const finalSpray = Math.max(0, p.spray + mod.spray);
-        const finalGrainSize = Math.max(0.01, p.grainSize + mod.grainSize);
+        // Relative position (0-1) within the ACTIVE window
+        let relativePos = effectivePos + mod.position;
+        relativePos = Math.max(0, Math.min(1, relativePos));
+        
+        // Absolute position in the original buffer (0-1)
+        const absPos = actStart + (relativePos * (actEnd - actStart));
+        
+        const finalPos = Math.max(0, Math.min(1, absPos)); // Should be redundant due to actStart/End but safe
+        
+        // Grain Size in absolute terms (fraction of total buffer)
+        // Grain size is in seconds. Convert to fraction of buffer duration.
         const bufDur = t.buffer ? t.buffer.duration : 1;
-        const grainPx = Math.max(2, (finalGrainSize / bufDur) * w); // Ensure visible width
-        const posPx = finalPos * w;
-
-        // 1. Draw Spray Range (Yellow Transparent)
-        if (finalSpray > 0) {
-            const sprayLeft = Math.max(0, finalPos - finalSpray) * w;
-            const sprayRight = Math.min(1, finalPos + finalSpray) * w;
-            ctx.fillStyle = 'rgba(234, 179, 8, 0.15)';
-            ctx.fillRect(sprayLeft, 0, sprayRight - sprayLeft, h);
+        
+        const finalGrainSizeSec = Math.max(0.01, p.grainSize + mod.grainSize);
+        const finalGrainSizeFrac = finalGrainSizeSec / bufDur;
+        
+        // Map to Pixel Coords
+        const posPx = mapToView(finalPos);
+        const grainPx = Math.max(2, (finalGrainSizeFrac / viewRange) * w); 
+        
+        const finalSpray = Math.max(0, p.spray + mod.spray);
+        
+        // IMPORTANT: Clip drawing to canvas bounds if playhead goes outside zoomed view
+        if (posPx < -grainPx || posPx > w + grainPx) {
+            // Optimally, draw indicators at edge if out of view, or just clip
+            // Let's just clip naturally
         }
 
-        // 2. Draw Density/Overlap Indicator
+        // 1. Draw Active Window LFO Movement (if LFOs affecting Start/End)
+        // Only draw if different from base View
+        if (Math.abs(actStart - viewStart) > 0.001 || Math.abs(actEnd - viewEnd) > 0.001) {
+            const lfoStartPx = mapToView(actStart);
+            const lfoEndPx = mapToView(actEnd);
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            // Draw regions outside active but inside view (if any) to show "truncation" by LFO
+            if (lfoStartPx > 0) ctx.fillRect(0, 0, lfoStartPx, h);
+            if (lfoEndPx < w) ctx.fillRect(lfoEndPx, 0, w - lfoEndPx, h);
+            
+            // Draw active boundary lines
+            ctx.strokeStyle = 'rgba(100, 200, 255, 0.5)';
+            ctx.lineWidth = 1;
+            if (lfoStartPx > 0 && lfoStartPx < w) { ctx.beginPath(); ctx.moveTo(lfoStartPx, 0); ctx.lineTo(lfoStartPx, h); ctx.stroke(); }
+            if (lfoEndPx > 0 && lfoEndPx < w) { ctx.beginPath(); ctx.moveTo(lfoEndPx, 0); ctx.lineTo(lfoEndPx, h); ctx.stroke(); }
+        }
+
+        // 2. Draw Spray Range (Yellow Transparent)
+        // Spray is relative to the ACTIVE window's width? No, usually absolute time variation.
+        // Granular engine: gPos += (random * 2 - 1) * spray
+        // Spray param is usually 0-1. In our engine, it adds directly to position (0-1).
+        // So spray is absolute fraction of buffer.
+        
+        if (finalSpray > 0) {
+            const sprayLeftAbs = Math.max(0, finalPos - finalSpray);
+            const sprayRightAbs = Math.min(1, finalPos + finalSpray);
+            
+            const sprayLeftPx = mapToView(sprayLeftAbs);
+            const sprayRightPx = mapToView(sprayRightAbs);
+            
+            ctx.fillStyle = 'rgba(234, 179, 8, 0.15)';
+            const sX = Math.max(0, sprayLeftPx);
+            const sW = Math.min(w, sprayRightPx) - sX;
+            if (sW > 0) ctx.fillRect(sX, 0, sW, h);
+        }
+
+        // 3. Draw Density/Overlap Indicator
+        // (Visual logic remains similar, just positioned at posPx)
         const rawOverlap = (p.overlap || 0) + mod.overlap;
         
         if (rawOverlap > 0.01) {
-            // --- OVERLAP MODE (Explicit) ---
-            // Visual: Stacked Green Blocks (Discrete Layers)
             const displayOverlap = Math.max(0.1, rawOverlap);
             const stackCount = Math.ceil(displayOverlap);
             const barHeight = 4;
@@ -360,34 +463,27 @@ export class Visualizer {
                 }
             }
         } else {
-            // --- DENSITY MODE (Frequency) ---
-            // Visual: Solid Cyan Bar (Continuous Intensity)
-            // Height represents density value directly
             const finalDensity = Math.max(1, (p.density || 20) + mod.density);
-            
-            // Map density (approx 1-100) to height
-            // 60hz density will fill the screen height roughly
             const densityHeight = Math.min(h, (finalDensity / 60) * h); 
-            
-            // Draw a solid, glowing bar
             const glow = ctx.createLinearGradient(0, h - densityHeight, 0, h);
-            glow.addColorStop(0, 'rgba(6, 182, 212, 0.9)'); // Cyan Top
-            glow.addColorStop(1, 'rgba(6, 182, 212, 0.1)'); // Cyan Bottom
+            glow.addColorStop(0, 'rgba(6, 182, 212, 0.9)'); 
+            glow.addColorStop(1, 'rgba(6, 182, 212, 0.1)'); 
 
             ctx.fillStyle = glow;
             ctx.fillRect(Math.max(0, posPx - grainPx/2), h - densityHeight, grainPx, densityHeight);
             
-            // Add a "top cap" line for precision
-            ctx.fillStyle = '#22d3ee'; // Bright Cyan
+            ctx.fillStyle = '#22d3ee'; 
             ctx.fillRect(Math.max(0, posPx - grainPx/2), h - densityHeight, grainPx, 2);
         }
 
-        // 3. Draw Position Head (White Line)
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(posPx, 0);
-        ctx.lineTo(posPx, h);
-        ctx.stroke();
+        // 4. Draw Position Head (White Line)
+        if (posPx >= 0 && posPx <= w) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(posPx, 0);
+            ctx.lineTo(posPx, h);
+            ctx.stroke();
+        }
     }
 }
