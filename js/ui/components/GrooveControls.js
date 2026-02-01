@@ -36,6 +36,9 @@ export class GrooveControls {
         
         // NEW: Selected tags for Auto-Kit
         this.selectedTags = [];
+        
+        // NEW: Checkbox state for including instrument name in query
+        this.includeInstrumentName = true;
 
         // Callbacks for external interactions
         this.callbacks = {
@@ -153,7 +156,7 @@ export class GrooveControls {
 
         // Input group
         const inputGroup = document.createElement('div');
-        inputGroup.className = 'flex gap-1 relative';
+        inputGroup.className = 'flex gap-1 relative mb-2';
         
         const input = document.createElement('input');
         input.type = 'text';
@@ -196,6 +199,29 @@ export class GrooveControls {
         inputGroup.appendChild(input);
         inputGroup.appendChild(addBtn);
         container.appendChild(inputGroup);
+
+        // --- NEW: Instrument Name Checkbox ---
+        const checkboxGroup = document.createElement('div');
+        checkboxGroup.className = 'flex items-center gap-2 mt-1';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = 'includeInstName';
+        checkbox.checked = this.includeInstrumentName;
+        checkbox.className = 'w-3 h-3 rounded bg-neutral-700 border-neutral-600 text-indigo-600 focus:ring-0 cursor-pointer';
+        
+        checkbox.addEventListener('change', (e) => {
+            this.includeInstrumentName = e.target.checked;
+        });
+
+        const cbLabel = document.createElement('label');
+        cbLabel.htmlFor = 'includeInstName';
+        cbLabel.className = 'text-[9px] text-neutral-400 cursor-pointer select-none';
+        cbLabel.innerText = 'Include Instrument Name (e.g. Kick)';
+
+        checkboxGroup.appendChild(checkbox);
+        checkboxGroup.appendChild(cbLabel);
+        container.appendChild(checkboxGroup);
 
         parent.appendChild(container);
         this.renderTags(tagsContainer);
@@ -495,11 +521,21 @@ export class GrooveControls {
                 
                 if (this.tracks[targetTrackId] && !this.tracks[targetTrackId].stepLock && patternTrack) {
                     const trackObj = this.tracks[targetTrackId];
-                    let query = patternTrack.instrument_type.replace(/_/g, ' ');
+                    let query = "";
+                    
+                    // --- NEW: Conditionally include instrument type based on checkbox ---
+                    if (this.includeInstrumentName) {
+                        query = patternTrack.instrument_type.replace(/_/g, ' ');
+                    }
                     
                     // --- APPEND SELECTED TAGS TO QUERY ---
                     if (this.selectedTags.length > 0) {
                         query += ' ' + this.selectedTags.join(' ');
+                    }
+                    
+                    // If both empty, ensure at least some search term (fallback to instrument)
+                    if (!query.trim()) {
+                        query = patternTrack.instrument.replace(/_/g, ' ');
                     }
 
                     console.log(`[GrooveFS] Processing Track ${targetTrackId} (${query})`);
@@ -540,13 +576,29 @@ export class GrooveControls {
                             'bongo_high': 'bongo',
                             'shaker': 'shaker loop'
                         };
-                        const fallbackQuery = fallbacks[query] || patternTrack.instrument.replace(/_/g, ' ');
+                        
+                        let fallbackQuery = "";
+                        
+                        if (this.includeInstrumentName) {
+                            const instrumentType = patternTrack.instrument_type.replace(/_/g, ' ');
+                            fallbackQuery = fallbacks[instrumentType] || patternTrack.instrument.replace(/_/g, ' ');
+                        } else {
+                             // If no instrument name was desired but search failed (e.g. only tags), 
+                             // fallback to tags alone again (which already failed) or try adding instrument name now?
+                             // Let's assume if it failed, we try the instrument name as a last resort fallback even if unchecked,
+                             // OR we stick to the user's tags and try just those + standard fallback logic?
+                             // Logic: If tags alone fail, maybe the tags are too restrictive. 
+                             // Let's rely on the standard fallback mechanism which usually implies an instrument name.
+                             
+                             // Simplest logic: Reuse the standard fallback query construction
+                             fallbackQuery = patternTrack.instrument.replace(/_/g, ' '); 
+                        }
                         
                         // Append tags to fallback query as well
                         const finalFallbackQuery = this.selectedTags.length > 0 ? 
                             `${fallbackQuery} ${this.selectedTags.join(' ')}` : fallbackQuery;
 
-                        if (fallbackQuery !== query) {
+                        if (finalFallbackQuery.trim() !== query.trim()) {
                              console.log(`[GrooveFS] Attempt 3: Fallback Query "${finalFallbackQuery}"`);
                              let fallbackFilters = `duration:[0.05 TO 2.0] license:"Creative Commons 0"`;
                              if (descriptorFilter) fallbackFilters += ` ${descriptorFilter}`;
