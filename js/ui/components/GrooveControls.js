@@ -550,7 +550,7 @@ export class GrooveControls {
                     else filters += ' ac_brightness:[10 TO 100]';
 
                     console.log(`[GrooveFS] Using descriptor: ${selectedDescriptor === 'none' ? 'none' : selectedDescriptor + '=[80-100]'}`);
-                    console.log(`[GrooveFS] Executing Search: Query="${query}", Filters="${filters}"`); // ADDED LOG
+                    console.log(`[GrooveFS] Executing Search 1: Query="${query}", Filters="${filters}"`);
 
                     let results = await this.searchModal.client.textSearch(query, filters);
                     
@@ -558,6 +558,7 @@ export class GrooveControls {
                         console.log(`[GrooveFS] Attempt 2: Relaxed Filters for ${query}`);
                         let relaxed = `duration:[0.05 TO 3.0] license:"Creative Commons 0"`;
                         if (descriptorFilter) relaxed += ` ${descriptorFilter}`;
+                        console.log(`[GrooveFS] Executing Search 2: Query="${query}", Filters="${relaxed}"`);
                         results = await this.searchModal.client.textSearch(query, relaxed);
                     }
 
@@ -603,6 +604,7 @@ export class GrooveControls {
                              console.log(`[GrooveFS] Attempt 3: Fallback Query "${finalFallbackQuery}"`);
                              let fallbackFilters = `duration:[0.05 TO 2.0] license:"Creative Commons 0"`;
                              if (descriptorFilter) fallbackFilters += ` ${descriptorFilter}`;
+                             console.log(`[GrooveFS] Executing Search 3: Query="${finalFallbackQuery}", Filters="${fallbackFilters}"`);
                              results = await this.searchModal.client.textSearch(finalFallbackQuery, fallbackFilters);
                              if (results.results.length > 0) query = finalFallbackQuery; 
                         }
