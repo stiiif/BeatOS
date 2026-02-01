@@ -230,19 +230,22 @@ export class GranularSynthWorklet {
         gPos = Math.max(0, Math.min(1, gPos));
 
         // Apply filters via track bus (still on main thread for now)
+        // BUGFIX: Use raw Hz values from params instead of mapping function, which distorted linear inputs.
+        
         if(track.bus.hp) {
-            track.bus.hp.frequency.setValueAtTime(
-                this.audioEngine.getMappedFrequency(Math.max(20, p.hpFilter + mod.hpFilter), 'hp'), 
-                time
-            );
+            const rawHp = p.hpFilter + mod.hpFilter;
+            const clampedHp = Math.max(20, Math.min(20000, rawHp));
+            track.bus.hp.frequency.setValueAtTime(clampedHp, time);
         }
         
-        let lpFreq = this.audioEngine.getMappedFrequency(Math.max(100, p.filter + mod.filter), 'lp');
-        // Filter offset is 0 if ignoreVelocityParams is true
-        if (velocityLevel === 1) lpFreq = Math.max(100, lpFreq + filterOffset);
+        let rawLp = p.filter + mod.filter;
+        // Filter offset is 0 if ignoreVelocityParams is true or velocity is > 1
+        if (velocityLevel === 1 && !track.ignoreVelocityParams) rawLp += filterOffset;
+        
+        const clampedLp = Math.max(100, Math.min(22000, rawLp));
         
         if(track.bus.lp) {
-            track.bus.lp.frequency.setValueAtTime(lpFreq, time);
+            track.bus.lp.frequency.setValueAtTime(clampedLp, time);
         }
         
         if(track.bus.vol) track.bus.vol.gain.setValueAtTime(p.volume, time);
