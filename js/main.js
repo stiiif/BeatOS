@@ -128,20 +128,34 @@ document.getElementById('bpmInput').addEventListener('change', e => { scheduler.
 const applyGrooveBtn = document.getElementById('applyGrooveBtn');
 if (applyGrooveBtn) applyGrooveBtn.addEventListener('click', () => uiManager.applyGroove());
 
+// Update scope button listener to cycle styles
 document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
     visualizer.setScopeMode('wave');
-    const btnWave = e.target;
+    
+    // Cycle style
+    const newStyle = visualizer.cycleWaveStyle();
+    
+    // Update button text to show current style (optional but nice)
+    const btn = e.target;
+    // Map style names to short codes
+    const codes = { 'mirror': 'WAVE', 'neon': 'NEON', 'bars': 'BARS', 'precision': 'FINE' };
+    btn.innerText = codes[newStyle] || 'WAVE';
+
     const btnSpec = document.getElementById('scopeBtnSpec');
-    btnWave.classList.replace('text-neutral-400', 'bg-neutral-600');
-    btnWave.classList.replace('hover:text-white', 'text-white');
-    btnWave.classList.add('rounded-sm');
+    btn.classList.replace('text-neutral-400', 'bg-neutral-600');
+    btn.classList.replace('hover:text-white', 'text-white');
+    btn.classList.add('rounded-sm');
     btnSpec.classList.replace('bg-neutral-600', 'text-neutral-400');
     btnSpec.classList.replace('text-white', 'hover:text-white');
     btnSpec.classList.remove('rounded-sm');
+    
+    visualizer.drawBufferDisplay();
 });
 
 document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
     visualizer.setScopeMode('spectrum');
+    // Reset Wave button text if we want, or keep it as memory
+    
     const btnSpec = e.target;
     const btnWave = document.getElementById('scopeBtnWave');
     btnSpec.classList.replace('text-neutral-400', 'bg-neutral-600');
@@ -150,6 +164,8 @@ document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
     btnWave.classList.replace('bg-neutral-600', 'text-neutral-400');
     btnWave.classList.replace('text-white', 'hover:text-white');
     btnWave.classList.remove('rounded-sm');
+    
+    visualizer.drawBufferDisplay();
 });
 
 document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {

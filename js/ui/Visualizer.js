@@ -11,6 +11,9 @@ export class Visualizer {
         this.tracks = [];
         this.selectedTrackIndex = 0;
         this.scopeMode = 'wave'; // 'wave' or 'spectrum'
+        
+        // Visual Styles: 'mirror', 'neon', 'bars', 'precision'
+        this.waveStyle = 'mirror'; 
     }
 
     setTracks(tracks) {
@@ -23,6 +26,13 @@ export class Visualizer {
 
     setScopeMode(mode) {
         this.scopeMode = mode;
+    }
+
+    cycleWaveStyle() {
+        const styles = ['mirror', 'neon', 'bars', 'precision'];
+        const currentIdx = styles.indexOf(this.waveStyle);
+        this.waveStyle = styles[(currentIdx + 1) % styles.length];
+        return this.waveStyle; // Return for UI feedback
     }
 
     resizeCanvas() {
@@ -86,74 +96,62 @@ export class Visualizer {
         
         const w = this.bufCanvas.width;
         const h = this.bufCanvas.height;
+        const ctx = this.bufCtx;
         const t = this.tracks[this.selectedTrackIndex];
         const audioCtx = this.audioEngine.getContext();
 
+        // Clear Background
+        ctx.fillStyle = '#0f0f0f'; // Very dark grey instead of pure black for softer look
+        ctx.fillRect(0, 0, w, h);
+
         // --- SPECTRUM MODE ---
         if (this.scopeMode === 'spectrum') {
-            this.bufCtx.fillStyle = '#111';
-            this.bufCtx.fillRect(0, 0, w, h);
-
             if (!audioCtx || !t || !t.bus || !t.bus.analyser) {
-                this.bufCtx.fillStyle = '#444';
-                this.bufCtx.font = '10px monospace';
-                this.bufCtx.fillText("No Signal", 10, 40);
+                this.drawNoSignal(ctx, w, h);
                 return;
             }
-
-            const analyser = t.bus.analyser;
-            const bufferLength = analyser.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
-            analyser.getByteFrequencyData(dataArray);
-
-            const barWidth = (w / bufferLength) * 2.5; 
-            let x = 0;
-
-            for(let i = 0; i < bufferLength; i++) {
-                const barHeight = (dataArray[i] / 255) * h;
-                
-                // Color based on frequency/height (Red/Orange/Yellow/Green/Blue/Purple)
-                const hue = 240 - ((i / bufferLength) * 240); 
-                this.bufCtx.fillStyle = `hsl(${hue}, 80%, 50%)`;
-                this.bufCtx.fillRect(x, h - barHeight, barWidth, barHeight);
-
-                x += barWidth + 1;
-                if (x > w) break; 
-            }
+            this.drawSpectrum(ctx, w, h, t.bus.analyser);
             return;
         }
 
-        // --- WAVEFORM MODE (Default) ---
+        // --- WAVEFORM MODE ---
         if (!audioCtx || !t || !t.buffer) {
-            this.bufCtx.fillStyle = '#111';
-            this.bufCtx.fillRect(0,0,w,h);
-            this.bufCtx.fillStyle = '#444';
-            this.bufCtx.font = '10px monospace';
-            
-            if (t && t.type === 'simple-drum') {
-                this.bufCtx.fillStyle = '#f97316'; // orange
-                this.bufCtx.fillText("909 ENGINE ACTIVE", 10, 40);
-            } else if (t && t.type === 'automation') {
-                this.bufCtx.fillStyle = '#818cf8'; // indigo
-                this.bufCtx.fillText("AUTOMATION TRACK", 10, 40);
-            } else {
-                this.bufCtx.fillText("No Buffer Data", 10, 40);
-            }
+            this.drawNoDataMessage(ctx, w, h, t);
             return;
         }
 
+        // Draw the waveform based on selected style
         const data = t.buffer.getChannelData(0);
         
-        // Clear
-        this.bufCtx.fillStyle = '#111';
-        this.bufCtx.fillRect(0, 0, w, h);
+        switch(this.waveStyle) {
+            case 'mirror': this.drawStyleMirror(ctx, data, w, h); break;
+            case 'neon':   this.drawStyleNeon(ctx, data, w, h); break;
+            case 'bars':   this.drawStyleBars(ctx, data, w, h); break;
+            case 'precision': this.drawStylePrecision(ctx, data, w, h); break;
+            default:       this.drawStyleMirror(ctx, data, w, h);
+        }
 
-        // Draw Waveform
-        this.bufCtx.beginPath();
-        this.bufCtx.strokeStyle = '#22c55e'; // Green
-        this.bufCtx.lineWidth = 1;
+        // Draw Overlays (Grain Position, Spray, etc.)
+        this.drawOverlays(ctx, t, w, h, audioCtx.currentTime);
+    }
+
+    // --- DRAWING STYLES ---
+
+    // Style 1: Mirror Gradient (SoundCloud style)
+    // Beautiful, filled, symmetrical, with a gradient fade.
+    drawStyleMirror(ctx, data, w, h) {
         const step = Math.ceil(data.length / w);
         const amp = h / 2;
+        const mid = h / 2;
+
+        // Create Gradient
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, '#10b981');   // Emerald top
+        grad.addColorStop(0.5, '#34d399'); // Lighter middle
+        grad.addColorStop(1, '#10b981');   // Emerald bottom
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
 
         for (let i = 0; i < w; i++) {
             let min = 1.0;
@@ -163,54 +161,190 @@ export class Visualizer {
                 if (datum < min) min = datum;
                 if (datum > max) max = datum;
             }
-            this.bufCtx.moveTo(i, (1 + min) * amp);
-            this.bufCtx.lineTo(i, (1 + max) * amp);
+            // Clamp to avoid drawing nothing on silence
+            if (max < min) { max = 0.01; min = -0.01; }
+            
+            // Draw vertical slice
+            const y1 = mid + (min * amp * 0.9); // 0.9 to leave some padding
+            const y2 = mid + (max * amp * 0.9);
+            ctx.rect(i, y1, 1, Math.max(1, y2 - y1));
         }
-        this.bufCtx.stroke();
+        ctx.fill();
+    }
 
+    // Style 2: Neon Pulse (Oscilloscope)
+    // Glowing, continuous line. Very sci-fi.
+    drawStyleNeon(ctx, data, w, h) {
+        const step = Math.ceil(data.length / w);
+        const amp = h / 2;
+        const mid = h / 2;
+
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = '#22c55e';
+        ctx.strokeStyle = '#4ade80'; // Bright green
+        ctx.lineWidth = 1.5;
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+
+        for (let i = 0; i < w; i++) {
+            let val = 0;
+            // Average sampling for smoother line
+            for (let j = 0; j < step; j++) {
+                val += data[(i * step) + j];
+            }
+            val /= step;
+            
+            const y = mid - (val * amp * 0.9);
+            if (i === 0) ctx.moveTo(i, y);
+            else ctx.lineTo(i, y);
+        }
+        ctx.stroke();
+        
+        // Reset Shadow for other draws
+        ctx.shadowBlur = 0;
+    }
+
+    // Style 3: Digital Bars
+    // Discrete columns, tech look.
+    drawStyleBars(ctx, data, w, h) {
+        const barWidth = 2;
+        const gap = 1;
+        const totalBars = Math.floor(w / (barWidth + gap));
+        const step = Math.floor(data.length / totalBars);
+        const mid = h / 2;
+        const amp = h / 2;
+
+        ctx.fillStyle = '#06b6d4'; // Cyan
+
+        for (let i = 0; i < totalBars; i++) {
+            let rms = 0;
+            for (let j = 0; j < step; j++) {
+                const s = data[(i * step) + j];
+                rms += s * s;
+            }
+            rms = Math.sqrt(rms / step);
+            
+            const height = Math.max(2, rms * h * 1.5); // Boost gain slightly
+            const x = i * (barWidth + gap);
+            const y = mid - (height / 2);
+            
+            // Opacity based on height for depth
+            ctx.globalAlpha = Math.min(1, 0.4 + rms * 2);
+            ctx.fillRect(x, y, barWidth, height);
+        }
+        ctx.globalAlpha = 1.0;
+    }
+
+    // Style 4: Precision Line
+    // Ultra-thin, white, anti-aliased. No glow.
+    drawStylePrecision(ctx, data, w, h) {
+        const step = Math.ceil(data.length / w);
+        const amp = h / 2;
+        const mid = h / 2;
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = 0.5; // Sub-pixel rendering feel
+        ctx.beginPath();
+
+        for (let i = 0; i < w; i++) {
+            // Peak sampling for detail
+            let max = 0;
+            for (let j = 0; j < step; j++) {
+                const d = Math.abs(data[(i * step) + j]);
+                if (d > max) max = d;
+            }
+            // Restore polarity roughly or just draw envelope? 
+            // Let's draw the raw sample at the step index for true precision
+            const raw = data[i * step];
+            
+            const y = mid - (raw * amp * 0.95);
+            if (i === 0) ctx.moveTo(i, y);
+            else ctx.lineTo(i, y);
+        }
+        ctx.stroke();
+    }
+
+    // --- HELPERS ---
+
+    drawSpectrum(ctx, w, h, analyser) {
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyser.getByteFrequencyData(dataArray);
+
+        const barWidth = (w / bufferLength) * 2.5; 
+        let x = 0;
+
+        for(let i = 0; i < bufferLength; i++) {
+            const barHeight = (dataArray[i] / 255) * h;
+            const hue = 200 + ((i / bufferLength) * 120); // Blue to Purple range
+            ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
+            ctx.fillRect(x, h - barHeight, barWidth, barHeight);
+
+            x += barWidth + 1;
+            if (x > w) break; 
+        }
+    }
+
+    drawNoDataMessage(ctx, w, h, t) {
+        ctx.fillStyle = '#444';
+        ctx.font = '10px monospace';
+        
+        if (t && t.type === 'simple-drum') {
+            ctx.fillStyle = '#f97316'; // orange
+            ctx.fillText("909 ENGINE ACTIVE", 10, 40);
+        } else if (t && t.type === 'automation') {
+            ctx.fillStyle = '#818cf8'; // indigo
+            ctx.fillText("AUTOMATION TRACK", 10, 40);
+        } else {
+            ctx.fillText("No Buffer Data", 10, 40);
+        }
+    }
+
+    drawNoSignal(ctx, w, h) {
+        ctx.fillStyle = '#333';
+        ctx.font = '10px monospace';
+        ctx.fillText("No Signal", 10, 40);
+    }
+
+    drawOverlays(ctx, t, w, h, time) {
         // Calculate LFO Modulation for Visualization
-        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, filter:0, hpFilter:0 };
-        const time = audioCtx.currentTime;
+        let mod = { position:0, spray:0, grainSize:0 };
         
         t.lfos.forEach(lfo => {
             const v = lfo.getValue(time);
-            if (lfo.target === 'filter') mod.filter += v * 5000;
-            else if (lfo.target === 'hpFilter') mod.hpFilter += v * 2000;
-            else if(mod[lfo.target] !== undefined) mod[lfo.target] += v;
+            if(mod[lfo.target] !== undefined) mod[lfo.target] += v;
         });
 
         const p = t.params;
-        const finalPos = Math.max(0, Math.min(1, p.position + mod.position));
+        // Use playhead if scanning, otherwise param position
+        const effectivePos = (p.scanSpeed !== 0) ? t.playhead : p.position;
+        
+        const finalPos = Math.max(0, Math.min(1, effectivePos + mod.position));
         const finalSpray = Math.max(0, p.spray + mod.spray);
         const finalGrainSize = Math.max(0.01, p.grainSize + mod.grainSize);
 
-        // Draw Position (Cyan)
+        // 1. Draw Spray Range (Yellow Transparent)
+        if (finalSpray > 0) {
+            const sprayLeft = Math.max(0, finalPos - finalSpray) * w;
+            const sprayRight = Math.min(1, finalPos + finalSpray) * w;
+            ctx.fillStyle = 'rgba(234, 179, 8, 0.15)';
+            ctx.fillRect(sprayLeft, 0, sprayRight - sprayLeft, h);
+        }
+
         const posPx = finalPos * w;
-        this.bufCtx.strokeStyle = '#06b6d4';
-        this.bufCtx.lineWidth = 2;
-        this.bufCtx.beginPath();
-        this.bufCtx.moveTo(posPx, 0);
-        this.bufCtx.lineTo(posPx, h);
-        this.bufCtx.stroke();
 
-        // Draw Spray Range (Yellow Transparent)
-        const sprayLeft = Math.max(0, finalPos - finalSpray) * w;
-        const sprayRight = Math.min(1, finalPos + finalSpray) * w;
-        this.bufCtx.fillStyle = 'rgba(234, 179, 8, 0.15)';
-        this.bufCtx.fillRect(sprayLeft, 0, sprayRight - sprayLeft, h);
-
-        // Draw Grain Size (Green box)
+        // 2. Draw Grain Size Indicator (Green box at bottom)
         const bufDur = t.buffer.duration;
         const grainPx = (finalGrainSize / bufDur) * w;
-        this.bufCtx.fillStyle = 'rgba(34, 197, 94, 0.2)';
-        this.bufCtx.fillRect(Math.max(0, posPx - grainPx/2), h - 10, grainPx, 10);
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.4)';
+        ctx.fillRect(Math.max(0, posPx - grainPx/2), h - 4, grainPx, 4);
 
-        // Redraw position line on top
-        this.bufCtx.strokeStyle = '#06b6d4';
-        this.bufCtx.lineWidth = 1;
-        this.bufCtx.beginPath();
-        this.bufCtx.moveTo(posPx, 0);
-        this.bufCtx.lineTo(posPx, h);
-        this.bufCtx.stroke();
+        // 3. Draw Position Head (Cyan Line)
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(posPx, 0);
+        ctx.lineTo(posPx, h);
+        ctx.stroke();
     }
 }
