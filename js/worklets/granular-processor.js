@@ -1,6 +1,7 @@
 // BeatOS Granular Synthesis AudioWorklet Processor
 // Runs on dedicated audio rendering thread for ultra-low latency
 // Supports: polyphonic grains, pitch shifting, RMS-based position finding, velocity
+// Phase 1 Improvements: Cubic Interpolation, Window LUT, De-clicking
 
 class BeatOSGranularProcessor extends AudioWorkletProcessor {
     constructor() {
@@ -27,7 +28,11 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             startFrame: 0,
             
             // Track routing
-            trackId: null
+            trackId: null,
+
+            // De-clicking / Release
+            releasing: false,
+            releaseAmp: 1.0
         }));
         
         // Shared buffers (transferred from main thread)
@@ -36,6 +41,14 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         // Stats
         this.currentFrame = 0;
         this.totalGrainsTriggered = 0;
+
+        // Phase 1.2: Window Function Lookup Table (Hanning)
+        // Pre-calculating this reduces CPU load by avoiding Math.cos() per sample
+        this.windowLUT = new Float32Array(4096);
+        for(let i=0; i<4096; i++) {
+            const phase = i / 4095;
+            this.windowLUT[i] = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * phase));
+        }
         
         // Message handling from main thread
         this.port.onmessage = (e) => {
@@ -68,6 +81,17 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             }
         };
     }
+
+    // Phase 1.1: Cubic Hermite Interpolation
+    // Returns a much smoother interpolated value than linear (less metallic artifacts)
+    cubicHermite(y0, y1, y2, y3, x) {
+        const c0 = y1;
+        const c1 = 0.5 * (y2 - y0);
+        const c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+        const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+        
+        return ((c3 * x + c2) * x + c1) * x + c0;
+    }
     
     process(inputs, outputs, parameters) {
         const output = outputs[0];
@@ -88,8 +112,18 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             
             // Generate samples for this grain
             for (let i = 0; i < frameCount; i++) {
+                // Phase 1.3: De-clicking (Release Envelope)
+                if (voice.releasing) {
+                    voice.releaseAmp -= (1.0 / 64.0); // Fade out over 64 samples
+                    if (voice.releaseAmp <= 0) {
+                        voice.active = false;
+                        voice.releasing = false;
+                        break; // Stop processing this voice immediately
+                    }
+                }
+
                 if (voice.phase >= voice.grainLength) {
-                    // Grain finished
+                    // Grain finished naturally
                     voice.active = false;
                     break;
                 }
@@ -102,20 +136,31 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 // Wrap position if needed
                 const wrappedPos = readPos % voice.bufferLength;
                 const sampleIndex = Math.floor(wrappedPos);
-                
-                // Linear interpolation for smoother pitch shifting
                 const frac = wrappedPos - sampleIndex;
-                const nextIndex = (sampleIndex + 1) % voice.bufferLength;
-                const sample1 = voice.buffer[sampleIndex] || 0;
-                const sample2 = voice.buffer[nextIndex] || 0;
-                const sample = sample1 + (sample2 - sample1) * frac;
+
+                // Phase 1.1: Cubic Interpolation
+                // Fetch 4 samples for Hermite interpolation
+                const idx0 = (sampleIndex - 1 + voice.bufferLength) % voice.bufferLength;
+                const idx1 = sampleIndex;
+                const idx2 = (sampleIndex + 1) % voice.bufferLength;
+                const idx3 = (sampleIndex + 2) % voice.bufferLength;
+
+                const y0 = voice.buffer[idx0] || 0;
+                const y1 = voice.buffer[idx1] || 0;
+                const y2 = voice.buffer[idx2] || 0;
+                const y3 = voice.buffer[idx3] || 0;
+
+                const sample = this.cubicHermite(y0, y1, y2, y3, frac);
                 
-                // Apply Hann window envelope for smooth grain edges
-                const envPhase = voice.phase / voice.grainLength;
-                const envelope = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * envPhase));
+                // Phase 1.2: Apply Hann window envelope using LUT
+                // Map phase (0 to grainLength) to LUT size (0 to 4096)
+                const lutIndex = Math.floor((voice.phase / voice.grainLength) * 4095);
+                // Safety clamp
+                const safeLutIndex = Math.max(0, Math.min(4095, lutIndex));
+                const envelope = this.windowLUT[safeLutIndex];
                 
-                // Apply velocity and envelope
-                const outputSample = sample * envelope * voice.velocity;
+                // Apply velocity, window envelope, and release envelope
+                const outputSample = sample * envelope * voice.velocity * voice.releaseAmp;
                 
                 // Mix to output (mono source -> stereo output)
                 output[0][i] += outputSample;
@@ -192,6 +237,10 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         voice.startFrame = this.currentFrame;
         voice.trackId = trackId;
         
+        // Reset Release State for new grain
+        voice.releasing = false;
+        voice.releaseAmp = 1.0;
+        
         this.totalGrainsTriggered++;
     }
     
@@ -250,14 +299,20 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     
     stopAllVoices() {
         for (let v = 0; v < this.voices.length; v++) {
-            this.voices[v].active = false;
+            // Phase 1.3: Soft Stop
+            if (this.voices[v].active) {
+                this.voices[v].releasing = true;
+                this.voices[v].releaseAmp = 1.0;
+            }
         }
     }
     
     stopTrack(trackId) {
         for (let v = 0; v < this.voices.length; v++) {
-            if (this.voices[v].trackId === trackId) {
-                this.voices[v].active = false;
+            // Phase 1.3: Soft Stop for specific track
+            if (this.voices[v].trackId === trackId && this.voices[v].active) {
+                this.voices[v].releasing = true;
+                this.voices[v].releaseAmp = 1.0;
             }
         }
     }
