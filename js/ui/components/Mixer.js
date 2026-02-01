@@ -87,14 +87,20 @@ export class Mixer {
         
         const tracks = this.trackManager.getTracks();
         
+        // 0. Render Label Strip (Leftmost)
+        mixerContainer.appendChild(this.createLabelStrip());
+
+        // 1. Tracks
         tracks.forEach(track => {
             mixerContainer.appendChild(this.createTrackStrip(track));
         });
 
+        // 2. Groups
         for(let i=0; i<4; i++) {
             mixerContainer.appendChild(this.createGroupStrip(i));
         }
 
+        // 3. Master
         mixerContainer.appendChild(this.createMasterStrip());
 
         this.container.appendChild(mixerContainer);
@@ -104,13 +110,30 @@ export class Mixer {
         this.updateAllTrackStates();
     }
 
-    createKnob(label, value, min, max, step, onChange, colorClass = '') {
+    createKnob(label, value, min, max, step, onChange, colorClass = '', showLabel = true) {
         const wrapper = document.createElement('div');
         wrapper.className = 'mixer-pot';
         
-        const lbl = document.createElement('label');
-        lbl.innerText = label;
-        wrapper.appendChild(lbl);
+        if (showLabel) {
+            const lbl = document.createElement('label');
+            lbl.innerText = label;
+            wrapper.appendChild(lbl);
+        } else {
+            // Add a spacer label to maintain vertical alignment if needed, 
+            // or rely on CSS gap. Let's add an empty one or padding.
+            // Actually, if we remove labels, we want knobs to be tighter or aligned.
+            // To align with the label strip, we must keep the spacing consistent.
+            // The Label Strip will have labels, tracks won't.
+            // Let's assume CSS handles alignment via flex gap/padding.
+            // We'll add a transparent/empty label to keep exact height if CSS relies on it,
+            // or just skip it. Let's skip it and trust the flex gap in .strip-controls.
+            // UPDATE: To ensure perfect alignment with the label strip, it's safer to add an invisible label
+            // or adjust spacing. Let's add an invisible label to keep the layout rigid.
+            const lbl = document.createElement('label');
+            lbl.innerHTML = '&nbsp;'; // Non-breaking space
+            lbl.style.visibility = 'hidden';
+            wrapper.appendChild(lbl);
+        }
 
         const knobOuter = document.createElement('div');
         knobOuter.className = `knob-outer ${colorClass}`;
@@ -198,15 +221,103 @@ export class Mixer {
         return wrapper;
     }
 
+    createLabelStrip() {
+        const strip = document.createElement('div');
+        strip.className = 'mixer-strip';
+        strip.style.width = '40px';
+        strip.style.minWidth = '40px';
+        strip.style.backgroundColor = '#151515';
+        strip.style.border = 'none';
+        
+        const header = document.createElement('div');
+        header.className = 'strip-header';
+        header.innerHTML = `<span class="strip-num" style="color:transparent">00</span>`; // Placeholder
+        strip.appendChild(header);
+
+        const controls = document.createElement('div');
+        controls.className = 'strip-controls custom-scrollbar';
+        // Hide scrollbar on label strip but allow scroll sync if needed (advanced)
+        // For now, assume height matches.
+        controls.style.overflow = 'hidden'; 
+
+        const createLabel = (text) => {
+            const div = document.createElement('div');
+            div.className = 'mixer-pot';
+            // Mimic structure for alignment
+            const lbl = document.createElement('label');
+            lbl.innerText = text;
+            lbl.style.color = '#888';
+            lbl.style.fontWeight = 'bold';
+            div.appendChild(lbl);
+            
+            // Spacer for knob height
+            const spacer = document.createElement('div');
+            spacer.style.height = '26px'; // Match knob-outer height
+            div.appendChild(spacer);
+            return div;
+        };
+
+        const createHeader = (text) => {
+             const div = document.createElement('div');
+             div.style.height = '14px'; // Approx section-label height + margin
+             div.style.display = 'flex';
+             div.style.alignItems = 'center';
+             div.style.justifyContent = 'center';
+             const span = document.createElement('span');
+             span.innerText = text;
+             span.style.fontSize = '0.45rem';
+             span.style.color = '#555';
+             span.style.fontWeight = 'bold';
+             div.appendChild(span);
+             return div;
+        }
+
+        controls.appendChild(createLabel('Gain'));
+
+        // EQ Section
+        const eqSec = document.createElement('div');
+        eqSec.className = 'eq-section';
+        eqSec.style.border = 'none'; eqSec.style.background = 'transparent';
+        eqSec.appendChild(createHeader('EQ'));
+        eqSec.appendChild(createLabel('Hi'));
+        eqSec.appendChild(createLabel('Mid'));
+        eqSec.appendChild(createLabel('Freq'));
+        eqSec.appendChild(createLabel('Lo'));
+        controls.appendChild(eqSec);
+
+        // Sends Section
+        const sendSec = document.createElement('div');
+        sendSec.className = 'eq-section';
+        sendSec.style.border = 'none'; sendSec.style.background = 'transparent';
+        sendSec.appendChild(createHeader('SENDS'));
+        sendSec.appendChild(createLabel('A'));
+        sendSec.appendChild(createLabel('B'));
+        controls.appendChild(sendSec);
+
+        controls.appendChild(createLabel('Drive'));
+        controls.appendChild(createLabel('Comp'));
+        controls.appendChild(createLabel('Pan'));
+
+        strip.appendChild(controls);
+        
+        // Spacer for fader section
+        const faderSpacer = document.createElement('div');
+        faderSpacer.style.height = '140px';
+        faderSpacer.style.flexShrink = '0';
+        strip.appendChild(faderSpacer);
+
+        return strip;
+    }
+
     createTrackStrip(track) {
         const strip = document.createElement('div');
         strip.className = 'mixer-strip';
         
         const header = document.createElement('div');
         header.className = 'strip-header';
+        // Redundant info removed, just the number
         header.innerHTML = `
-            <span class="strip-num">${track.id + 1}</span>
-            <span class="strip-name" title="${track.autoName || 'Track'}">${track.autoName || 'Trk ' + (track.id+1)}</span>
+            <span class="strip-num" style="font-size:0.8rem; color:#fff;">${track.id + 1}</span>
         `;
         strip.appendChild(header);
 
@@ -215,66 +326,68 @@ export class Mixer {
 
         const getBus = () => track.bus;
 
+        // Gain (Trim) - No Label
         controls.appendChild(this.createKnob('Gain', track.params.gain || 1, 0, 2, 0.01, (v) => {
             track.params.gain = v;
             const bus = getBus();
             if(bus && bus.trim) bus.trim.gain.value = v;
-        }, 'knob-color-green'));
+        }, 'knob-color-green', false));
 
         const eqSec = document.createElement('div');
         eqSec.className = 'eq-section';
-        eqSec.innerHTML = `<div class="section-label">EQ</div>`;
+        // Empty header for spacing
+        eqSec.innerHTML = `<div class="section-label" style="visibility:hidden">EQ</div>`;
         
         eqSec.appendChild(this.createKnob('Hi', track.params.eqHigh || 0, -15, 15, 0.1, (v) => {
             track.params.eqHigh = v;
             const bus = getBus();
             if(bus && bus.eq && bus.eq.high) bus.eq.high.gain.value = v;
-        }, 'knob-color-blue'));
+        }, 'knob-color-blue', false));
         
         eqSec.appendChild(this.createKnob('Mid', track.params.eqMid || 0, -15, 15, 0.1, (v) => {
             track.params.eqMid = v;
             const bus = getBus();
             if(bus && bus.eq && bus.eq.mid) bus.eq.mid.gain.value = v;
-        }, 'knob-color-green'));
+        }, 'knob-color-green', false));
         
         eqSec.appendChild(this.createKnob('Freq', track.params.eqMidFreq || 1000, 200, 5000, 10, (v) => {
             track.params.eqMidFreq = v;
             const bus = getBus();
             if(bus && bus.eq && bus.eq.mid) bus.eq.mid.frequency.value = v;
-        }, 'knob-color-green'));
+        }, 'knob-color-green', false));
 
         eqSec.appendChild(this.createKnob('Lo', track.params.eqLow || 0, -15, 15, 0.1, (v) => {
             track.params.eqLow = v;
             const bus = getBus();
             if(bus && bus.eq && bus.eq.low) bus.eq.low.gain.value = v;
-        }, 'knob-color-red'));
+        }, 'knob-color-red', false));
         
         controls.appendChild(eqSec);
 
         const sendSec = document.createElement('div');
         sendSec.className = 'eq-section';
-        sendSec.innerHTML = `<div class="section-label">SENDS</div>`;
-        sendSec.appendChild(this.createKnob('A', track.params.sendA || 0, 0, 1, 0.01, (v) => track.params.sendA = v, 'knob-color-yellow'));
-        sendSec.appendChild(this.createKnob('B', track.params.sendB || 0, 0, 1, 0.01, (v) => track.params.sendB = v, 'knob-color-yellow'));
+        sendSec.innerHTML = `<div class="section-label" style="visibility:hidden">SENDS</div>`;
+        sendSec.appendChild(this.createKnob('A', track.params.sendA || 0, 0, 1, 0.01, (v) => track.params.sendA = v, 'knob-color-yellow', false));
+        sendSec.appendChild(this.createKnob('B', track.params.sendB || 0, 0, 1, 0.01, (v) => track.params.sendB = v, 'knob-color-yellow', false));
         controls.appendChild(sendSec);
 
         controls.appendChild(this.createKnob('Drive', track.params.drive || 0, 0, 1, 0.01, (v) => {
             track.params.drive = v;
             const bus = getBus();
             if(bus && bus.drive && bus.drive.input) this.audioEngine.setDriveAmount(bus.drive.input, v);
-        }, 'knob-color-red'));
+        }, 'knob-color-red', false));
 
         controls.appendChild(this.createKnob('Comp', track.params.comp || 0, 0, 1, 0.01, (v) => {
             track.params.comp = v;
             const bus = getBus();
             if(bus && bus.comp) this.audioEngine.setCompAmount(bus.comp, v);
-        }, 'knob-color-purple'));
+        }, 'knob-color-purple', false));
 
         controls.appendChild(this.createKnob('Pan', track.params.pan, -1, 1, 0.01, (v) => {
             track.params.pan = v;
             const bus = getBus();
             if(bus && bus.pan) bus.pan.pan.value = v;
-        }, 'knob-color-blue'));
+        }, 'knob-color-blue', false));
 
         strip.appendChild(controls);
 
