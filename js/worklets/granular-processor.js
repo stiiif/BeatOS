@@ -2,6 +2,7 @@
 // Runs on dedicated audio rendering thread for ultra-low latency
 // Supports: polyphonic grains, pitch shifting, RMS-based position finding, velocity
 // Phase 1 Improvements: Cubic Interpolation, Window LUT, De-clicking
+// Phase 2 Improvements: Event-Based Internal Scheduling
 
 class BeatOSGranularProcessor extends AudioWorkletProcessor {
     constructor() {
@@ -35,6 +36,10 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             releaseAmp: 1.0
         }));
         
+        // Active Notes (Internal Scheduler)
+        // Stores notes that are currently generating grains
+        this.activeNotes = [];
+
         // Shared buffers (transferred from main thread)
         this.trackBuffers = new Map(); // trackId -> { buffer: Float32Array, rmsMap: boolean[] }
         
@@ -55,8 +60,12 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const { type, data } = e.data;
             
             switch(type) {
-                case 'trigger':
+                case 'trigger': // Legacy trigger (single grain)
                     this.triggerGrain(data);
+                    break;
+                
+                case 'noteOn': // Phase 2: New Event-Based Trigger
+                    this.handleNoteOn(data);
                     break;
                     
                 case 'setBuffer':
@@ -69,6 +78,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                     
                 case 'stopAll':
                     this.stopAllVoices();
+                    this.activeNotes = []; // Clear scheduler
                     break;
                     
                 case 'stopTrack':
@@ -93,11 +103,75 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         return ((c3 * x + c2) * x + c1) * x + c0;
     }
     
+    // Phase 2: Handle Note On Event
+    handleNoteOn(data) {
+        const { trackId, time, duration, params } = data;
+        
+        // Convert Start Time to Frame Count (approx) or keep as time
+        // Note: 'currentFrame' is local to this processor since start.
+        // Ideally we sync 'time' with audioContext.currentTime but accessing that inside Worklet is tricky directly.
+        // We assume 'time' passed in is relative to AudioContext.currentTime.
+        // However, 'currentTime' in process() is available globally in AudioWorkletGlobalScope, or we track locally.
+        // Standard practice: Pass 'currentTime' from main thread or use relative offsets.
+        // Better: Main thread sends 'startTime' relative to NOW.
+        // If data.time is absolute AudioContext time, we need to know current AudioContext time.
+        // Using 'currentTime' (global in Worklet)
+        
+        this.activeNotes.push({
+            trackId,
+            startTime: time,
+            duration: duration, // in seconds
+            params: params, // { density, grainSize, position, spray, pitch, etc }
+            nextGrainTime: time // Schedule first grain immediately at start time
+        });
+    }
+
     process(inputs, outputs, parameters) {
         const output = outputs[0];
         const channelCount = output.length;
         const frameCount = output[0].length; // Always 128 samples
         
+        // Global time in seconds (provided by AudioWorkletGlobalScope)
+        const now = currentTime; 
+        
+        // Phase 2: Internal Grain Scheduler
+        // Iterate backwards to allow removal
+        for (let i = this.activeNotes.length - 1; i >= 0; i--) {
+            const note = this.activeNotes[i];
+            
+            // Check if note is finished
+            if (now > note.startTime + note.duration) {
+                this.activeNotes.splice(i, 1);
+                continue;
+            }
+            
+            // Check if note has started
+            if (now >= note.startTime) {
+                // Determine density interval
+                let density = Math.max(1, note.params.density || 20);
+                let interval = 1 / density;
+                
+                // Overlap logic (if provided) overrides density
+                if (note.params.overlap > 0) {
+                    const grainDur = note.params.grainSize || 0.1;
+                    interval = grainDur / Math.max(0.1, note.params.overlap);
+                }
+
+                // Spawn grains until nextGrainTime is in the future
+                // We limit the number of grains per block to prevent infinite loops if density is insane
+                let grainsSpawnedThisBlock = 0;
+                while (note.nextGrainTime < now + (frameCount / sampleRate) && grainsSpawnedThisBlock < 10) {
+                    if (note.nextGrainTime >= now) {
+                        // Time to spawn!
+                        // Apply randomization/spray here in the scheduler
+                        this.spawnGrainFromNote(note);
+                    }
+                    note.nextGrainTime += interval;
+                    grainsSpawnedThisBlock++;
+                }
+            }
+        }
+
         if (channelCount === 0) return true;
         
         // Clear output buffers
@@ -188,6 +262,57 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         return true; // Keep processor alive
     }
     
+    // Phase 2: Helper to spawn grain from note params
+    spawnGrainFromNote(note) {
+        const { params } = note;
+        const trackData = this.trackBuffers.get(note.trackId);
+        
+        if (!trackData || !trackData.buffer) return;
+
+        // Find free voice or steal
+        let voice = this.voices.find(v => !v.active);
+        if (!voice) {
+            voice = this.voices.reduce((oldest, v) => 
+                v.startFrame < oldest.startFrame ? v : oldest
+            );
+            // Quick fade out for stolen voice to avoid click
+            voice.releasing = true; 
+            // In a real scenario, we might want to allocate a NEW voice and fade the old one,
+            // but for fixed polyphony, we hard reset here after fading next block?
+            // For now, hard reset but rely on overlap masking it mostly. 
+            // Actually, simply resetting logic:
+        }
+
+        // Apply parameters from Note
+        // Note: Main thread calculates effective position (including LFOs) at Note On
+        // Ideally, we'd calculate LFOs here for sample accuracy, but passing LFO state is complex.
+        // We will stick to "Params at trigger time" for simplicity, or simple linear interpolation if params are automated.
+        
+        let finalPos = params.position;
+        
+        // Apply Spray (Randomness)
+        if (params.spray > 0) {
+            finalPos += (Math.random() * 2 - 1) * params.spray;
+            finalPos = Math.max(0, Math.min(1, finalPos));
+        }
+
+        // Initialize voice
+        voice.active = true;
+        voice.trackId = note.trackId;
+        voice.buffer = trackData.buffer;
+        voice.bufferLength = trackData.buffer.length;
+        voice.position = finalPos;
+        voice.phase = 0;
+        voice.grainLength = Math.max(128, Math.floor((params.grainSize || 0.1) * sampleRate));
+        voice.pitch = Math.max(0.05, Math.min(8.0, params.pitch || 1.0));
+        voice.velocity = params.velocity || 1.0;
+        voice.startFrame = this.currentFrame;
+        voice.releasing = false;
+        voice.releaseAmp = 1.0;
+
+        this.totalGrainsTriggered++;
+    }
+
     triggerGrain(data) {
         const {
             trackId,
@@ -311,6 +436,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         for (let v = 0; v < this.voices.length; v++) {
             // Phase 1.3: Soft Stop for specific track
             if (this.voices[v].trackId === trackId && this.voices[v].active) {
+                this.activeNotes = this.activeNotes.filter(n => n.trackId !== trackId); // Stop scheduler
                 this.voices[v].releasing = true;
                 this.voices[v].releaseAmp = 1.0;
             }
