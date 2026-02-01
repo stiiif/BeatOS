@@ -39,7 +39,7 @@ export class Track {
             // --- Common / Granular ---
             position: 0.0, 
             spray: 0.00, 
-            scanSpeed: 1.00, 
+            scanSpeed: 0.00, 
             density: 20,     
             overlap: 2.0,    
             grainSize: 0.10, 

@@ -308,7 +308,7 @@ export class Visualizer {
 
     drawOverlays(ctx, t, w, h, time) {
         // Calculate LFO Modulation for Visualization
-        let mod = { position:0, spray:0, grainSize:0 };
+        let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0 };
         
         t.lfos.forEach(lfo => {
             const v = lfo.getValue(time);
@@ -322,6 +322,19 @@ export class Visualizer {
         const finalPos = Math.max(0, Math.min(1, effectivePos + mod.position));
         const finalSpray = Math.max(0, p.spray + mod.spray);
         const finalGrainSize = Math.max(0.01, p.grainSize + mod.grainSize);
+        
+        // Calculate Effective Overlap (Concurrency)
+        let displayOverlap = 0;
+        const rawOverlap = (p.overlap || 0) + mod.overlap;
+        
+        if (rawOverlap > 0) {
+            displayOverlap = rawOverlap;
+        } else {
+            // Density mode: Overlap = Density (Hz) * GrainSize (s)
+            const finalDensity = Math.max(1, (p.density || 20) + mod.density);
+            displayOverlap = finalGrainSize * finalDensity;
+        }
+        displayOverlap = Math.max(0.1, displayOverlap);
 
         // 1. Draw Spray Range (Yellow Transparent)
         if (finalSpray > 0) {
@@ -333,11 +346,31 @@ export class Visualizer {
 
         const posPx = finalPos * w;
 
-        // 2. Draw Grain Size Indicator (Green box at bottom)
-        const bufDur = t.buffer.duration;
+        // 2. Draw Grain Size & Overlap Indicator (Green Stack)
+        const bufDur = t.buffer ? t.buffer.duration : 1;
         const grainPx = (finalGrainSize / bufDur) * w;
-        ctx.fillStyle = 'rgba(34, 197, 94, 0.4)';
-        ctx.fillRect(Math.max(0, posPx - grainPx/2), h - 4, grainPx, 4);
+        
+        const stackCount = Math.ceil(displayOverlap);
+        const barHeight = 3;
+        const barSpacing = 1;
+        const baseAlpha = 0.5;
+
+        for(let i=0; i<stackCount; i++) {
+            let alpha = baseAlpha;
+            // Fade the top layer if fractional
+            if (i === stackCount - 1) {
+                const frac = displayOverlap - Math.floor(displayOverlap);
+                if (frac > 0.01) alpha = baseAlpha * frac;
+            }
+            
+            ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`;
+            // Stack upwards from bottom
+            const y = h - 4 - (i * (barHeight + barSpacing));
+            
+            if (y > 0) {
+                ctx.fillRect(Math.max(0, posPx - grainPx/2), y, grainPx, barHeight);
+            }
+        }
 
         // 3. Draw Position Head (Cyan Line)
         ctx.strokeStyle = '#fff';
