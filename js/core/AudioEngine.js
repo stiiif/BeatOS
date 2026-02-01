@@ -74,11 +74,20 @@ export class AudioEngine {
         
         const volume = ctx.createGain();
         
+        // NEW: Master Analyser for Metering
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.85;
+        
         input.connect(limiter);
         limiter.connect(volume);
+        
+        // Connect Analyser
+        volume.connect(analyser);
+        
         volume.connect(ctx.destination);
         
-        this.masterBus = { input, volume, limiter };
+        this.masterBus = { input, volume, limiter, analyser };
     }
 
     initGroupBus(index) {
@@ -104,6 +113,11 @@ export class AudioEngine {
         compressor.ratio.value = 1;
         
         const volume = ctx.createGain();
+
+        // NEW: Group Analyser for Metering
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.85;
         
         // Chain: Input -> EQ -> Drive -> Comp -> Vol -> Master
         input.connect(eqLow);
@@ -115,6 +129,9 @@ export class AudioEngine {
         postDriveGain.connect(compressor);
         compressor.connect(volume);
         
+        // Connect Analyser
+        volume.connect(analyser);
+        
         if (this.masterBus) {
             volume.connect(this.masterBus.input);
         }
@@ -124,7 +141,8 @@ export class AudioEngine {
             eq: { low: eqLow, mid: eqMid, high: eqHigh },
             drive: { input: preDriveGain, shaper: shaper, output: postDriveGain },
             comp: compressor,
-            volume
+            volume,
+            analyser
         };
     }
 
@@ -189,8 +207,7 @@ export class AudioEngine {
         }
         
         // Connect Analyser (Side-chain / Tap)
-        // FIXED: The Analyser is NOT connected to destination. 
-        // It just receives signal for visualization.
+        // This is correct: Analyser receives post-pan signal for specific track
         pan.connect(analyser);
 
         // Apply Defaults / Stored Values

@@ -1,8 +1,7 @@
 // Granular SynthWorklet - AudioWorklet-based granular synthesis
-// Drop-in replacement for GranularSynth.js with same API
-// Provides massive performance improvements with dedicated audio thread
+// Refactored for multi-channel output to support true per-track routing
 
-import { VELOCITY_GAINS } from '../utils/constants.js';
+import { VELOCITY_GAINS, MAX_TRACKS } from '../utils/constants.js';
 
 export class GranularSynthWorklet {
     constructor(audioEngine) {
@@ -49,11 +48,14 @@ export class GranularSynthWorklet {
                     URL.revokeObjectURL(blobURL);
                 }
                 
-                // Create the worklet node
+                // CRITICAL: Configure worklet with 32 stereo outputs (one for each track)
+                // This ensures separate audio routing per track, preventing signal bleed in meters.
+                const outputChannelCounts = new Array(MAX_TRACKS).fill(2); // 32 stereo outputs
+
                 this.workletNode = new AudioWorkletNode(audioCtx, 'beatos-granular-processor', {
                     numberOfInputs: 0,
-                    numberOfOutputs: 1,
-                    outputChannelCount: [2] // Stereo output
+                    numberOfOutputs: MAX_TRACKS,
+                    outputChannelCount: outputChannelCounts
                 });
                 
                 // Handle messages from worklet
@@ -61,8 +63,8 @@ export class GranularSynthWorklet {
                     this.handleWorkletMessage(e.data);
                 };
                 
-                // DON'T connect to destination yet - grains will route through track buses
-                // The worklet generates audio, but we need to route it through track effects
+                // Initialize connected tracks set to track which outputs are routed
+                this.workletNode.connectedTracks = new Set();
                 
                 this.isInitialized = true;
                 console.log('[GranularSynthWorklet] ✅ Initialized successfully!');
@@ -91,8 +93,7 @@ export class GranularSynthWorklet {
                 break;
                 
             case 'stats':
-                // Could display stats in UI
-                // console.log('[GranularSynthWorklet] Stats:', data);
+                // Stats handled by monitor UI
                 break;
                 
             default:
@@ -106,18 +107,6 @@ export class GranularSynthWorklet {
 
     setMaxGrains(max) {
         this.MAX_GRAINS = Math.min(64, max); // AudioWorklet can handle 64
-    }
-
-    findActivePosition(track, requestedPos) {
-        // This is now handled in the worklet, but keep for compatibility
-        if (!track.rmsMap || track.rmsMap.length === 0) return requestedPos;
-        const mapIdx = Math.floor(requestedPos * 99); 
-        if (track.rmsMap[mapIdx]) return requestedPos; 
-        for (let i = 1; i < 50; i++) {
-            if (track.rmsMap[mapIdx + i]) return (mapIdx + i) / 99;
-            if (track.rmsMap[mapIdx - i]) return (mapIdx - i) / 99;
-        }
-        return requestedPos; 
     }
 
     async ensureBufferLoaded(track) {
@@ -257,14 +246,12 @@ export class GranularSynthWorklet {
         const dur = Math.max(0.01, p.grainSize + mod.grainSize);
         const pitch = Math.max(0.1, p.pitch + mod.pitch);
 
-        // CRITICAL: We need to route worklet through track bus
-        // Connect worklet to this track's bus if not already connected
-        if (!this.workletNode.connectedTracks) {
-            this.workletNode.connectedTracks = new Set();
-        }
-        
+        // CRITICAL ROUTING FIX: 
+        // Ensure specific Worklet Output [track.id] is connected to Track Bus Input.
+        // This connects Output N to Track N, isolating the signal path.
         if (!this.workletNode.connectedTracks.has(track.id)) {
-            this.workletNode.connect(track.bus.input);
+            // connect(destination, outputIndex, inputIndex)
+            this.workletNode.connect(track.bus.input, track.id, 0);
             this.workletNode.connectedTracks.add(track.id);
         }
 
@@ -317,7 +304,7 @@ export class GranularSynthWorklet {
     }
 
     async scheduleNote(track, time, scheduleVisualDrawCallback, velocityLevel = 2) {
-        // Handle simple drum tracks differently
+        // Handle simple drum tracks differently (they use standard Oscillators/BufferSources, not the Worklet)
         if (track.type === 'simple-drum') {
             this.audioEngine.triggerDrum(track, time, velocityLevel);
             scheduleVisualDrawCallback(time, track.id);
@@ -420,6 +407,7 @@ export class GranularSynthWorklet {
     }
     
     // Inline worklet code to bypass CSP restrictions
+    // UPDATED: Now supports multi-output routing
     getWorkletCode() {
         return `
 // BeatOS Granular Synthesis AudioWorklet Processor (Inline)
@@ -448,16 +436,30 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         };
     }
     process(inputs, outputs, parameters) {
-        const output = outputs[0];
-        const channelCount = output.length;
-        const frameCount = output[0].length;
-        if (channelCount === 0) return true;
-        for (let channel = 0; channel < channelCount; channel++) {
-            output[channel].fill(0);
+        // Clear all output channels first
+        // 'outputs' is an array of output arrays (one per track)
+        // Each output has 2 channels (stereo)
+        for (let j = 0; j < outputs.length; j++) {
+            const output = outputs[j];
+            if (!output || output.length === 0) continue;
+            for (let channel = 0; channel < output.length; channel++) {
+                output[channel].fill(0);
+            }
         }
+
+        // Get frame count from first output (all should match)
+        const frameCount = (outputs[0] && outputs[0][0]) ? outputs[0][0].length : 128;
+
         for (let v = 0; v < this.voices.length; v++) {
             const voice = this.voices[v];
             if (!voice.active || !voice.buffer) continue;
+            
+            // ROUTING: Select the output corresponding to the trackId
+            const trackOutput = outputs[voice.trackId];
+            if (!trackOutput) continue;
+            
+            const channelCount = trackOutput.length;
+
             for (let i = 0; i < frameCount; i++) {
                 if (voice.phase >= voice.grainLength) {
                     voice.active = false;
@@ -476,19 +478,32 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 const envPhase = voice.phase / voice.grainLength;
                 const envelope = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * envPhase));
                 const outputSample = sample * envelope * voice.velocity;
-                output[0][i] += outputSample;
-                if (channelCount > 1) { output[1][i] += outputSample; }
+                
+                // Mix into specific track output (Channel 0 = Left, 1 = Right)
+                trackOutput[0][i] += outputSample;
+                if (channelCount > 1) { trackOutput[1][i] += outputSample; }
+                
                 voice.phase++;
             }
         }
+        
+        // Soft Clip Limiter on ALL active outputs
         const outputGain = 0.5;
-        for (let channel = 0; channel < channelCount; channel++) {
-            for (let i = 0; i < frameCount; i++) {
-                const sample = output[channel][i] * outputGain;
-                const x = Math.max(-3, Math.min(3, sample));
-                output[channel][i] = x * (27 + x * x) / (27 + 9 * x * x);
+        for (let j = 0; j < outputs.length; j++) {
+            const output = outputs[j];
+            if (!output) continue;
+            
+            for (let channel = 0; channel < output.length; channel++) {
+                for (let i = 0; i < frameCount; i++) {
+                    const sample = output[channel][i] * outputGain;
+                    // Fast Tanh Approximation for Soft Clip
+                    if (sample < -3) output[channel][i] = -1;
+                    else if (sample > 3) output[channel][i] = 1;
+                    else output[channel][i] = sample * (27 + sample * sample) / (27 + 9 * sample * sample);
+                }
             }
         }
+        
         this.currentFrame += frameCount;
         return true;
     }
