@@ -193,8 +193,11 @@ export class GranularSynthWorklet {
         switch(velocityLevel) {
             case 1: // Ghost
                 gainMult = 0.4;
-                filterOffset = -3000;
-                sprayMod = 0.05; 
+                // Only modify parameters if NOT ignored
+                if (!track.ignoreVelocityParams) {
+                    filterOffset = -3000;
+                    sprayMod = 0.05;
+                }
                 break;
             case 2: // Normal
                 gainMult = 0.75;
@@ -235,7 +238,9 @@ export class GranularSynthWorklet {
         }
         
         let lpFreq = this.audioEngine.getMappedFrequency(Math.max(100, p.filter + mod.filter), 'lp');
+        // Filter offset is 0 if ignoreVelocityParams is true
         if (velocityLevel === 1) lpFreq = Math.max(100, lpFreq + filterOffset);
+        
         if(track.bus.lp) {
             track.bus.lp.frequency.setValueAtTime(lpFreq, time);
         }
@@ -476,7 +481,16 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 const sample2 = voice.buffer[nextIndex] || 0;
                 const sample = sample1 + (sample2 - sample1) * frac;
                 const envPhase = voice.phase / voice.grainLength;
-                const envelope = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * envPhase));
+                
+                // NEW: Trapezoidal Window for punchier transients
+                // 10% Attack, 80% Sustain, 10% Release
+                let envelope = 1.0;
+                if (envPhase < 0.1) {
+                    envelope = envPhase * 10.0;
+                } else if (envPhase > 0.9) {
+                    envelope = (1.0 - envPhase) * 10.0;
+                }
+                
                 const outputSample = sample * envelope * voice.velocity;
                 
                 // Mix into specific track output (Channel 0 = Left, 1 = Right)
@@ -488,7 +502,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         }
         
         // Soft Clip Limiter on ALL active outputs
-        const outputGain = 0.5;
+        const outputGain = 1.0; // Increased gain for louder output
         for (let j = 0; j < outputs.length; j++) {
             const output = outputs[j];
             if (!output) continue;
