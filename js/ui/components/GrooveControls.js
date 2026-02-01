@@ -514,6 +514,9 @@ export class GrooveControls {
 
         console.log(`[GrooveFS] Starting Freesound Auto-Kit for Pattern: ${pattern.name}`);
 
+        // Keep track of sound IDs used in this session to prevent duplicates in the same kit
+        const usedSoundIds = new Set();
+
         try {
             for (let i = 0; i < TRACKS_PER_GROUP; i++) {
                 const targetTrackId = startTrack + i;
@@ -611,8 +614,36 @@ export class GrooveControls {
                     }
 
                     if (results.results && results.results.length > 0) {
-                        const pickIdx = Math.floor(Math.random() * Math.min(5, results.results.length));
-                        const sound = results.results[pickIdx];
+                        // Find a unique sound from results
+                        let sound = null;
+                        
+                        // Try up to 5 times to find a unique sound (or just iterate results)
+                        // Shuffle a subset of results to pick from
+                        const candidateCount = Math.min(10, results.results.length);
+                        const candidates = results.results.slice(0, candidateCount);
+                        
+                        // Simple shuffle of candidates
+                        for (let k = candidates.length - 1; k > 0; k--) {
+                            const j = Math.floor(Math.random() * (k + 1));
+                            [candidates[k], candidates[j]] = [candidates[j], candidates[k]];
+                        }
+                        
+                        // Pick first unused candidate
+                        for (const candidate of candidates) {
+                            if (!usedSoundIds.has(candidate.id)) {
+                                sound = candidate;
+                                break;
+                            }
+                        }
+                        
+                        // If all used (rare for small kits), just pick random one
+                        if (!sound) {
+                            const pickIdx = Math.floor(Math.random() * candidates.length);
+                            sound = candidates[pickIdx];
+                            console.warn(`[GrooveFS] Could not find unique sound for ${query}, reusing ${sound.id}`);
+                        } else {
+                            usedSoundIds.add(sound.id);
+                        }
                         
                         console.log(`[GrooveFS] Success! Loading: ${sound.name} into Track ${targetTrackId}`);
                         const url = sound.previews['preview-hq-mp3'];
