@@ -1,6 +1,4 @@
 // Audio Engine Module - Fixed Routing (Analyser Leak Plugged)
-// Phase 4.4: Updated triggerDrum for Hybrid Sequencer (Immediate Execution)
-
 import { VELOCITY_GAINS, TRACKS_PER_GROUP } from '../utils/constants.js';
 
 export class AudioEngine {
@@ -76,14 +74,17 @@ export class AudioEngine {
         
         const volume = ctx.createGain();
         
-        // Master Analyser for Metering
+        // NEW: Master Analyser for Metering
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 2048;
         analyser.smoothingTimeConstant = 0.85;
         
         input.connect(limiter);
         limiter.connect(volume);
+        
+        // Connect Analyser
         volume.connect(analyser);
+        
         volume.connect(ctx.destination);
         
         this.masterBus = { input, volume, limiter, analyser };
@@ -113,7 +114,7 @@ export class AudioEngine {
         
         const volume = ctx.createGain();
 
-        // Group Analyser for Metering
+        // NEW: Group Analyser for Metering
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 2048;
         analyser.smoothingTimeConstant = 0.85;
@@ -206,6 +207,7 @@ export class AudioEngine {
         }
         
         // Connect Analyser (Side-chain / Tap)
+        // This is correct: Analyser receives post-pan signal for specific track
         pan.connect(analyser);
 
         // Apply Defaults / Stored Values
@@ -409,13 +411,7 @@ export class AudioEngine {
     triggerDrum(track, time, velocityLevel = 2) {
         if (!this.audioCtx || !track.bus) return;
         const ctx = this.audioCtx;
-        
-        // Ensure "time" is safe.
-        // If "time" is in the past (which happens when triggering from Worklet callback),
-        // we use currentTime to trigger immediately.
-        
-        let t = Math.max(ctx.currentTime, time);
-        
+        const t = time;
         const type = track.params.drumType || 'kick';
         const tune = track.params.drumTune || 0.5; 
         const decayVal = track.params.drumDecay || 0.5; 
@@ -434,21 +430,13 @@ export class AudioEngine {
 
         const out = track.bus.input;
 
-        // Apply filters (immediate)
-        if(track.bus.hp) {
-            const freq = this.getMappedFrequency(Math.max(20, track.params.hpFilter), 'hp');
-            track.bus.hp.frequency.setValueAtTime(freq, t);
-        }
+        if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(this.getMappedFrequency(Math.max(20, track.params.hpFilter), 'hp'), t);
         
         let lpFreq = this.getMappedFrequency(Math.max(100, track.params.filter), 'lp');
         let targetLp = lpFreq + filterOffset;
         targetLp = Math.max(100, Math.min(22000, targetLp));
         
-        if(track.bus.lp) {
-            track.bus.lp.frequency.setValueAtTime(targetLp, t);
-        }
-
-        // --- SYNTHESIS LOGIC (Same as before, using 't' safe time) ---
+        if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(targetLp, t);
 
         if (type === 'kick') {
             const osc = ctx.createOscillator(); const gain = ctx.createGain();
