@@ -89,12 +89,24 @@ export class TrackOperations {
         }
     }
 
+    toggleIgnoreVelocityParams(trk) {
+        this.tracks[trk].ignoreVelocityParams = !this.tracks[trk].ignoreVelocityParams;
+        const btn = document.getElementById(`btnV_${trk}`);
+        
+        if(this.tracks[trk].ignoreVelocityParams) {
+            btn.classList.add('ignore-vel-active');
+        } else {
+            btn.classList.remove('ignore-vel-active');
+        }
+    }
+
     updateTrackStateUI(trk) { 
         const t = this.tracks[trk]; 
         const btnM = document.getElementById(`btnM_${trk}`); 
         const btnS = document.getElementById(`btnS_${trk}`); 
         const btnL = document.getElementById(`btnL_${trk}`); 
         const btnX = document.getElementById(`btnX_${trk}`);
+        const btnV = document.getElementById(`btnV_${trk}`);
         
         if(t.muted) btnM.classList.add('mute-active'); else btnM.classList.remove('mute-active'); 
         if(t.soloed) btnS.classList.add('solo-active'); else btnS.classList.remove('solo-active'); 
@@ -102,6 +114,10 @@ export class TrackOperations {
         if(btnX) { 
             if(t.ignoreRandom) btnX.classList.add('exclude-active'); 
             else btnX.classList.remove('exclude-active'); 
+        }
+        if(btnV) {
+            if(t.ignoreVelocityParams) btnV.classList.add('ignore-vel-active');
+            else btnV.classList.remove('ignore-vel-active');
         }
         
         if(this.trackRowElements[trk]) {

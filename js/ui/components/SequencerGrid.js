@@ -114,7 +114,7 @@ export class SequencerGrid {
         });
     }
 
-    appendTrackRow(trk, visualizerCallback, randomChokeMode, randomChokeGroups, onToggleStep, onToggleMute, onToggleSolo, onToggleStepLock, onToggleMuteGroup, onToggleSoloGroup, onClearTrack, onClearGroup, onToggleIgnoreRandom, onRandomizeTrack, onSelectTrack) {
+    appendTrackRow(trk, visualizerCallback, randomChokeMode, randomChokeGroups, onToggleStep, onToggleMute, onToggleSolo, onToggleStepLock, onToggleMuteGroup, onToggleSoloGroup, onClearTrack, onClearGroup, onToggleIgnoreRandom, onToggleIgnoreVelocityParams, onRandomizeTrack, onSelectTrack) {
         const container = document.getElementById('matrixContainer');
         const buttonRow = document.getElementById('matrixButtonRow');
         const trackObj = this.tracks[trk];
@@ -192,7 +192,15 @@ export class SequencerGrid {
         const btnM = createAction('M', (t) => onToggleMute(t), 'Mute Track'); btnM.id = `btnM_${trk}`;
         const btnS = createAction('S', (t) => onToggleSolo(t), 'Solo Track'); btnS.id = `btnS_${trk}`;
         const btnL = createAction('L', (t) => onToggleStepLock(t), 'Lock Steps'); btnL.id = `btnL_${trk}`;
-        actionsDiv.appendChild(btnL); actionsDiv.appendChild(btnM);
+        
+        // NEW Button V
+        const btnV = createAction('V', (t) => onToggleIgnoreVelocityParams(t), 'Deactivate Velocity Params (Keep Gain)', 'vel-params');
+        btnV.id = `btnV_${trk}`;
+        if(trackObj.ignoreVelocityParams) btnV.classList.add('ignore-vel-active');
+
+        actionsDiv.appendChild(btnL); 
+        actionsDiv.appendChild(btnV); // Insert next to lock
+        actionsDiv.appendChild(btnM);
         actionsDiv.appendChild(createAction('Mg', () => onToggleMuteGroup(groupIdx), 'Mute Group'));
         actionsDiv.appendChild(btnS);
         actionsDiv.appendChild(createAction('Sg', () => onToggleSoloGroup(groupIdx), 'Solo Group'));

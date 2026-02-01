@@ -113,6 +113,7 @@ export class UIManager {
             (t, s) => this.toggleStep(t, s), (t) => this.toggleMute(t), (t) => this.toggleSolo(t),
             (t) => this.toggleStepLock(t), (g) => this.toggleMuteGroup(g), (g) => this.toggleSoloGroup(g),
             (t) => this.clearTrack(t), (g) => this.clearGroup(g), (t) => this.toggleIgnoreRandom(t),
+            (t) => this.toggleIgnoreVelocityParams(t),
             (t) => this.randomizeTrackPattern(t), (t, cb) => this.selectTrack(t, cb)
         );
         this.syncGridElements();
@@ -182,6 +183,7 @@ export class UIManager {
 
     toggleStepLock(trk) { this.trackOps.toggleStepLock(trk); }
     toggleIgnoreRandom(trk) { this.trackOps.toggleIgnoreRandom(trk); }
+    toggleIgnoreVelocityParams(trk) { this.trackOps.toggleIgnoreVelocityParams(trk); }
     
     // Updates Sequencer UI (and now ensures Mixer is in sync via explicit calls above)
     updateTrackStateUI(trk) { this.trackOps.updateTrackStateUI(trk); }
