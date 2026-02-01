@@ -19,8 +19,8 @@ export class Mixer {
         // Callbacks
         this.onMute = null;
         this.onSolo = null;
-        this.onMuteGroup = null; // New callback for group mute
-        this.onSoloGroup = null; // New callback for group solo
+        this.onMuteGroup = null; 
+        this.onSoloGroup = null;
     }
 
     setCallbacks(onMute, onSolo, onMuteGroup, onSoloGroup) {
@@ -36,28 +36,23 @@ export class Mixer {
         const els = this.trackStripElements.get(trackId);
         
         if (track && els) {
-            // Update Mute
             if (track.muted) els.muteBtn.classList.add('active');
             else els.muteBtn.classList.remove('active');
             
-            // Update Solo
             if (track.soloed) els.soloBtn.classList.add('active');
             else els.soloBtn.classList.remove('active');
         }
     }
 
-    // New: Update Group UI State (Checks first track of group as proxy for group state)
     updateGroupState(groupIndex) {
         const startTrackId = groupIndex * TRACKS_PER_GROUP;
         const track = this.trackManager.getTracks()[startTrackId];
         const els = this.groupStripElements.get(groupIndex);
 
         if (track && els) {
-            // Update Group Mute Button
             if (track.muted) els.muteBtn.classList.add('active');
             else els.muteBtn.classList.remove('active');
 
-            // Update Group Solo Button
             if (track.soloed) els.soloBtn.classList.add('active');
             else els.soloBtn.classList.remove('active');
         }
@@ -69,7 +64,6 @@ export class Mixer {
             this.updateTrackState(t.id);
         });
         
-        // Also update group states
         const numGroups = Math.ceil(tracks.length / TRACKS_PER_GROUP);
         for(let i=0; i<numGroups; i++) {
             this.updateGroupState(i);
@@ -79,8 +73,8 @@ export class Mixer {
     render() {
         if (!this.container) return;
         this.container.innerHTML = '';
-        this.trackStripElements.clear(); // Reset element cache
-        this.groupStripElements.clear(); // Reset group cache
+        this.trackStripElements.clear(); 
+        this.groupStripElements.clear(); 
         
         const mixerContainer = document.createElement('div');
         mixerContainer.className = 'mixer-container custom-scrollbar';
@@ -106,20 +100,25 @@ export class Mixer {
         this.container.appendChild(mixerContainer);
         this.isRendered = true;
         
-        // Initial state update to sync buttons
         this.updateAllTrackStates();
     }
 
-    createKnob(label, value, min, max, step, onChange, colorClass = '', showLabel = true) {
+    // Helper: Change CSS Variable for Width
+    setTrackStripWidth(widthPx) {
+        document.documentElement.style.setProperty('--track-width', `${widthPx}px`);
+    }
+
+    createKnob(label, value, min, max, step, onChange, colorClass = '', showLabel = false) {
+        // Wrapper with specific class for alignment
         const wrapper = document.createElement('div');
-        wrapper.className = 'mixer-pot';
+        wrapper.className = 'mixer-pot track-item'; // track-item hides internal label via CSS
         
+        // Optional label inside component (hidden by CSS usually for tracks)
         if (showLabel) {
             const lbl = document.createElement('label');
             lbl.innerText = label;
             wrapper.appendChild(lbl);
         }
-        // No else block needed - we want it compact on tracks
 
         const knobOuter = document.createElement('div');
         knobOuter.className = `knob-outer ${colorClass}`;
@@ -209,61 +208,62 @@ export class Mixer {
 
     createLabelStrip() {
         const strip = document.createElement('div');
-        strip.className = 'mixer-strip';
-        strip.style.width = '42px';
-        strip.style.minWidth = '42px';
-        strip.style.backgroundColor = '#151515';
-        strip.style.border = 'none';
+        strip.className = 'mixer-strip label-strip'; // Special class
         
         const header = document.createElement('div');
         header.className = 'strip-header';
-        header.innerHTML = `<span class="strip-num" style="color:#666; font-size:0.7rem; font-weight:bold;">L</span>`; 
+        
+        // --- 5. CONFIGURATION SLIDER ---
+        // Range slider for width configuration [18px - 42px]
+        const widthSlider = document.createElement('input');
+        widthSlider.type = 'range';
+        widthSlider.className = 'width-slider';
+        widthSlider.min = 18;
+        widthSlider.max = 42;
+        widthSlider.value = 42; // Default
+        widthSlider.title = "Adjust Track Width";
+        widthSlider.oninput = (e) => {
+            this.setTrackStripWidth(e.target.value);
+        };
+        
+        header.appendChild(widthSlider);
         strip.appendChild(header);
 
         const controls = document.createElement('div');
-        controls.className = 'strip-controls custom-scrollbar';
-        controls.style.overflow = 'hidden'; 
-        controls.style.gap = '8px'; // Match CSS gap for tracks
+        controls.className = 'strip-controls'; // Same class ensures same flex gap
 
-        // Helper to create label matching knob height
+        // Helper to create aligned text labels
+        // Must use 'mixer-pot label-item' class to match height calculation in CSS
         const createLabel = (text) => {
             const div = document.createElement('div');
-            div.className = 'mixer-pot';
-            div.style.height = '26px'; // Match .knob-outer height
-            div.style.justifyContent = 'center';
+            div.className = 'mixer-pot label-item'; 
             
             const lbl = document.createElement('label');
             lbl.innerText = text;
-            lbl.style.color = '#888';
-            lbl.style.fontWeight = 'bold';
-            lbl.style.fontSize = '0.5rem';
             div.appendChild(lbl);
             
             return div;
         };
 
+        // --- ALIGNED LABELS ---
+        // Order must match createTrackStrip exactly
         controls.appendChild(createLabel('Gain'));
-
-        // EQ Section Labels
-        controls.appendChild(createLabel('High'));
+        controls.appendChild(createLabel('Hi'));
         controls.appendChild(createLabel('Mid'));
         controls.appendChild(createLabel('Freq'));
         controls.appendChild(createLabel('Low'));
-
-        // Sends Section Labels
         controls.appendChild(createLabel('Snd A'));
         controls.appendChild(createLabel('Snd B'));
-
         controls.appendChild(createLabel('Drive'));
         controls.appendChild(createLabel('Comp'));
         controls.appendChild(createLabel('Pan'));
 
         strip.appendChild(controls);
         
-        // Spacer for fader section
+        // Spacer for fader section to keep alignment of bottom edge
         const faderSpacer = document.createElement('div');
-        faderSpacer.style.height = '140px';
-        faderSpacer.style.flexShrink = '0';
+        faderSpacer.className = 'strip-fader-section'; 
+        faderSpacer.style.borderTop = '1px solid transparent'; // Invisible border
         strip.appendChild(faderSpacer);
 
         return strip;
@@ -271,74 +271,79 @@ export class Mixer {
 
     createTrackStrip(track) {
         const strip = document.createElement('div');
-        strip.className = 'mixer-strip';
+        strip.className = 'mixer-strip track-strip'; // Dynamic width class
         
         const header = document.createElement('div');
         header.className = 'strip-header';
-        header.innerHTML = `
-            <span class="strip-num" style="font-size:0.7rem; font-weight:bold; color:#fff;">${track.id + 1}</span>
-        `;
+        header.innerHTML = `<span class="strip-num">${track.id + 1}</span>`;
         strip.appendChild(header);
 
         const controls = document.createElement('div');
-        controls.className = 'strip-controls custom-scrollbar';
+        controls.className = 'strip-controls'; // Shared class for gap
 
         const getBus = () => track.bus;
 
-        // Gain (Trim) - No Label
+        // 1. Gain
         controls.appendChild(this.createKnob('Gain', track.params.gain || 1, 0, 2, 0.01, (v) => {
             track.params.gain = v;
             const bus = getBus();
             if(bus && bus.trim) bus.trim.gain.value = v;
-        }, 'knob-color-green', false));
+        }, 'knob-color-green'));
 
-        // EQ Section - No Container, No Headers
+        // 2. High
         controls.appendChild(this.createKnob('Hi', track.params.eqHigh || 0, -15, 15, 0.1, (v) => {
             track.params.eqHigh = v;
             const bus = getBus();
             if(bus && bus.eq && bus.eq.high) bus.eq.high.gain.value = v;
-        }, 'knob-color-blue', false));
+        }, 'knob-color-blue'));
         
+        // 3. Mid
         controls.appendChild(this.createKnob('Mid', track.params.eqMid || 0, -15, 15, 0.1, (v) => {
             track.params.eqMid = v;
             const bus = getBus();
             if(bus && bus.eq && bus.eq.mid) bus.eq.mid.gain.value = v;
-        }, 'knob-color-green', false));
+        }, 'knob-color-green'));
         
+        // 4. Freq
         controls.appendChild(this.createKnob('Freq', track.params.eqMidFreq || 1000, 200, 5000, 10, (v) => {
             track.params.eqMidFreq = v;
             const bus = getBus();
             if(bus && bus.eq && bus.eq.mid) bus.eq.mid.frequency.value = v;
-        }, 'knob-color-green', false));
+        }, 'knob-color-green'));
 
+        // 5. Low
         controls.appendChild(this.createKnob('Lo', track.params.eqLow || 0, -15, 15, 0.1, (v) => {
             track.params.eqLow = v;
             const bus = getBus();
             if(bus && bus.eq && bus.eq.low) bus.eq.low.gain.value = v;
-        }, 'knob-color-red', false));
+        }, 'knob-color-red'));
         
-        // Sends Section - No Container, No Headers
-        controls.appendChild(this.createKnob('A', track.params.sendA || 0, 0, 1, 0.01, (v) => track.params.sendA = v, 'knob-color-yellow', false));
-        controls.appendChild(this.createKnob('B', track.params.sendB || 0, 0, 1, 0.01, (v) => track.params.sendB = v, 'knob-color-yellow', false));
+        // 6. Send A
+        controls.appendChild(this.createKnob('A', track.params.sendA || 0, 0, 1, 0.01, (v) => track.params.sendA = v, 'knob-color-yellow'));
+        
+        // 7. Send B
+        controls.appendChild(this.createKnob('B', track.params.sendB || 0, 0, 1, 0.01, (v) => track.params.sendB = v, 'knob-color-yellow'));
 
-        // Drive & Comp & Pan - Direct
+        // 8. Drive
         controls.appendChild(this.createKnob('Drive', track.params.drive || 0, 0, 1, 0.01, (v) => {
             track.params.drive = v;
             const bus = getBus();
             if(bus && bus.drive && bus.drive.input) this.audioEngine.setDriveAmount(bus.drive.input, v);
-        }, 'knob-color-red', false));
+        }, 'knob-color-red'));
 
+        // 9. Comp
         controls.appendChild(this.createKnob('Comp', track.params.comp || 0, 0, 1, 0.01, (v) => {
             track.params.comp = v;
             const bus = getBus();
             if(bus && bus.comp) this.audioEngine.setCompAmount(bus.comp, v);
-        }, 'knob-color-purple', false));
+        }, 'knob-color-purple'));
 
+        // 10. Pan
         controls.appendChild(this.createKnob('Pan', track.params.pan, -1, 1, 0.01, (v) => {
             track.params.pan = v;
             const bus = getBus();
             if(bus && bus.pan) bus.pan.pan.value = v;
-        }, 'knob-color-blue', false));
+        }, 'knob-color-blue'));
 
         strip.appendChild(controls);
 
@@ -348,23 +353,16 @@ export class Mixer {
         const btnRow = document.createElement('div');
         btnRow.className = 'strip-btn-row';
         
-        // Mute Button
         const muteBtn = document.createElement('button');
         muteBtn.className = `mixer-btn mute ${track.muted ? 'active' : ''}`;
         muteBtn.innerText = 'M';
-        muteBtn.onclick = () => {
-            if (this.onMute) this.onMute(track.id); // Call external handler
-        };
+        muteBtn.onclick = () => { if (this.onMute) this.onMute(track.id); };
 
-        // Solo Button
         const soloBtn = document.createElement('button');
         soloBtn.className = `mixer-btn solo ${track.soloed ? 'active' : ''}`;
         soloBtn.innerText = 'S';
-        soloBtn.onclick = () => {
-            if (this.onSolo) this.onSolo(track.id); // Call external handler
-        };
+        soloBtn.onclick = () => { if (this.onSolo) this.onSolo(track.id); };
         
-        // Store for updates
         this.trackStripElements.set(track.id, { muteBtn, soloBtn });
 
         btnRow.appendChild(muteBtn);
@@ -402,15 +400,13 @@ export class Mixer {
         strip.appendChild(header);
 
         const controls = document.createElement('div');
-        controls.className = 'strip-controls custom-scrollbar';
+        controls.className = 'strip-controls'; 
 
-        // Group still has labels? User said "do not remove the labels on the group tracks."
-        // So we keep createKnob defaults (showLabel=true) here.
-
+        // Groups keep their distinct layout with explicit labels
         controls.appendChild(this.createKnob('Comp', 0, 0, 1, 0.01, (v) => {
             const bus = getBus();
             if(bus && bus.comp) this.audioEngine.setCompAmount(bus.comp, v);
-        }, 'knob-color-purple'));
+        }, 'knob-color-purple', true));
 
         const driveDiv = document.createElement('div');
         driveDiv.className = 'eq-section';
@@ -434,15 +430,15 @@ export class Mixer {
         driveDiv.appendChild(this.createKnob('Amt', 0, 0, 1, 0.01, (v) => {
             const bus = getBus();
             if(bus && bus.drive && bus.drive.input) this.audioEngine.setDriveAmount(bus.drive.input, v);
-        }, 'knob-color-red'));
+        }, 'knob-color-red', true));
         
         controls.appendChild(driveDiv);
 
         const sendSec = document.createElement('div');
         sendSec.className = 'eq-section';
         sendSec.innerHTML = `<div class="section-label">SENDS</div>`;
-        sendSec.appendChild(this.createKnob('A', 0, 0, 1, 0.01, () => {}, 'knob-color-yellow'));
-        sendSec.appendChild(this.createKnob('B', 0, 0, 1, 0.01, () => {}, 'knob-color-yellow'));
+        sendSec.appendChild(this.createKnob('A', 0, 0, 1, 0.01, () => {}, 'knob-color-yellow', true));
+        sendSec.appendChild(this.createKnob('B', 0, 0, 1, 0.01, () => {}, 'knob-color-yellow', true));
         controls.appendChild(sendSec);
 
         const eqSec = document.createElement('div');
@@ -479,23 +475,16 @@ export class Mixer {
         const btnRow = document.createElement('div');
         btnRow.className = 'strip-btn-row';
         
-        // Group Mute Button
         const muteBtn = document.createElement('button');
         muteBtn.className = 'mixer-btn mute';
         muteBtn.innerText = 'M';
-        muteBtn.onclick = () => {
-             if (this.onMuteGroup) this.onMuteGroup(index); // Call global handler
-        };
+        muteBtn.onclick = () => { if (this.onMuteGroup) this.onMuteGroup(index); };
 
-        // Group Solo Button
         const soloBtn = document.createElement('button');
         soloBtn.className = 'mixer-btn solo';
         soloBtn.innerText = 'S';
-        soloBtn.onclick = () => {
-             if (this.onSoloGroup) this.onSoloGroup(index); // Call global handler
-        };
+        soloBtn.onclick = () => { if (this.onSoloGroup) this.onSoloGroup(index); };
         
-        // Store references for updates
         this.groupStripElements.set(index, { muteBtn, soloBtn });
 
         btnRow.appendChild(muteBtn);
@@ -531,9 +520,10 @@ export class Mixer {
         
         const limiterDiv = document.createElement('div');
         limiterDiv.className = 'mixer-pot';
+        limiterDiv.style.height = "auto"; // Override auto-height for master
         limiterDiv.innerHTML = `
-            <label style="color:#ef4444">LIMITER</label>
-            <div class="knob-outer" style="opacity:0.8">
+            <label style="color:#ef4444; font-size:0.5rem;">LIMITER</label>
+            <div class="knob-outer" style="opacity:0.8; width:28px; height:28px;">
                 <div class="knob-inner" style="transform:rotate(135deg)">
                     <div class="knob-line" style="background:#ef4444;box-shadow:0 0 5px red"></div>
                 </div>
