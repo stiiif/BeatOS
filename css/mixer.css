@@ -3,9 +3,9 @@
 :root {
     --track-width: 42px;
     --knob-ratio: 0.62;
-    --strip-gap: 2px;
-    --knob-gap: 20px;
-    --fader-height: 140px;
+    --strip-gap: 0px;
+    --knob-gap: 0px;
+    --fader-height: 180px;
     --thumb-height: 24px;
     --thumb-width: 32px;
 }
