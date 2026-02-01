@@ -1,5 +1,14 @@
-/* Mixer Styles - Compact Layout */
+/* css/mixer.css */
 
+:root {
+    /* Configuration Variables */
+    --track-width: 42px; /* Default max width */
+    --knob-ratio: 0.62;  /* Knob size relative to strip width */
+    --strip-gap: 2px;
+    --knob-gap: 8px;     /* Vertical gap between controls */
+}
+
+/* Mixer Container */
 .mixer-container {
     display: flex;
     flex-direction: row; 
@@ -10,16 +19,16 @@
     overflow-x: auto;    
     overflow-y: hidden;
     padding: 8px;
-    gap: 2px; /* Reduced gap */
+    gap: var(--strip-gap);
     align-items: flex-start;
 }
 
-/* Individual Channel Strip - THINNER */
+/* --- STRIPS --- */
+
+/* Base Strip Styling */
 .mixer-strip {
     display: flex;
     flex-direction: column;
-    width: 42px;         /* Reduced from 80px */
-    min-width: 42px;     
     height: 100%;
     background-color: #1e1e1e;
     border: 1px solid #333;
@@ -29,50 +38,56 @@
     flex-shrink: 0;
 }
 
-/* Group and Master Strip Variations - THINNER */
+/* 1. Label Strip (Fixed width, aligns with tracks) */
+.mixer-strip.label-strip {
+    width: 50px; /* Fixed width for text readability */
+    background-color: #151515;
+    border: none;
+    z-index: 5;
+}
+
+/* 2. Track Strip (Dynamic Width) */
+.mixer-strip.track-strip {
+    width: var(--track-width);
+    min-width: 18px; /* Hard limit from requirements */
+}
+
+/* 3. Group Strip (Fixed width) */
 .mixer-strip.group-strip {
     background-color: #252525;
     border-color: #444;
-    min-width: 50px; /* Reduced from 90px */
     width: 50px;
 }
 
+/* 4. Master Strip (Fixed width) */
 .mixer-strip.master-strip {
     background-color: #1a1515;
     border-color: #552222;
-    min-width: 60px; /* Reduced from 100px */
     width: 60px;
     margin-left: 6px; 
     box-shadow: -2px 0 5px rgba(0,0,0,0.5);
 }
 
-/* Strip Header */
+/* --- HEADER ALIGNMENT --- */
 .strip-header {
-    text-align: center;
-    padding: 4px 1px;
+    height: 24px; /* Enforce fixed height for alignment */
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background-color: #2a2a2a;
     border-bottom: 1px solid #000;
     flex-shrink: 0;
+    overflow: hidden;
 }
 
-.strip-name {
-    font-size: 0.55rem; /* Smaller font */
+.strip-num, .strip-name {
+    font-size: 0.55rem;
     font-weight: bold;
     color: #ccc;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: block;
-    max-width: 100%;
 }
 
-.strip-num {
-    font-size: 0.5rem;
-    color: #666;
-    display: block;
-}
-
-/* Scrollable Controls Area (Knobs) */
+/* --- CONTROLS AREA --- */
 .strip-controls {
     flex: 1;
     overflow-y: auto; 
@@ -81,63 +96,67 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px; /* Reduced gap */
+    gap: var(--knob-gap); /* Consistent gap is crucial for alignment */
     background: linear-gradient(180deg, #1e1e1e 0%, #151515 100%);
 }
 
-/* EQ Section Visual Grouping */
-.eq-section {
-    width: 96%; /* Fit tight */
-    background: #111;
-    border: 1px solid #333;
-    border-radius: 2px;
-    padding: 4px 1px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-}
+/* Scrollbar hiding for cleaner look */
+.strip-controls::-webkit-scrollbar { width: 0px; background: transparent; }
 
-.section-label {
-    font-size: 0.45rem;
-    color: #555;
-    font-weight: bold;
-    margin-bottom: 1px;
-    width: 100%;
-    text-align: center;
-    border-bottom: 1px solid #222;
-    padding-bottom: 1px;
-}
+/* --- KNOB & LABEL COMPONENTS --- */
 
-/* --- ROTARY KNOB COMPONENT --- */
+/* The container for both Knobs (Tracks) and Text (Labels) */
 .mixer-pot {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 1px;
-    cursor: ns-resize; 
     width: 100%;
+    
+    /* CRITICAL: Height is derived from width to ensure 
+       aspect ratio is maintained as width changes.
+       This ensures the vertical rhythm matches perfectly.
+    */
+    height: calc(var(--track-width) * var(--knob-ratio) + 12px); /* +12px for label space/padding */
+    min-height: 20px;
+    flex-shrink: 0; /* Prevent squashing */
 }
 
-.mixer-pot label {
-    font-size: 0.45rem;
-    color: #777;
+/* Text inside the label strip */
+.mixer-pot.label-item label {
+    font-size: 0.55rem;
+    color: #888;
+    font-weight: bold;
     text-transform: uppercase;
-    pointer-events: none;
-    line-height: 1;
-    margin-bottom: 1px;
+    text-align: right;
+    width: 100%;
+    padding-right: 4px;
 }
 
+/* Labels inside Track Strips (Hidden if too small) */
+.mixer-pot.track-item label {
+    display: none; /* Hide internal labels to save space, rely on Label Strip */
+}
+
+/* The Rotary Knob Visual */
 .knob-outer {
-    width: 26px; /* Reduced from 32px */
-    height: 26px; /* Reduced from 32px */
+    /* Dynamic size based on strip width */
+    width: calc(var(--track-width) * var(--knob-ratio));
+    height: calc(var(--track-width) * var(--knob-ratio));
+    
+    /* Clamps to keep it sane */
+    max-width: 28px;
+    max-height: 28px;
+    min-width: 14px;
+    min-height: 14px;
+
     border-radius: 50%;
     background: conic-gradient(from 180deg, #333 0%, #111 100%);
     border: 1px solid #000;
     box-shadow: 0 1px 2px rgba(0,0,0,0.5);
     position: relative;
-    display: flex;
-    justify-content: center;
+    cursor: ns-resize;
 }
 
 .knob-inner {
@@ -146,40 +165,18 @@
     border-radius: 50%;
     position: absolute;
     top: 0; left: 0;
-    /* Rotation handled by JS transform */
 }
 
-/* The indicator line */
+/* The indicator line - Use percentages to scale automatically */
 .knob-line {
-    width: 2px;
-    height: 9px; /* Shorter line */
+    width: 10%;
+    height: 35%;
     background: #ccc;
     position: absolute;
-    top: 3px; 
-    left: 50%;
-    margin-left: -1px;
+    top: 15%; 
+    left: 45%;
     border-radius: 1px;
     box-shadow: 0 0 2px rgba(255,255,255,0.3);
-}
-
-.knob-value-tip {
-    font-size: 0.5rem;
-    color: #10b981;
-    font-family: monospace;
-    opacity: 0;
-    position: absolute;
-    top: -12px; /* Adjusted position */
-    background: rgba(0,0,0,0.9);
-    padding: 1px 3px;
-    border-radius: 2px;
-    pointer-events: none;
-    transition: opacity 0.2s;
-    z-index: 10;
-}
-
-.mixer-pot:hover .knob-value-tip,
-.mixer-pot.dragging .knob-value-tip {
-    opacity: 1;
 }
 
 /* Knob Colors */
@@ -189,9 +186,28 @@
 .knob-color-yellow .knob-line { background: #eab308; box-shadow: 0 0 3px #eab308; }
 .knob-color-purple .knob-line { background: #d946ef; box-shadow: 0 0 3px #d946ef; }
 
-/* Fader Section (Fixed Bottom) */
+/* Tooltip */
+.knob-value-tip {
+    font-size: 0.6rem;
+    color: #10b981;
+    position: absolute;
+    top: -15px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.9);
+    padding: 1px 3px;
+    border-radius: 2px;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 100;
+    white-space: nowrap;
+}
+.knob-outer:hover .knob-value-tip, .mixer-pot.dragging .knob-value-tip { opacity: 1; }
+
+
+/* --- FADER SECTION --- */
 .strip-fader-section {
-    height: 140px; /* Slightly shorter */
+    height: 140px; 
     width: 100%;
     background: #111;
     border-top: 1px solid #000;
@@ -203,68 +219,56 @@
     flex-shrink: 0;
 }
 
-/* Mute/Solo Buttons */
 .strip-btn-row {
     display: flex;
-    width: 94%;
-    gap: 2px;
+    width: 90%;
+    gap: 1px;
+    height: 20px; /* Fixed height for buttons */
 }
 
 .mixer-btn {
     flex: 1;
-    font-size: 0.5rem;
-    font-weight: bold;
-    padding: 3px 0;
+    font-size: 0.5rem; /* Tiny text */
+    padding: 0;
     background: #333;
     color: #666;
     border: 1px solid #000;
     border-radius: 2px;
     cursor: pointer;
-    min-width: 0; /* Allow shrinking */
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
 }
-.mixer-btn:hover { background: #444; color: #ccc; }
-.mixer-btn.mute.active { background: #ef4444; color: white; box-shadow: 0 0 3px #ef4444; }
-.mixer-btn.solo.active { background: #eab308; color: black; box-shadow: 0 0 3px #eab308; }
-.mixer-btn.kill.active { background: #ef4444; color: white; }
+.mixer-btn.mute.active { background: #ef4444; color: white; }
+.mixer-btn.solo.active { background: #eab308; color: black; }
 
-/* Vertical Fader */
-input[type=range].v-fader {
+/* Width Slider (In Label Strip Header) */
+.width-slider {
+    width: 40px;
+    height: 4px;
     -webkit-appearance: none;
-    writing-mode: bt-lr; /* IE */
-    -webkit-appearance: slider-vertical; /* WebKit */
-    width: 20px; /* Thinner touch area */
-    height: 100%;
-    background: transparent;
-    cursor: pointer;
-}
-
-/* Track Background */
-input[type=range].v-fader::-webkit-slider-runnable-track {
-    width: 4px; /* Thinner track */
-    background: #000;
-    border: 1px solid #333;
+    background: #444;
     border-radius: 2px;
+    cursor: ew-resize;
 }
-
-/* Thumb */
-input[type=range].v-fader::-webkit-slider-thumb {
+.width-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
-    height: 16px; /* Smaller thumb height */
-    width: 28px; /* Thumb width to span the strip roughly */
-    background: linear-gradient(90deg, #333, #666, #333);
-    border: 1px solid #000;
-    border-radius: 2px;
-    margin-left: -12px; /* Center thumb (approx -width/2 + track/2) */
-    box-shadow: 0 1px 3px rgba(0,0,0,0.8);
-    border-top: 1px solid #888;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #888;
 }
 
-.drive-select {
+/* EQ Section Container */
+.eq-section {
     width: 96%;
     background: #111;
-    color: #aaa;
-    font-size: 0.45rem;
     border: 1px solid #333;
-    padding: 1px;
-    margin-bottom: 2px;
+    border-radius: 2px;
+    padding: 4px 1px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
 }
