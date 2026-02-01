@@ -2,6 +2,28 @@
 import { NUM_STEPS, TRACKS_PER_GROUP, MAX_TRACKS } from '../../utils/constants.js';
 import { PatternLibrary } from '../../modules/PatternLibrary.js';
 
+const FREESOUND_TAGS = [
+    "field-recording", "ambience", "ambient", "loop", "noise", "water", "nature", "owi", "sound", "atmosphere", 
+    "voice", "synth", "music", "birds", "metal", "electronic", "soundscape", "drum", "bass", "beat", "horror", 
+    "ambiance", "rain", "city", "door", "wind", "hit", "game", "percussion", "effect", "foley", "people", "sfx", 
+    "drums", "fx", "sci-fi", "background", "car", "machine", "scary", "cinematic", "dark", "guitar", "traffic", 
+    "street", "engine", "wood", "drone", "creepy", "bird", "space", "open", "film", "vocal", "male", "piano", 
+    "recording", "train", "female", "footsteps", "close", "weird", "click", "impact", "walking", "movie", 
+    "electric", "sample", "forest", "dance", "spooky", "synthesizer", "human", "glitch", "electro", "weather", 
+    "house", "kitchen", "thunder", "storm", "glass", "kick", "industrial", "computer", "transformation", "field", 
+    "reverb", "crowd", "plastic", "night", "bell", "techno", "motor", "voices", "cars", "metallic", "experimental", 
+    "digital", "mechanical", "paper", "spring", "melody", "waves", "stereo", "opening", "birdsong", "rhythm", 
+    "alien", "sound-design", "summer", "free", "animal", "drop", "liquid", "strange", "walk", "monster", "deep", 
+    "sea", "woman", "steps", "background-sound", "fire", "loud", "processed", "pad", "talking", "closing", 
+    "analog", "river", "man", "squeak", "soundtrack", "suspense", "short", "stream", "wooden", "speech", "bottle", 
+    "air", "general-noise", "gun", "beach", "explosion", "multisample", "pop", "dog", "radio", "talk", "hum", 
+    "girl", "scream", "snare", "english", "dramatic", "strings", "hard", "sounds", "splash", "atmospheric", "echo", 
+    "morning", "bathroom", "bpm", "binaural", "floor", "old", "ring", "bells", "road", "insects", "beep", "sinister", 
+    "light", "haunted", "funny", "retro", "acoustic", "keys", "break", "vehicle", "buzz", "france", "thunderstorm", 
+    "park", "trance", "urban", "ocean", "song", "sound-effect", "heavy", "food", "robot", "atmos", "crickets", 
+    "running", "creak", "bang", "evil", "single-note"
+];
+
 export class GrooveControls {
     constructor() {
         this.tracks = [];
@@ -12,6 +34,9 @@ export class GrooveControls {
         this.visualizerCallback = null;
         this.trackDescriptors = new Array(TRACKS_PER_GROUP).fill('brightness'); // Default descriptor per track
         
+        // NEW: Selected tags for Auto-Kit
+        this.selectedTags = [];
+
         // Callbacks for external interactions
         this.callbacks = {
             onUpdateGridVisuals: null,
@@ -91,6 +116,10 @@ export class GrooveControls {
 
         const groovePanel = document.querySelector('#applyGrooveBtn')?.parentElement;
         if (groovePanel && !document.getElementById('applyGrooveFsBtn')) {
+            
+            // --- NEW: Create Tag Selector UI ---
+            this.createTagSelector(groovePanel);
+
             // Create descriptor selector container
             const descriptorContainer = document.createElement('div');
             descriptorContainer.id = 'descriptorSelectorContainer';
@@ -106,6 +135,91 @@ export class GrooveControls {
             };
             groovePanel.appendChild(fsBtn);
         }
+    }
+
+    createTagSelector(parent) {
+        const container = document.createElement('div');
+        container.className = 'mb-3 bg-neutral-900/30 p-2 rounded border border-neutral-800';
+        
+        const label = document.createElement('label');
+        label.className = 'text-[9px] text-neutral-500 font-bold block mb-1 uppercase';
+        label.innerText = 'Sound Palette (Max 5)';
+        container.appendChild(label);
+
+        // Container for selected chips
+        const tagsContainer = document.createElement('div');
+        tagsContainer.className = 'flex flex-wrap gap-1 mb-2 min-h-[20px]';
+        container.appendChild(tagsContainer);
+
+        // Input group
+        const inputGroup = document.createElement('div');
+        inputGroup.className = 'flex gap-1 relative';
+        
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'flex-1 bg-neutral-800 text-neutral-300 text-[10px] rounded border border-neutral-700 px-2 py-1 outline-none focus:border-indigo-500';
+        input.placeholder = 'Add type (e.g. sci-fi)...';
+        input.setAttribute('list', 'fsTagList');
+        
+        // Create DataList for autocomplete
+        let datalist = document.getElementById('fsTagList');
+        if (!datalist) {
+            datalist = document.createElement('datalist');
+            datalist.id = 'fsTagList';
+            FREESOUND_TAGS.sort().forEach(tag => {
+                const opt = document.createElement('option');
+                opt.value = tag;
+                datalist.appendChild(opt);
+            });
+            document.body.appendChild(datalist);
+        }
+
+        const addBtn = document.createElement('button');
+        addBtn.className = 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300 w-6 rounded border border-neutral-600 text-[10px] font-bold';
+        addBtn.innerText = '+';
+
+        // Add Tag Logic
+        const addTag = () => {
+            const val = input.value.trim().toLowerCase();
+            if (val && this.selectedTags.length < 5 && !this.selectedTags.includes(val)) {
+                this.selectedTags.push(val);
+                this.renderTags(tagsContainer);
+                input.value = '';
+            } else if (this.selectedTags.length >= 5) {
+                alert('Max 5 tags allowed');
+            }
+        };
+
+        addBtn.onclick = addTag;
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') addTag(); });
+
+        inputGroup.appendChild(input);
+        inputGroup.appendChild(addBtn);
+        container.appendChild(inputGroup);
+
+        parent.appendChild(container);
+        this.renderTags(tagsContainer);
+    }
+
+    renderTags(container) {
+        container.innerHTML = '';
+        if (this.selectedTags.length === 0) {
+            container.innerHTML = '<span class="text-[9px] text-neutral-600 italic px-1">No tags selected (using defaults)</span>';
+            return;
+        }
+
+        this.selectedTags.forEach(tag => {
+            const chip = document.createElement('span');
+            chip.className = 'inline-flex items-center gap-1 bg-indigo-900/40 text-indigo-300 text-[9px] px-1.5 py-0.5 rounded border border-indigo-900/60';
+            chip.innerHTML = `${tag} <span class="cursor-pointer hover:text-white font-bold ml-1">&times;</span>`;
+            
+            // Remove handler
+            chip.querySelector('span').onclick = () => {
+                this.selectedTags = this.selectedTags.filter(t => t !== tag);
+                this.renderTags(container);
+            };
+            container.appendChild(chip);
+        });
     }
 
     updateDescriptorSelectorUI() {
@@ -128,7 +242,7 @@ export class GrooveControls {
         // Create header
         const header = document.createElement('div');
         header.className = 'text-[9px] font-bold text-indigo-300 mb-1 uppercase tracking-wider';
-        header.textContent = 'Sound Profile Selector';
+        header.textContent = 'Acoustic Profile';
         container.appendChild(header);
         
         // Create track descriptor rows
@@ -383,6 +497,11 @@ export class GrooveControls {
                     const trackObj = this.tracks[targetTrackId];
                     let query = patternTrack.instrument_type.replace(/_/g, ' ');
                     
+                    // --- APPEND SELECTED TAGS TO QUERY ---
+                    if (this.selectedTags.length > 0) {
+                        query += ' ' + this.selectedTags.join(' ');
+                    }
+
                     console.log(`[GrooveFS] Processing Track ${targetTrackId} (${query})`);
 
                     // Get selected descriptor for this track
@@ -423,12 +542,16 @@ export class GrooveControls {
                         };
                         const fallbackQuery = fallbacks[query] || patternTrack.instrument.replace(/_/g, ' ');
                         
+                        // Append tags to fallback query as well
+                        const finalFallbackQuery = this.selectedTags.length > 0 ? 
+                            `${fallbackQuery} ${this.selectedTags.join(' ')}` : fallbackQuery;
+
                         if (fallbackQuery !== query) {
-                             console.log(`[GrooveFS] Attempt 3: Fallback Query "${fallbackQuery}"`);
+                             console.log(`[GrooveFS] Attempt 3: Fallback Query "${finalFallbackQuery}"`);
                              let fallbackFilters = `duration:[0.05 TO 2.0] license:"Creative Commons 0"`;
                              if (descriptorFilter) fallbackFilters += ` ${descriptorFilter}`;
-                             results = await this.searchModal.client.textSearch(fallbackQuery, fallbackFilters);
-                             if (results.results.length > 0) query = fallbackQuery; 
+                             results = await this.searchModal.client.textSearch(finalFallbackQuery, fallbackFilters);
+                             if (results.results.length > 0) query = finalFallbackQuery; 
                         }
                     }
 
