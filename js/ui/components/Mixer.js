@@ -15,7 +15,7 @@ export class Mixer {
         // DOM Caches
         this.trackStripElements = new Map();
         this.groupStripElements = new Map();
-        this.meterCanvases = new Map(); 
+        this.meterCanvases = new Map(); // Store canvases for animation loop
         
         // Callbacks
         this.onMute = null;
@@ -64,6 +64,7 @@ export class Mixer {
     render() {
         if (!this.container) return;
         
+        // Cleanup old loop if re-rendering
         if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
         
         this.container.innerHTML = '';
@@ -109,22 +110,25 @@ export class Mixer {
     animateMeters() {
         if (!this.isRendered) return;
 
+        // Loop through all registered meters
         this.meterCanvases.forEach((canvas, id) => {
             const ctx = canvas.getContext('2d');
             const width = canvas.width;
             const height = canvas.height;
             let analyser = null;
 
-            if (typeof id === 'number') { 
+            // Determine source based on ID type (string vs number)
+            if (typeof id === 'number') { // Track
                 const track = this.trackManager.getTracks()[id];
                 if (track && track.bus) analyser = track.bus.analyser;
-            } else if (id.startsWith('group')) { 
+            } else if (id.startsWith('group')) { // Group
                 const idx = parseInt(id.split('_')[1]);
                 if (this.audioEngine.groupBuses[idx]) analyser = this.audioEngine.groupBuses[idx].analyser;
-            } else if (id === 'master') { 
+            } else if (id === 'master') { // Master
                 if (this.audioEngine.masterBus) analyser = this.audioEngine.masterBus.analyser;
             }
 
+            // Clear
             ctx.clearRect(0, 0, width, height);
 
             if (analyser) {
@@ -132,6 +136,7 @@ export class Mixer {
                 const dataArray = new Uint8Array(bufferLength);
                 analyser.getByteTimeDomainData(dataArray);
 
+                // Calculate RMS
                 let sum = 0;
                 for(let i = 0; i < bufferLength; i++) {
                     const x = (dataArray[i] - 128) / 128.0;
@@ -139,9 +144,10 @@ export class Mixer {
                 }
                 const rms = Math.sqrt(sum / bufferLength);
                 
-                // Boost display gain slightly for visibility
-                const value = Math.min(1, rms * 5); 
-                
+                // Scale RMS to height (boosted slightly for visibility)
+                const value = Math.min(1, rms * 4); 
+                const barHeight = value * height;
+
                 // Draw LED segments
                 const segHeight = 2;
                 const gap = 1;
@@ -151,15 +157,17 @@ export class Mixer {
                 for (let i = 0; i < numSegs; i++) {
                     const y = height - (i * (segHeight + gap));
                     if (i < activeSegs) {
-                        if (i > numSegs * 0.9) ctx.fillStyle = '#ef4444'; // Red
+                        // Color Gradient
+                        if (i > numSegs * 0.9) ctx.fillStyle = '#ef4444'; // Red (Clip)
                         else if (i > numSegs * 0.7) ctx.fillStyle = '#eab308'; // Yellow
                         else ctx.fillStyle = '#10b981'; // Green
                     } else {
-                        ctx.fillStyle = '#1a1a1a'; // Off
+                        ctx.fillStyle = '#1a1a1a'; // Inactive LED
                     }
                     ctx.fillRect(0, y, width, segHeight);
                 }
             } else {
+                // Draw empty meter if no analyser
                 ctx.fillStyle = '#111';
                 ctx.fillRect(0, 0, width, height);
             }
@@ -293,8 +301,8 @@ export class Mixer {
         // VU Meter Canvas
         const canvas = document.createElement('canvas');
         canvas.className = 'fader-vu-meter';
-        canvas.width = 10;
-        canvas.height = 150; // Match CSS height
+        canvas.width = 10; // Low res for crisp pixel look
+        canvas.height = 100;
         this.meterCanvases.set(idForMeter, canvas);
         wrapper.appendChild(canvas);
 
