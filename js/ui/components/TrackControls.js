@@ -176,6 +176,7 @@ export class TrackControls {
              if (t.type === 'granular') {
                  t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
                  t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
+                 t.params.sampleStart = 0.000; t.params.sampleEnd = 1.000;
              } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
              t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
              t.lfos.forEach(lfo => { lfo.target = 'none'; });
@@ -335,7 +336,8 @@ export class TrackControls {
                 el.value = t.params[param];
                 
                 let suffix = '';
-                let displayValue = t.params[param].toFixed(2); // Default to 2 decimals
+                // UPDATED: Default to 3 decimals
+                let displayValue = t.params[param].toFixed(3); 
 
                 if(param === 'density') {
                     suffix = 'hz';
@@ -345,9 +347,7 @@ export class TrackControls {
                 if(param === 'pitch') suffix = 'x';
                 if(param === 'overlap') suffix = 'x';
                 if(param === 'scanSpeed') suffix = '';
-                if(param === 'position') {
-                    displayValue = t.params[param].toFixed(3); // 3 decimals for Position
-                }
+                // Position, Sample Start/End default to 3 decimals
 
                 if(el.nextElementSibling) {
                     el.nextElementSibling.innerText = displayValue + suffix;

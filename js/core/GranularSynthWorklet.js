@@ -222,7 +222,7 @@ export class GranularSynthWorklet {
         }
 
         // LFO modulation (calculated on main thread)
-        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, filter:0, hpFilter:0 };
+        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, filter:0, hpFilter:0, sampleStart:0, sampleEnd:0 };
         track.lfos.forEach(lfo => {
             const v = lfo.getValue(time);
             if (lfo.target === 'filter') mod.filter += v * 5000;
@@ -232,12 +232,35 @@ export class GranularSynthWorklet {
 
         const p = track.params;
 
-        // Calculate position
-        let basePos = (p.scanSpeed > 0.01 || p.scanSpeed < -0.01) ? track.playhead : p.position;
+        // --- NEW LOGIC: Calculate Sample Window & Mapped Position ---
         
-        let gPos = Math.max(0, Math.min(1, basePos + mod.position));
+        // 1. Calculate effective start/end with modulation (clamped 0-1)
+        let winStart = Math.max(0, Math.min(1, (p.sampleStart || 0) + mod.sampleStart));
+        let winEnd = Math.max(0, Math.min(1, (p.sampleEnd !== undefined ? p.sampleEnd : 1) + mod.sampleEnd));
+        
+        // Ensure start < end (swap if necessary)
+        if (winStart > winEnd) {
+            const temp = winStart; winStart = winEnd; winEnd = temp;
+        }
+        
+        // 2. Calculate relative position (0-1)
+        // If scanning, use playhead, else use param
+        let baseRelPos = (p.scanSpeed > 0.01 || p.scanSpeed < -0.01) ? track.playhead : p.position;
+        
+        // Add LFO modulation to relative position
+        let relPos = baseRelPos + mod.position;
+        
+        // Clamp relative position 0-1 before mapping to avoid going out of window
+        relPos = Math.max(0, Math.min(1, relPos));
+        
+        // 3. Map relative position to absolute window
+        let gPos = winStart + (relPos * (winEnd - winStart));
+        
+        // 4. Apply spray (randomness) on top of the mapped position
         const spray = Math.max(0, p.spray + mod.spray + sprayMod);
         gPos += (Math.random()*2-1) * spray;
+        
+        // 5. Final safety clamp (ensure within buffer limits)
         gPos = Math.max(0, Math.min(1, gPos));
 
         // Apply filters via track bus (still on main thread for now)

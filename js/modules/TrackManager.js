@@ -73,7 +73,8 @@ export class TrackManager {
     }
 
     randomizeTrackModulators(t) {
-        const targets = ['none', 'position', 'spray', 'density', 'grainSize', 'pitch', 'filter', 'hpFilter'];
+        // Updated with new targets
+        const targets = ['none', 'position', 'spray', 'density', 'grainSize', 'pitch', 'filter', 'hpFilter', 'sampleStart', 'sampleEnd'];
         const waves = ['sine', 'square', 'sawtooth', 'random'];
         t.lfos.forEach(lfo => {
             if(Math.random() < 0.7) {
@@ -239,12 +240,6 @@ export class TrackManager {
             params.hpFilter = 100;
         } else {
             // Default Fallback (Percussion/Misc)
-            // CAUTION: If "kick" or "bass_drum" was not caught above, it lands here.
-            // This is likely why "bass_drum" (exact match) loaded cymbal if 'includes' failed or if string was different.
-            // But 'bass_drum' includes 'bass', so it might hit the guitar/bass check above if not careful!
-            // Wait, 'bass_drum' contains 'bass', so it enters the melodic section if the first 'if' fails.
-            // Fix: Ensure 'kick' or 'bass_drum' check is robust.
-            
             targetType = 'simple-drum';
             params.drumType = 'cymbal'; // Generic metallic/noise
             params.drumTune = 0.5;

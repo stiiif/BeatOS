@@ -218,6 +218,18 @@
                                 <span class="text-[10px] text-emerald-400 font-mono">0.00</span>
                             </div>
                             
+                            <!-- NEW SLIDERS for Sample Start/End -->
+                            <div class="knob-container col-span-2 bg-neutral-800/50 p-2 rounded border border-neutral-800">
+                                <label class="text-[10px] text-neutral-500 mb-1">Smp Start</label>
+                                <input type="range" min="0" max="1" step="0.001" data-param="sampleStart" class="param-slider">
+                                <span class="text-[10px] text-emerald-400 font-mono">0.000</span>
+                            </div>
+                            <div class="knob-container col-span-2 bg-neutral-800/50 p-2 rounded border border-neutral-800">
+                                <label class="text-[10px] text-neutral-500 mb-1">Smp End</label>
+                                <input type="range" min="0" max="1" step="0.001" data-param="sampleEnd" class="param-slider" value="1">
+                                <span class="text-[10px] text-emerald-400 font-mono">1.000</span>
+                            </div>
+                            
                             <div class="knob-container col-span-2">
                                 <label class="text-[10px] text-neutral-500 mb-1">Overlap (Thicken)</label>
                                 <input type="range" min="0" max="8" step="0.1" data-param="overlap" class="param-slider" title="Overrides Density. >1 = Continuous Sound">
@@ -373,6 +385,8 @@
                                 <select id="lfoTarget" class="w-full bg-neutral-800 text-neutral-300 text-[10px] rounded border border-neutral-700 p-1 outline-none">
                                     <option value="none">Off</option>
                                     <option value="position">Position</option>
+                                    <option value="sampleStart">Smp Start</option>
+                                    <option value="sampleEnd">Smp End</option>
                                     <option value="spray">Spray</option>
                                     <option value="density">Density</option>
                                     <option value="grainSize">Grain Size</option>
