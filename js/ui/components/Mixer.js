@@ -217,7 +217,7 @@ export class Mixer {
         
         const header = document.createElement('div');
         header.className = 'strip-header';
-        header.innerHTML = `<span class="strip-num" style="color:#666">L</span>`; 
+        header.innerHTML = `<span class="strip-num" style="color:#666; font-size:0.7rem; font-weight:bold;">L</span>`; 
         strip.appendChild(header);
 
         const controls = document.createElement('div');
