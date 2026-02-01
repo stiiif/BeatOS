@@ -12,8 +12,9 @@ export class GranularSynthWorklet {
         this.activeGrains = 0;
         this.MAX_GRAINS = 64;
         
-        // Track which buffers have been loaded into worklet
-        this.loadedBuffers = new Set();
+        // Track which buffer OBJECTS have been loaded into worklet per track
+        // Using WeakMap to associate Track object with its last loaded AudioBuffer
+        this.trackBufferCache = new WeakMap();
         
         // Pending buffer loads
         this.pendingLoads = new Map();
@@ -116,8 +117,14 @@ export class GranularSynthWorklet {
         
         const trackId = track.id;
         
-        // Already loaded?
-        if (this.loadedBuffers.has(trackId)) {
+        // BUGFIX: Check if the buffer object itself has changed, not just if the track has been loaded once.
+        // We use a WeakMap (trackBufferCache) to map the Track object to the last AudioBuffer we uploaded.
+        // If track.buffer is different from what's in the cache, we reload.
+        
+        const cachedBuffer = this.trackBufferCache.get(track);
+        
+        if (cachedBuffer && cachedBuffer === track.buffer) {
+            // Buffer is up to date, no need to reload
             return;
         }
         
@@ -126,10 +133,12 @@ export class GranularSynthWorklet {
             return;
         }
         
-        // Check if already loading
+        // Check if already loading this specific track
         if (this.pendingLoads.has(trackId)) {
             return this.pendingLoads.get(trackId);
         }
+        
+        console.log(`[GranularSynthWorklet] Uploading new buffer for Track ${trackId}...`);
         
         // Create promise for this load
         const loadPromise = new Promise((resolve) => {
@@ -165,7 +174,9 @@ export class GranularSynthWorklet {
         });
         
         await loadPromise;
-        this.loadedBuffers.add(trackId);
+        
+        // Update cache with the new buffer reference
+        this.trackBufferCache.set(track, track.buffer);
     }
 
     async playGrain(track, time, scheduleVisualDrawCallback, ampEnvelope = 1.0, velocityLevel = 2) {
@@ -182,7 +193,7 @@ export class GranularSynthWorklet {
             return;
         }
         
-        // Ensure buffer is loaded in worklet
+        // Ensure buffer is loaded in worklet (checks for changes now)
         await this.ensureBufferLoaded(track);
 
         // Calculate gain multiplier based on velocity
@@ -411,6 +422,7 @@ export class GranularSynthWorklet {
         }
         this.isInitialized = false;
         this.loadedBuffers.clear();
+        this.trackBufferCache = new WeakMap();
         this.pendingLoads.clear();
     }
     
