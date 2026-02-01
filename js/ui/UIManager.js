@@ -1,3 +1,4 @@
+// js/ui/UIManager.js
 import { NUM_STEPS, TRACKS_PER_GROUP, NUM_LFOS, MAX_TRACKS } from '../utils/constants.js';
 import { SequencerGrid } from './components/SequencerGrid.js';
 import { TrackControls } from './components/TrackControls.js';
@@ -71,6 +72,13 @@ export class UIManager {
             
             // Initialize Mixer
             this.mixer = new Mixer('.future-panel', this.trackManager, this.trackManager.audioEngine);
+            
+            // Wire up Mixer Callbacks -> Trigger Global Logic
+            this.mixer.setCallbacks(
+                (trackId) => this.toggleMute(trackId),
+                (trackId) => this.toggleSolo(trackId)
+            );
+            
             this.mixer.render();
         }
 
@@ -81,6 +89,7 @@ export class UIManager {
         window.addEventListener('trackSampleLoaded', (e) => {
             if (e.detail.trackId === this.getSelectedTrackIndex()) {
                 this.selectTrack(this.getSelectedTrackIndex());
+                if(this.mixer) this.mixer.render(); // Refresh mixer names
             }
         });
     }
@@ -149,13 +158,34 @@ export class UIManager {
         );
     }
 
-    toggleMute(trk) { this.trackOps.toggleMute(trk); }
-    toggleMuteGroup(grpIdx) { this.trackOps.toggleMuteGroup(grpIdx); }
-    toggleSolo(trk) { this.trackOps.toggleSolo(trk); }
-    toggleSoloGroup(grpIdx) { this.trackOps.toggleSoloGroup(grpIdx); }
+    // --- Core Operations with UI Sync ---
+
+    toggleMute(trk) { 
+        this.trackOps.toggleMute(trk); 
+        if(this.mixer) this.mixer.updateTrackState(trk);
+    }
+
+    toggleMuteGroup(grpIdx) { 
+        this.trackOps.toggleMuteGroup(grpIdx); 
+        if(this.mixer) this.mixer.updateAllTrackStates();
+    }
+
+    toggleSolo(trk) { 
+        this.trackOps.toggleSolo(trk); 
+        if(this.mixer) this.mixer.updateTrackState(trk);
+    }
+
+    toggleSoloGroup(grpIdx) { 
+        this.trackOps.toggleSoloGroup(grpIdx); 
+        if(this.mixer) this.mixer.updateAllTrackStates();
+    }
+
     toggleStepLock(trk) { this.trackOps.toggleStepLock(trk); }
     toggleIgnoreRandom(trk) { this.trackOps.toggleIgnoreRandom(trk); }
+    
+    // Updates Sequencer UI (and now ensures Mixer is in sync via explicit calls above)
     updateTrackStateUI(trk) { this.trackOps.updateTrackStateUI(trk); }
+    
     clearTrack(trk) { this.trackOps.clearTrack(trk); }
     clearGroup(grp) { this.trackOps.clearGroup(grp); }
     randomizeTrackPattern(trkIdx) { this.trackOps.randomizeTrackPattern(trkIdx); }
@@ -166,7 +196,10 @@ export class UIManager {
 
     toggleSnapshot() {
         this.snapshotManager.toggleSnapshot(
-            (trk) => this.updateTrackStateUI(trk),
+            (trk) => {
+                this.updateTrackStateUI(trk);
+                if(this.mixer) this.mixer.updateTrackState(trk); // Update Mixer on snapshot restore
+            },
             (idx, cb) => this.selectTrack(idx, cb),
             this.getSelectedTrackIndex(),
             this.visualizerCallback

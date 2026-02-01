@@ -11,28 +11,60 @@ export class Mixer {
             'Arctan', 'Exponential', 'Cubic', 'Diode', 
             'Asymmetric', 'Foldback'
         ];
+        
+        // References to DOM elements for fast updates
+        this.trackStripElements = new Map(); // trackId -> { muteBtn, soloBtn, ... }
+        
+        // Callbacks
+        this.onMute = null;
+        this.onSolo = null;
+    }
+
+    setCallbacks(onMute, onSolo) {
+        this.onMute = onMute;
+        this.onSolo = onSolo;
+    }
+
+    // Update UI state from Track Data
+    updateTrackState(trackId) {
+        const track = this.trackManager.getTracks()[trackId];
+        const els = this.trackStripElements.get(trackId);
+        
+        if (track && els) {
+            // Update Mute
+            if (track.muted) els.muteBtn.classList.add('active');
+            else els.muteBtn.classList.remove('active');
+            
+            // Update Solo
+            if (track.soloed) els.soloBtn.classList.add('active');
+            else els.soloBtn.classList.remove('active');
+        }
+    }
+
+    updateAllTrackStates() {
+        this.trackManager.getTracks().forEach(t => {
+            this.updateTrackState(t.id);
+        });
     }
 
     render() {
         if (!this.container) return;
         this.container.innerHTML = '';
+        this.trackStripElements.clear(); // Reset element cache
         
         const mixerContainer = document.createElement('div');
         mixerContainer.className = 'mixer-container custom-scrollbar';
         
         const tracks = this.trackManager.getTracks();
         
-        // 1. Tracks
         tracks.forEach(track => {
             mixerContainer.appendChild(this.createTrackStrip(track));
         });
 
-        // 2. Groups
         for(let i=0; i<4; i++) {
             mixerContainer.appendChild(this.createGroupStrip(i));
         }
 
-        // 3. Master
         mixerContainer.appendChild(this.createMasterStrip());
 
         this.container.appendChild(mixerContainer);
@@ -148,7 +180,6 @@ export class Mixer {
         const controls = document.createElement('div');
         controls.className = 'strip-controls custom-scrollbar';
 
-        // Helper to access bus safely
         const getBus = () => track.bus;
 
         controls.appendChild(this.createKnob('Gain', track.params.gain || 1, 0, 2, 0.01, (v) => {
@@ -220,22 +251,25 @@ export class Mixer {
         const btnRow = document.createElement('div');
         btnRow.className = 'strip-btn-row';
         
+        // Mute Button
         const muteBtn = document.createElement('button');
         muteBtn.className = `mixer-btn mute ${track.muted ? 'active' : ''}`;
         muteBtn.innerText = 'M';
         muteBtn.onclick = () => {
-            track.muted = !track.muted;
-            muteBtn.classList.toggle('active');
+            if (this.onMute) this.onMute(track.id); // Call external handler
         };
 
+        // Solo Button
         const soloBtn = document.createElement('button');
         soloBtn.className = `mixer-btn solo ${track.soloed ? 'active' : ''}`;
         soloBtn.innerText = 'S';
         soloBtn.onclick = () => {
-            track.soloed = !track.soloed;
-            soloBtn.classList.toggle('active');
+            if (this.onSolo) this.onSolo(track.id); // Call external handler
         };
         
+        // Store for updates
+        this.trackStripElements.set(track.id, { muteBtn, soloBtn });
+
         btnRow.appendChild(muteBtn);
         btnRow.appendChild(soloBtn);
         faderSection.appendChild(btnRow);
@@ -245,6 +279,7 @@ export class Mixer {
         fader.className = 'v-fader';
         fader.min = 0; fader.max = 1.2; fader.step = 0.01;
         fader.value = track.params.volume;
+        fader.title = "Volume";
         fader.oninput = (e) => {
             const v = parseFloat(e.target.value);
             track.params.volume = v;
@@ -262,7 +297,6 @@ export class Mixer {
         const strip = document.createElement('div');
         strip.className = 'mixer-strip group-strip';
         
-        // FIXED: Dynamic bus lookup
         const getBus = () => this.audioEngine.groupBuses[index];
         
         const header = document.createElement('div');
@@ -407,7 +441,6 @@ export class Mixer {
         fader.min = 0; fader.max = 1.2; fader.step = 0.01;
         fader.value = 1.0;
         fader.oninput = (e) => {
-            // FIX: Dynamic lookup for Master too
             if(this.audioEngine.masterBus && this.audioEngine.masterBus.volume) 
                 this.audioEngine.masterBus.volume.gain.value = parseFloat(e.target.value);
         };
