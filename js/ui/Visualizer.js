@@ -322,19 +322,9 @@ export class Visualizer {
         const finalPos = Math.max(0, Math.min(1, effectivePos + mod.position));
         const finalSpray = Math.max(0, p.spray + mod.spray);
         const finalGrainSize = Math.max(0.01, p.grainSize + mod.grainSize);
-        
-        // Calculate Effective Overlap (Concurrency)
-        let displayOverlap = 0;
-        const rawOverlap = (p.overlap || 0) + mod.overlap;
-        
-        if (rawOverlap > 0) {
-            displayOverlap = rawOverlap;
-        } else {
-            // Density mode: Overlap = Density (Hz) * GrainSize (s)
-            const finalDensity = Math.max(1, (p.density || 20) + mod.density);
-            displayOverlap = finalGrainSize * finalDensity;
-        }
-        displayOverlap = Math.max(0.1, displayOverlap);
+        const bufDur = t.buffer ? t.buffer.duration : 1;
+        const grainPx = Math.max(2, (finalGrainSize / bufDur) * w); // Ensure visible width
+        const posPx = finalPos * w;
 
         // 1. Draw Spray Range (Yellow Transparent)
         if (finalSpray > 0) {
@@ -344,36 +334,56 @@ export class Visualizer {
             ctx.fillRect(sprayLeft, 0, sprayRight - sprayLeft, h);
         }
 
-        const posPx = finalPos * w;
-
-        // 2. Draw Grain Size & Overlap Indicator (Green Stack)
-        const bufDur = t.buffer ? t.buffer.duration : 1;
-        const grainPx = (finalGrainSize / bufDur) * w;
+        // 2. Draw Density/Overlap Indicator
+        const rawOverlap = (p.overlap || 0) + mod.overlap;
         
-        const stackCount = Math.ceil(displayOverlap);
-        const barHeight = 3;
-        const barSpacing = 1;
-        const baseAlpha = 0.5;
+        if (rawOverlap > 0.01) {
+            // --- OVERLAP MODE (Explicit) ---
+            // Visual: Stacked Green Blocks (Discrete Layers)
+            const displayOverlap = Math.max(0.1, rawOverlap);
+            const stackCount = Math.ceil(displayOverlap);
+            const barHeight = 4;
+            const barSpacing = 1;
+            const baseAlpha = 0.6;
 
-        for(let i=0; i<stackCount; i++) {
-            let alpha = baseAlpha;
-            // Fade the top layer if fractional
-            if (i === stackCount - 1) {
-                const frac = displayOverlap - Math.floor(displayOverlap);
-                if (frac > 0.01) alpha = baseAlpha * frac;
+            for(let i=0; i<stackCount; i++) {
+                let alpha = baseAlpha;
+                if (i === stackCount - 1) {
+                    const frac = displayOverlap - Math.floor(displayOverlap);
+                    if (frac > 0.01) alpha = baseAlpha * frac;
+                }
+                
+                ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`; // Green
+                const y = h - 4 - (i * (barHeight + barSpacing));
+                if (y > 0) {
+                    ctx.fillRect(Math.max(0, posPx - grainPx/2), y, grainPx, barHeight);
+                }
             }
+        } else {
+            // --- DENSITY MODE (Frequency) ---
+            // Visual: Solid Cyan Bar (Continuous Intensity)
+            // Height represents density value directly
+            const finalDensity = Math.max(1, (p.density || 20) + mod.density);
             
-            ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`;
-            // Stack upwards from bottom
-            const y = h - 4 - (i * (barHeight + barSpacing));
+            // Map density (approx 1-100) to height
+            // 60hz density will fill the screen height roughly
+            const densityHeight = Math.min(h, (finalDensity / 60) * h); 
             
-            if (y > 0) {
-                ctx.fillRect(Math.max(0, posPx - grainPx/2), y, grainPx, barHeight);
-            }
+            // Draw a solid, glowing bar
+            const glow = ctx.createLinearGradient(0, h - densityHeight, 0, h);
+            glow.addColorStop(0, 'rgba(6, 182, 212, 0.9)'); // Cyan Top
+            glow.addColorStop(1, 'rgba(6, 182, 212, 0.1)'); // Cyan Bottom
+
+            ctx.fillStyle = glow;
+            ctx.fillRect(Math.max(0, posPx - grainPx/2), h - densityHeight, grainPx, densityHeight);
+            
+            // Add a "top cap" line for precision
+            ctx.fillStyle = '#22d3ee'; // Bright Cyan
+            ctx.fillRect(Math.max(0, posPx - grainPx/2), h - densityHeight, grainPx, 2);
         }
 
-        // 3. Draw Position Head (Cyan Line)
-        ctx.strokeStyle = '#fff';
+        // 3. Draw Position Head (White Line)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(posPx, 0);
