@@ -272,3 +272,84 @@
     gap: 6px;
     margin-bottom: 4px;
 }
+
+/* --- FIX 1: VERTICAL FADERS --- */
+input[type=range].v-fader {
+    -webkit-appearance: slider-vertical; /* Chrome/Safari/Edge */
+    writing-mode: bt-lr; /* IE */
+    width: 100%; /* Take full width of the strip container */
+    height: 100%; /* Fill the fader section height */
+    background: transparent;
+    cursor: pointer;
+    margin: 0 auto;
+}
+
+/* Firefox specific fix for vertical range */
+@-moz-document url-prefix() {
+    input[type=range].v-fader {
+        writing-mode: vertical-lr;
+        direction: rtl;
+    }
+}
+
+/* Fix the white box on Distortion Dropdown */
+.drive-select {
+    width: 96%;
+    background-color: #111; /* Force dark background */
+    color: #aaa;            /* Force light text */
+    font-size: 0.45rem;
+    border: 1px solid #333;
+    padding: 1px;
+    margin-bottom: 2px;
+    border-radius: 2px;
+    
+    /* CRITICAL: Strip native OS styling (the white box) */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    
+    text-align: center;
+    cursor: pointer;
+}
+
+.drive-select:hover {
+    border-color: #555;
+    color: #fff;
+}
+
+/* Fix option elements inheriting white bg in some browsers */
+.drive-select option {
+    background-color: #111;
+    color: #ccc;
+}
+
+/* Tweak Group Section Labels for better readability */
+.section-label {
+    font-size: 0.45rem;
+    color: #888; /* Slightly brighter than #555 */
+    font-weight: bold;
+    margin-bottom: 2px;
+    width: 100%;
+    text-align: center;
+    border-bottom: 1px solid #333; /* Darker border */
+    padding-bottom: 1px;
+    letter-spacing: 0.5px;
+}
+
+/* Ensure Kill Switch buttons are distinct */
+.mixer-btn.kill {
+    background: #222;
+    border: 1px solid #444;
+    color: #888;
+    margin: 0 1px;
+}
+.mixer-btn.kill:hover {
+    background: #333;
+    color: #fff;
+}
+.mixer-btn.kill.active {
+    background: #ef4444; /* Red when active */
+    color: white;
+    border-color: #ef4444;
+    box-shadow: 0 0 4px #ef4444;
+}
