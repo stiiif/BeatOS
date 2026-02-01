@@ -550,6 +550,7 @@ export class GrooveControls {
                     else filters += ' ac_brightness:[10 TO 100]';
 
                     console.log(`[GrooveFS] Using descriptor: ${selectedDescriptor === 'none' ? 'none' : selectedDescriptor + '=[80-100]'}`);
+                    console.log(`[GrooveFS] Executing Search: Query="${query}", Filters="${filters}"`); // ADDED LOG
 
                     let results = await this.searchModal.client.textSearch(query, filters);
                     
