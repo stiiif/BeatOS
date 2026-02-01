@@ -18,8 +18,8 @@
 .mixer-strip {
     display: flex;
     flex-direction: column;
-    width: 42px;         /* Reduced from 80px */
-    min-width: 42px;     
+    width: 26px;         /* Reduced from 42px */
+    min-width: 26px;     
     height: 100%;
     background-color: #1e1e1e;
     border: 1px solid #333;
@@ -33,14 +33,14 @@
 .mixer-strip.group-strip {
     background-color: #252525;
     border-color: #444;
-    min-width: 50px; /* Reduced from 90px */
+    min-width: 50px; 
     width: 50px;
 }
 
 .mixer-strip.master-strip {
     background-color: #1a1515;
     border-color: #552222;
-    min-width: 60px; /* Reduced from 100px */
+    min-width: 60px;
     width: 60px;
     margin-left: 6px; 
     box-shadow: -2px 0 5px rgba(0,0,0,0.5);
@@ -56,7 +56,7 @@
 }
 
 .strip-name {
-    font-size: 0.55rem; /* Smaller font */
+    font-size: 0.55rem;
     font-weight: bold;
     color: #ccc;
     white-space: nowrap;
@@ -110,13 +110,17 @@
 }
 
 /* --- ROTARY KNOB COMPONENT --- */
+/* UPDATED: Fixed height container to ensure perfect alignment between Label Strip and Track Strips */
 .mixer-pot {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1px;
+    justify-content: center; /* Center content vertically */
+    gap: 0; /* Remove gap, use fixed height */
     cursor: ns-resize; 
     width: 100%;
+    height: 22px; /* Fixed height for alignment row */
+    min-height: 22px;
 }
 
 .mixer-pot label {
@@ -124,13 +128,14 @@
     color: #777;
     text-transform: uppercase;
     pointer-events: none;
-    line-height: 1;
-    margin-bottom: 1px;
+    line-height: 22px; /* Center text vertically in the slot */
+    margin: 0;
+    white-space: nowrap;
 }
 
 .knob-outer {
-    width: 26px; /* Reduced from 32px */
-    height: 26px; /* Reduced from 32px */
+    width: 20px; /* Reduced from 26px */
+    height: 20px; /* Reduced from 26px */
     border-radius: 50%;
     background: conic-gradient(from 180deg, #333 0%, #111 100%);
     border: 1px solid #000;
