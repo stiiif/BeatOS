@@ -48,6 +48,43 @@ uiManager.selectTrack = (idx, cb) => {
     updateTrackControlsVisibility();
 };
 
+// Helper to sync track data to Worklet
+function syncTrackToWorklet(trackId) {
+    const track = tracks[trackId];
+    if (track) {
+        // 1. Upload Buffer
+        granularSynth.ensureBufferLoaded(track);
+        // 2. Upload Params
+        granularSynth.updateTrackParams(track.id, track.params);
+    }
+}
+
+// Monkey Patching UIManager to sync pattern changes to Scheduler -> Worklet
+const originalToggleStep = uiManager.toggleStep.bind(uiManager);
+uiManager.toggleStep = (trk, step) => {
+    originalToggleStep(trk, step);
+    // Sync to Worklet immediately
+    scheduler.updateTrack(tracks[trk]);
+};
+
+const originalRandomizeTrack = uiManager.randomizeTrackPattern.bind(uiManager);
+uiManager.randomizeTrackPattern = (trk) => {
+    originalRandomizeTrack(trk);
+    scheduler.updateTrack(tracks[trk]);
+};
+
+const originalRandomizeAll = uiManager.randomizeAllPatterns.bind(uiManager);
+uiManager.randomizeAllPatterns = () => {
+    originalRandomizeAll();
+    tracks.forEach(t => scheduler.updateTrack(t));
+};
+
+const originalClear = uiManager.clearTrack.bind(uiManager);
+uiManager.clearTrack = (trk) => {
+    originalClear(trk);
+    scheduler.updateTrack(tracks[trk]);
+};
+
 function addTrack() {
     const newId = trackManager.addTrack();
     if (newId !== null) {
@@ -57,6 +94,8 @@ function addTrack() {
             updateTrackControlsVisibility();
         });
         visualizer.resizeCanvas();
+        // Sync new track
+        syncTrackToWorklet(newId);
     }
 }
 
@@ -68,11 +107,14 @@ function addGroup() {
             tracksAdded.push(newId);
         }
     }
-    tracksAdded.forEach(id => uiManager.appendTrackRow(id, () => {
-        visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex());
-        visualizer.drawBufferDisplay();
-        updateTrackControlsVisibility();
-    }));
+    tracksAdded.forEach(id => {
+        uiManager.appendTrackRow(id, () => {
+            visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex());
+            visualizer.drawBufferDisplay();
+            updateTrackControlsVisibility();
+        });
+        syncTrackToWorklet(id);
+    });
     if (tracksAdded.length > 0) {
         visualizer.resizeCanvas();
     }
@@ -89,10 +131,18 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     workletMonitor = new AudioWorkletMonitor(granularSynth);
 
     trackManager.createBuffersForAllTracks();
+    
+    // CRITICAL FIX: Upload all buffers and params to Worklet on startup
+    console.log("[Main] Uploading buffers and params to Worklet...");
+    for (let i = 0; i < tracks.length; i++) {
+        syncTrackToWorklet(i);
+        // Also sync initial patterns (even if empty)
+        scheduler.updateTrack(tracks[i]);
+    }
+
     document.getElementById('startOverlay').classList.add('hidden');
     visualizer.drawVisuals();
     
-    // Refresh Mixer to ensure it binds to the newly created Audio Buses
     if (uiManager.mixer) {
         console.log("[Main] Refreshing Mixer...");
         uiManager.mixer.render();
@@ -122,25 +172,20 @@ document.getElementById('stopBtn').addEventListener('click', () => {
     uiManager.clearPlayheadForStop();
 });
 
-// ... rest of event listeners same as before ...
-// Kept concise for brevity, assume remaining event listeners follow standard pattern
 document.getElementById('bpmInput').addEventListener('change', e => { scheduler.setBPM(e.target.value); });
 const applyGrooveBtn = document.getElementById('applyGrooveBtn');
-if (applyGrooveBtn) applyGrooveBtn.addEventListener('click', () => uiManager.applyGroove());
+if (applyGrooveBtn) applyGrooveBtn.addEventListener('click', () => {
+    uiManager.applyGroove();
+    // Sync after groove application
+    tracks.forEach(t => scheduler.updateTrack(t));
+});
 
-// Update scope button listener to cycle styles
 document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
     visualizer.setScopeMode('wave');
-    
-    // Cycle style
     const newStyle = visualizer.cycleWaveStyle();
-    
-    // Update button text to show current style (optional but nice)
     const btn = e.target;
-    // Map style names to short codes
     const codes = { 'mirror': 'WAVE', 'neon': 'NEON', 'bars': 'BARS', 'precision': 'FINE' };
     btn.innerText = codes[newStyle] || 'WAVE';
-
     const btnSpec = document.getElementById('scopeBtnSpec');
     btn.classList.replace('text-neutral-400', 'bg-neutral-600');
     btn.classList.replace('hover:text-white', 'text-white');
@@ -148,14 +193,11 @@ document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
     btnSpec.classList.replace('bg-neutral-600', 'text-neutral-400');
     btnSpec.classList.replace('text-white', 'hover:text-white');
     btnSpec.classList.remove('rounded-sm');
-    
     visualizer.drawBufferDisplay();
 });
 
 document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
     visualizer.setScopeMode('spectrum');
-    // Reset Wave button text if we want, or keep it as memory
-    
     const btnSpec = e.target;
     const btnWave = document.getElementById('scopeBtnWave');
     btnSpec.classList.replace('text-neutral-400', 'bg-neutral-600');
@@ -164,7 +206,6 @@ document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
     btnWave.classList.replace('bg-neutral-600', 'text-neutral-400');
     btnWave.classList.replace('text-white', 'hover:text-white');
     btnWave.classList.remove('rounded-sm');
-    
     visualizer.drawBufferDisplay();
 });
 
@@ -184,6 +225,8 @@ document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
             track.customSample.duration = newBuffer.duration;
         }
         track.rmsMap = audioEngine.analyzeBuffer(newBuffer);
+        // Sync buffer update to Worklet
+        granularSynth.ensureBufferLoaded(track);
         visualizer.drawBufferDisplay();
     }
     setTimeout(() => {
@@ -220,6 +263,8 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
         if (t.type === 'granular') {
             trackManager.randomizeTrackParams(t, releaseMin, releaseMax);
             trackManager.randomizeTrackModulators(t);
+            // Sync params
+            granularSynth.updateTrackParams(t.id, t.params);
         } else if (t.type === 'simple-drum') {
             t.params.drumTune = Math.random();
             t.params.drumDecay = Math.random();
@@ -232,8 +277,12 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
 
 document.getElementById('randomizeBtn').addEventListener('click', () => {
     const t = tracks[uiManager.getSelectedTrackIndex()];
-    if (t.type === 'granular') trackManager.randomizeTrackParams(t);
-    else { t.params.drumTune = Math.random(); t.params.drumDecay = Math.random(); }
+    if (t.type === 'granular') {
+        trackManager.randomizeTrackParams(t);
+        granularSynth.updateTrackParams(t.id, t.params);
+    } else { 
+        t.params.drumTune = Math.random(); t.params.drumDecay = Math.random(); 
+    }
     uiManager.updateKnobs();
     visualizer.drawBufferDisplay();
 });
@@ -247,6 +296,8 @@ document.getElementById('randModsBtn').addEventListener('click', () => {
 document.getElementById('randPanBtn').addEventListener('click', () => {
     trackManager.randomizePanning();
     uiManager.savePanBaseline();
+    // Sync all panning
+    tracks.forEach(t => granularSynth.updateTrackParams(t.id, t.params));
     document.getElementById('panShiftSlider').value = 0;
     document.getElementById('panShiftValue').innerText = '0%';
     const btn = document.getElementById('randPanBtn');
@@ -263,6 +314,10 @@ document.getElementById('resetParamBtn').addEventListener('click', () => {
     } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
     t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
     t.lfos.forEach(lfo => { lfo.target = 'none'; });
+    
+    // Sync
+    if(t.type === 'granular') granularSynth.updateTrackParams(t.id, t.params);
+    
     uiManager.updateKnobs();
     uiManager.updateLfoUI();
     visualizer.drawBufferDisplay();
@@ -289,6 +344,10 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
             visualizer.drawBufferDisplay();
             const typeLabel = document.getElementById('trackTypeLabel');
             typeLabel.textContent = type.toUpperCase() + ' (Synth)';
+            
+            // Sync new buffer
+            granularSynth.ensureBufferLoaded(t);
+            
             const originalBg = e.target.style.backgroundColor;
             e.target.style.backgroundColor = '#059669';
             setTimeout(() => { e.target.style.backgroundColor = originalBg; }, 200);
@@ -309,6 +368,7 @@ document.getElementById('load909Btn').addEventListener('click', () => {
     ctx.font = '10px monospace'; ctx.fillStyle = '#f97316'; ctx.fillText("909 ENGINE ACTIVE", 10, 40);
 });
 
+// Auto Button logic same as before...
 const btnContainer = document.querySelector('.flex.gap-1.ml-2');
 if (btnContainer && !document.getElementById('loadAutoBtn')) {
     const autoBtn = document.createElement('button');
@@ -364,6 +424,10 @@ if (loadSampleBtnInline && sampleInput) {
             const typeLabel = document.getElementById('trackTypeLabel');
             if (typeLabel) { typeLabel.textContent = currentTrack.customSample.name; typeLabel.title = currentTrack.customSample.name; }
             visualizer.drawBufferDisplay();
+            
+            // Sync new buffer
+            granularSynth.ensureBufferLoaded(currentTrack);
+            
             btn.innerHTML = '<i class="fas fa-check"></i>'; btn.classList.add('bg-sky-600');
             setTimeout(() => { btn.innerHTML = originalText; btn.classList.remove('bg-sky-600'); btn.disabled = false; }, 1500);
         } catch (err) { alert('Failed: ' + err.message); btn.innerHTML = originalText; btn.disabled = false; }
@@ -374,10 +438,18 @@ if (loadSampleBtnInline && sampleInput) {
 document.getElementById('panShiftSlider').addEventListener('input', (e) => {
     const shiftAmount = parseFloat(e.target.value);
     uiManager.applyPanShift(shiftAmount);
+    // Sync all panning
+    tracks.forEach(t => granularSynth.updateTrackParams(t.id, t.params));
     document.getElementById('panShiftValue').innerText = Math.round(shiftAmount * 100) + '%';
 });
 
-document.getElementById('clearTrackBtn').addEventListener('click', () => { uiManager.clearTrack(uiManager.getSelectedTrackIndex()); });
+document.getElementById('clearTrackBtn').addEventListener('click', () => { 
+    uiManager.clearTrack(uiManager.getSelectedTrackIndex()); 
+    // Sync pattern update
+    const t = tracks[uiManager.getSelectedTrackIndex()];
+    scheduler.updateTrack(t);
+});
+
 document.getElementById('snapshotBtn').addEventListener('click', () => { uiManager.toggleSnapshot(); });
 document.getElementById('rndChokeBtn').addEventListener('click', () => { uiManager.toggleRandomChoke(); });
 
@@ -397,6 +469,16 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
         presetManager.loadPreset(file, tracks, addTrack, (i) => uiManager.updateTrackStateUI(i), uiManager.matrixStepElements, (i) => {
             uiManager.selectTrack(i); visualizer.setSelectedTrackIndex(i); visualizer.drawBufferDisplay(); updateTrackControlsVisibility();
         }, uiManager.getSelectedTrackIndex(), audioEngine);
+        // NOTE: PresetManager logic will need to ensure buffers are synced if loaded from ZIP.
+        // For now, loadPreset just updates state. We might need a "sync all" call after load.
+        // Adding delay to allow async load processing? Ideally loadPreset should be async and resolve.
+        // Assuming loadPreset handles object state, we just need to push to worklet.
+        setTimeout(() => {
+            tracks.forEach(t => {
+                syncTrackToWorklet(t.id);
+                scheduler.updateTrack(t);
+            });
+        }, 500);
     }
     document.getElementById('fileInput').value = '';
 });
@@ -406,7 +488,11 @@ document.querySelectorAll('.param-slider').forEach(el => {
         const t = tracks[uiManager.getSelectedTrackIndex()];
         t.params[e.target.dataset.param] = parseFloat(e.target.value);
         uiManager.updateKnobs();
-        if (t.type === 'granular') visualizer.drawBufferDisplay();
+        if (t.type === 'granular') {
+            visualizer.drawBufferDisplay();
+            // Real-time Param Sync
+            granularSynth.updateTrackParams(t.id, t.params);
+        }
     });
 });
 
@@ -440,12 +526,12 @@ document.getElementById('loadTrackBtn').addEventListener('click', () => { if (tr
 
 function renderTrackLibrary() {
     const list = document.getElementById('trackLibraryList');
-    const tracks = trackLibrary.getSavedTracks();
+    const tracksLib = trackLibrary.getSavedTracks(); // Note: variable name clash with global 'tracks', renaming to tracksLib
     const emptyMsg = document.getElementById('emptyLibraryMsg');
     list.innerHTML = '';
-    if (tracks.length === 0) { emptyMsg.classList.remove('hidden'); } else {
+    if (tracksLib.length === 0) { emptyMsg.classList.remove('hidden'); } else {
         emptyMsg.classList.add('hidden');
-        tracks.forEach((t, index) => {
+        tracksLib.forEach((t, index) => {
             const item = document.createElement('div');
             item.className = 'bg-neutral-800 p-3 rounded hover:bg-neutral-750 border border-neutral-700 flex justify-between items-center group';
             const info = document.createElement('div');
@@ -489,6 +575,10 @@ function loadTrackFromLibrary(index) {
             const btn = uiManager.matrixStepElements[currentTrackIdx][s];
             if (targetTrack.steps[s]) btn.classList.add('active'); else btn.classList.remove('active');
         }
+        // Sync loaded track to Worklet
+        syncTrackToWorklet(currentTrackIdx);
+        scheduler.updateTrack(targetTrack);
+        
         document.getElementById('trackLibraryModal').classList.add('hidden');
     }
 }
@@ -499,7 +589,8 @@ document.getElementById('importTrackInput').addEventListener('change', (e) => {
     if (file && (file.name.endsWith('.beattrk') || file.name.endsWith('.zip'))) {
         trackLibrary.importTrackFromZip(file, async (success, trackData, arrayBuffer) => {
             if (success) {
-                const currentTrack = tracks[uiManager.getSelectedTrackIndex()];
+                const currentTrackIdx = uiManager.getSelectedTrackIndex();
+                const currentTrack = tracks[currentTrackIdx];
                 const audioCtx = audioEngine.getContext();
                 currentTrack.params = { ...currentTrack.params, ...trackData.params };
                 currentTrack.steps = [...trackData.steps];
@@ -514,6 +605,11 @@ document.getElementById('importTrackInput').addEventListener('change', (e) => {
                 }
                 updateTrackControlsVisibility();
                 uiManager.updateKnobs();
+                
+                // Sync imported track
+                syncTrackToWorklet(currentTrackIdx);
+                scheduler.updateTrack(currentTrack);
+                
                 document.getElementById('trackLibraryModal').classList.add('hidden');
             }
         });

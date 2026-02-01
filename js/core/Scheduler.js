@@ -1,5 +1,6 @@
-// Scheduler Module - Final (Debug logs removed)
-import { LOOKAHEAD, SCHEDULE_AHEAD_TIME, NUM_STEPS } from '../utils/constants.js';
+// Scheduler Module - Phase 4: AudioWorklet Sequencer Controller (FULL VERSION)
+
+import { NUM_STEPS } from '../utils/constants.js';
 
 export class Scheduler {
     constructor(audioEngine, granularSynth) {
@@ -7,16 +8,39 @@ export class Scheduler {
         this.granularSynth = granularSynth;
         this.isPlaying = false;
         this.bpm = 120;
-        this.currentStep = 0;
-        this.totalStepsPlayed = 0; 
-        this.nextNoteTime = 0.0;
-        this.schedulerTimerID = null;
-        this.tracks = [];
+        
+        // UI Callbacks
         this.updateMatrixHeadCallback = null;
         this.randomChokeCallback = null;
         
         this.trackManager = null; 
         this.activeSnapshot = null; 
+        this.tracks = [];
+
+        // Listen for Step Updates from AudioWorklet
+        window.addEventListener('sequencer:step', (e) => {
+            if (this.isPlaying && this.updateMatrixHeadCallback) {
+                this.updateMatrixHeadCallback(e.detail.step, e.detail.step);
+            }
+        });
+
+        // Listen for External Triggers (909 / Automation)
+        window.addEventListener('sequencer:trigger', (e) => {
+            if (!this.isPlaying) return;
+            const { trackId, velocity, time } = e.detail;
+            const track = this.tracks.find(t => t.id === trackId);
+            
+            if (track) {
+                if (track.type === 'simple-drum') {
+                    // Trigger 909 Engine immediately
+                    this.audioEngine.triggerDrum(track, this.audioEngine.getContext().currentTime, velocity);
+                } 
+                else if (track.type === 'automation') {
+                    // Handle automation logic
+                    this.processAutomationTrack(track, velocity);
+                }
+            }
+        });
     }
 
     setTracks(tracks) {
@@ -29,6 +53,9 @@ export class Scheduler {
 
     setBPM(bpm) {
         this.bpm = Math.max(30, Math.min(300, parseInt(bpm)));
+        if (this.granularSynth) {
+            this.granularSynth.setBPM(this.bpm);
+        }
     }
 
     getBPM() {
@@ -46,26 +73,28 @@ export class Scheduler {
     start(scheduleVisualDrawCallback) {
         const audioCtx = this.audioEngine.getContext();
         if (!audioCtx) return;
+        
         if (!this.isPlaying) {
             this.isPlaying = true;
-            this.currentStep = 0;
-            this.totalStepsPlayed = 0; 
-            this.nextNoteTime = audioCtx.currentTime + 0.1;
-            
             this.activeSnapshot = null;
-            this.tracks.forEach(t => { if(t.type === 'automation') t.lastAutoValue = 0; });
-
-            this.schedule(scheduleVisualDrawCallback);
+            
+            // Sync all patterns before starting
+            this.syncAllTracksToWorklet();
+            
+            // Send Start Command
+            this.granularSynth.startTransport();
         }
     }
 
     stop() {
         this.isPlaying = false;
-        clearTimeout(this.schedulerTimerID);
+        this.granularSynth.stopTransport();
+        
         if(this.activeSnapshot && this.trackManager) {
             this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
             this.activeSnapshot = null;
         }
+        
         this.tracks.forEach(t => {
             if(t.stopAllSources) t.stopAllSources();
         });
@@ -75,137 +104,32 @@ export class Scheduler {
         return this.isPlaying;
     }
 
-    getCurrentStep() {
-        return this.currentStep;
+    // --- Pattern Synchronization ---
+
+    updateTrack(track) {
+        if (!this.granularSynth) return;
+        this.granularSynth.updateTrackPattern(
+            track.id,
+            track.steps,
+            track.microtiming
+        );
     }
 
-    schedule(scheduleVisualDrawCallback) {
-        const audioCtx = this.audioEngine.getContext();
-        while (this.nextNoteTime < audioCtx.currentTime + SCHEDULE_AHEAD_TIME) {
-            this.scheduleStep(this.currentStep, this.nextNoteTime, scheduleVisualDrawCallback);
-            this.nextNextTime();
-        }
-        this.schedulerTimerID = window.setTimeout(() => this.schedule(scheduleVisualDrawCallback), LOOKAHEAD);
-    }
-
-    nextNextTime() {
-        const secondsPerBeat = 60.0 / this.bpm;
-        this.nextNoteTime += secondsPerBeat / 4;
-        this.currentStep = (this.currentStep + 1) % NUM_STEPS;
-        this.totalStepsPlayed++; 
-    }
-
-    scheduleStep(step, time, scheduleVisualDrawCallback) {
-        const currentTotal = this.totalStepsPlayed;
-
-        if (this.updateMatrixHeadCallback) {
-            requestAnimationFrame(() => this.updateMatrixHeadCallback(step, currentTotal));
-        }
-        
-        this.tracks.forEach(t => {
-            if (t.type === 'automation' && !t.muted) {
-                this.processAutomationTrack(t, currentTotal, time);
-            }
+    syncAllTracksToWorklet() {
+        this.tracks.forEach(track => {
+            this.updateTrack(track);
         });
-
-        const randomChokeInfo = this.randomChokeCallback ? this.randomChokeCallback() : { mode: false, groups: [] };
-        
-        if (randomChokeInfo.mode) {
-            const chokeGroupMap = new Map();
-            const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
-            
-            for (let i = 0; i < this.tracks.length; i++) {
-                const t = this.tracks[i];
-                if (t.type === 'automation') continue; 
-                // V2: Velocity Check > 0
-                if (t.steps[step] === 0) continue;
-                if (isAnySolo && !t.soloed) continue;
-                if (!isAnySolo && t.muted) continue;
-                
-                const randomGroup = randomChokeInfo.groups[i];
-                if (!chokeGroupMap.has(randomGroup)) {
-                    chokeGroupMap.set(randomGroup, []);
-                }
-                chokeGroupMap.get(randomGroup).push(i);
-            }
-            
-            chokeGroupMap.forEach((trackIds) => {
-                if (trackIds.length > 0) {
-                    const winnerIdx = Math.floor(Math.random() * trackIds.length);
-                    const winnerId = trackIds[winnerIdx];
-                    this.triggerTrack(this.tracks[winnerId], time, scheduleVisualDrawCallback, step);
-                }
-            });
-        } else {
-            const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
-            for (let i = 0; i < this.tracks.length; i++) {
-                const t = this.tracks[i];
-                if (t.type === 'automation') continue; 
-
-                // V2: Velocity Check > 0
-                if (t.steps[step] === 0) continue;
-                
-                if (isAnySolo) {
-                    if (t.soloed) this.triggerTrack(t, time, scheduleVisualDrawCallback, step);
-                } else {
-                    if (!t.muted) this.triggerTrack(t, time, scheduleVisualDrawCallback, step);
-                }
-            }
-        }
     }
 
-    triggerTrack(track, time, scheduleVisualDrawCallback, stepIndex) {
-        if (track.chokeGroup > 0) {
-            this.tracks.forEach(other => {
-                if (other.id !== track.id && other.chokeGroup === track.chokeGroup) {
-                    other.stopAllSources(time);
-                }
-            });
-        }
+    // --- Automation Handling ---
 
-        // V2: Get Velocity & Microtiming
-        const velocity = track.steps[stepIndex];
-        const microtimingMs = track.microtiming[stepIndex] || 0;
-        
-        // Convert ms to seconds (e.g., -5ms = -0.005s)
-        const offsetSeconds = microtimingMs / 1000.0;
-        
-        let actualTime = time + offsetSeconds;
-        
-        // Clamp time to now if offset makes it in the past (only if negative offset > lookahead)
-        const audioCtx = this.audioEngine.getContext();
-        if (audioCtx && actualTime < audioCtx.currentTime) {
-            actualTime = audioCtx.currentTime;
-        }
-
-        this.granularSynth.scheduleNote(track, actualTime, scheduleVisualDrawCallback, velocity);
-    }
-
-    processAutomationTrack(track, totalSteps, time) {
+    processAutomationTrack(track, velocity) {
         if (!this.trackManager) return;
-
-        const trackLength = track.steps.length > 0 ? track.steps.length : NUM_STEPS;
-        const effectiveStepIndex = Math.floor(totalSteps / track.clockDivider) % trackLength;
-        const currentValue = track.steps[effectiveStepIndex];
-        const prevValue = track.lastAutoValue;
-
-        if (currentValue !== prevValue) {
-            if (prevValue === 0 && currentValue > 0) {
-                if (!this.activeSnapshot) {
-                    this.activeSnapshot = this.trackManager.saveGlobalSnapshot();
-                }
-                this.trackManager.triggerRandomization(currentValue);
+        if (velocity > 0) {
+            if (!this.activeSnapshot) {
+                this.activeSnapshot = this.trackManager.saveGlobalSnapshot();
             }
-            else if (prevValue > 0 && currentValue > 0) {
-                this.trackManager.triggerRandomization(currentValue);
-            }
-            else if (prevValue > 0 && currentValue === 0) {
-                if (this.activeSnapshot) {
-                    this.trackManager.restoreGlobalSnapshot(this.activeSnapshot);
-                    this.activeSnapshot = null;
-                }
-            }
-            track.lastAutoValue = currentValue;
-        }
+            this.trackManager.triggerRandomization(velocity);
+        } 
     }
 }
