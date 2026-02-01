@@ -348,8 +348,8 @@ export class GranularSynthWorklet {
         const grains = Math.min(this.MAX_GRAINS, rawGrains); 
 
         const atk = p.ampAttack || 0.01;
-        const dec = p.ampDecay || 0.1;
-        const rel = p.ampRelease || 0.1;
+        const dec = p.ampDecay || 0.01;
+        const rel = p.ampRelease || 0.01;
         const sustainLevel = 0.6;
 
         // Update playhead for scan mode

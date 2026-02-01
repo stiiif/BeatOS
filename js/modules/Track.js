@@ -54,11 +54,11 @@ export class Track {
             // --- Amp Envelope ---
             ampAttack: 0.01,
             ampDecay: 0.01,
-            ampRelease: 0.1,
+            ampRelease: 0.01,
             
             // --- Track Bus (Mixer) ---
             hpFilter: 20,
-            filter: 20000, 
+            filter: 10000, 
             volume: 0.8, 
             pan: 0,
             

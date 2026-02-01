@@ -201,10 +201,10 @@ export class SearchModal {
                 this.activeTrack.params.spray = 0;
                 this.activeTrack.params.pitch = 1.0;
                 this.activeTrack.params.overlap = 2.0;   
-                this.activeTrack.params.scanSpeed = 1;
+                this.activeTrack.params.scanSpeed = 0;
                 this.activeTrack.params.ampAttack = 0.01;
-                this.activeTrack.params.ampDecay = 0.2;
-                this.activeTrack.params.ampRelease = 0.2;
+                this.activeTrack.params.ampDecay = 0.01;
+                this.activeTrack.params.ampRelease = 0.01;
                 
                 // Provide visual feedback
                 loadBtn.innerHTML = '<i class="fas fa-check"></i>';
