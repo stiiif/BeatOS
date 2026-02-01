@@ -1,14 +1,15 @@
 /* css/mixer.css */
 
 :root {
-    /* Configuration Variables */
-    --track-width: 42px; /* Default max width */
-    --knob-ratio: 0.62;  /* Knob size relative to strip width */
+    --track-width: 42px;
+    --knob-ratio: 0.62;
     --strip-gap: 2px;
-    --knob-gap: 8px;     /* Vertical gap between controls */
+    --knob-gap: 8px;
+    --fader-height: 140px;
+    --thumb-height: 24px;
+    --thumb-width: 32px;
 }
 
-/* Mixer Container */
 .mixer-container {
     display: flex;
     flex-direction: row; 
@@ -24,8 +25,6 @@
 }
 
 /* --- STRIPS --- */
-
-/* Base Strip Styling */
 .mixer-strip {
     display: flex;
     flex-direction: column;
@@ -38,39 +37,14 @@
     flex-shrink: 0;
 }
 
-/* 1. Label Strip (Fixed width, aligns with tracks) */
-.mixer-strip.label-strip {
-    width: 50px; /* Fixed width for text readability */
-    background-color: #151515;
-    border: none;
-    z-index: 5;
-}
+.mixer-strip.label-strip { width: 50px; background-color: #151515; border: none; z-index: 5; }
+.mixer-strip.track-strip { width: var(--track-width); min-width: 18px; }
+.mixer-strip.group-strip { background-color: #252525; border-color: #444; width: 50px; }
+.mixer-strip.master-strip { background-color: #1a1515; border-color: #552222; width: 60px; margin-left: 6px; box-shadow: -2px 0 5px rgba(0,0,0,0.5); }
 
-/* 2. Track Strip (Dynamic Width) */
-.mixer-strip.track-strip {
-    width: var(--track-width);
-    min-width: 18px; /* Hard limit from requirements */
-}
-
-/* 3. Group Strip (Fixed width) */
-.mixer-strip.group-strip {
-    background-color: #252525;
-    border-color: #444;
-    width: 50px;
-}
-
-/* 4. Master Strip (Fixed width) */
-.mixer-strip.master-strip {
-    background-color: #1a1515;
-    border-color: #552222;
-    width: 60px;
-    margin-left: 6px; 
-    box-shadow: -2px 0 5px rgba(0,0,0,0.5);
-}
-
-/* --- HEADER ALIGNMENT --- */
+/* --- HEADER --- */
 .strip-header {
-    height: 24px; /* Enforce fixed height for alignment */
+    height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -79,15 +53,9 @@
     flex-shrink: 0;
     overflow: hidden;
 }
+.strip-num, .strip-name { font-size: 0.55rem; font-weight: bold; color: #ccc; white-space: nowrap; }
 
-.strip-num, .strip-name {
-    font-size: 0.55rem;
-    font-weight: bold;
-    color: #ccc;
-    white-space: nowrap;
-}
-
-/* --- CONTROLS AREA --- */
+/* --- CONTROLS --- */
 .strip-controls {
     flex: 1;
     overflow-y: auto; 
@@ -96,16 +64,12 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--knob-gap); /* Consistent gap is crucial for alignment */
+    gap: var(--knob-gap);
     background: linear-gradient(180deg, #1e1e1e 0%, #151515 100%);
 }
-
-/* Scrollbar hiding for cleaner look */
 .strip-controls::-webkit-scrollbar { width: 0px; background: transparent; }
 
-/* --- KNOB & LABEL COMPONENTS --- */
-
-/* The container for both Knobs (Tracks) and Text (Labels) */
+/* --- KNOBS --- */
 .mixer-pot {
     display: flex;
     flex-direction: column;
@@ -113,44 +77,17 @@
     justify-content: center;
     gap: 1px;
     width: 100%;
-    
-    /* CRITICAL: Height is derived from width to ensure 
-       aspect ratio is maintained as width changes.
-       This ensures the vertical rhythm matches perfectly.
-    */
-    height: calc(var(--track-width) * var(--knob-ratio) + 12px); /* +12px for label space/padding */
+    height: calc(var(--track-width) * var(--knob-ratio) + 12px);
     min-height: 20px;
-    flex-shrink: 0; /* Prevent squashing */
+    flex-shrink: 0;
 }
+.mixer-pot.label-item label { font-size: 0.55rem; color: #888; font-weight: bold; text-transform: uppercase; text-align: right; width: 100%; padding-right: 4px; }
+.mixer-pot.track-item label { display: none; }
 
-/* Text inside the label strip */
-.mixer-pot.label-item label {
-    font-size: 0.55rem;
-    color: #888;
-    font-weight: bold;
-    text-transform: uppercase;
-    text-align: right;
-    width: 100%;
-    padding-right: 4px;
-}
-
-/* Labels inside Track Strips (Hidden if too small) */
-.mixer-pot.track-item label {
-    display: none; /* Hide internal labels to save space, rely on Label Strip */
-}
-
-/* The Rotary Knob Visual */
 .knob-outer {
-    /* Dynamic size based on strip width */
     width: calc(var(--track-width) * var(--knob-ratio));
     height: calc(var(--track-width) * var(--knob-ratio));
-    
-    /* Clamps to keep it sane */
-    max-width: 28px;
-    max-height: 28px;
-    min-width: 14px;
-    min-height: 14px;
-
+    max-width: 28px; max-height: 28px; min-width: 14px; min-height: 14px;
     border-radius: 50%;
     background: conic-gradient(from 180deg, #333 0%, #111 100%);
     border: 1px solid #000;
@@ -158,26 +95,8 @@
     position: relative;
     cursor: ns-resize;
 }
-
-.knob-inner {
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    position: absolute;
-    top: 0; left: 0;
-}
-
-/* The indicator line - Use percentages to scale automatically */
-.knob-line {
-    width: 10%;
-    height: 35%;
-    background: #ccc;
-    position: absolute;
-    top: 15%; 
-    left: 45%;
-    border-radius: 1px;
-    box-shadow: 0 0 2px rgba(255,255,255,0.3);
-}
+.knob-inner { width: 100%; height: 100%; border-radius: 50%; position: absolute; top: 0; left: 0; }
+.knob-line { width: 10%; height: 35%; background: #ccc; position: absolute; top: 15%; left: 45%; border-radius: 1px; box-shadow: 0 0 2px rgba(255,255,255,0.3); }
 
 /* Knob Colors */
 .knob-color-red .knob-line { background: #ef4444; box-shadow: 0 0 3px #ef4444; }
@@ -186,170 +105,187 @@
 .knob-color-yellow .knob-line { background: #eab308; box-shadow: 0 0 3px #eab308; }
 .knob-color-purple .knob-line { background: #d946ef; box-shadow: 0 0 3px #d946ef; }
 
-/* Tooltip */
 .knob-value-tip {
-    font-size: 0.6rem;
-    color: #10b981;
-    position: absolute;
-    top: -15px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0,0,0,0.9);
-    padding: 1px 3px;
-    border-radius: 2px;
-    opacity: 0;
-    pointer-events: none;
-    z-index: 100;
-    white-space: nowrap;
+    font-size: 0.6rem; color: #10b981; position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.9); padding: 1px 3px; border-radius: 2px; opacity: 0; pointer-events: none; z-index: 100; white-space: nowrap;
 }
 .knob-outer:hover .knob-value-tip, .mixer-pot.dragging .knob-value-tip { opacity: 1; }
 
-
 /* --- FADER SECTION --- */
 .strip-fader-section {
-    height: 140px; 
+    height: 160px; /* Increased height for better fader throw */
     width: 100%;
     background: #111;
     border-top: 1px solid #000;
-    padding: 6px 0;
+    padding: 6px 2px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     flex-shrink: 0;
 }
 
 .strip-btn-row {
     display: flex;
-    width: 90%;
+    width: 100%;
     gap: 1px;
-    height: 20px; /* Fixed height for buttons */
+    height: 18px;
+    margin-bottom: 2px;
 }
 
 .mixer-btn {
     flex: 1;
-    font-size: 0.5rem; /* Tiny text */
+    font-size: 0.5rem;
     padding: 0;
     background: #333;
     color: #666;
     border: 1px solid #000;
     border-radius: 2px;
     cursor: pointer;
-    display: flex; 
-    align-items: center; 
-    justify-content: center;
+    display: flex; align-items: center; justify-content: center;
 }
 .mixer-btn.mute.active { background: #ef4444; color: white; }
 .mixer-btn.solo.active { background: #eab308; color: black; }
 
-/* Width Slider (In Label Strip Header) */
-.width-slider {
-    width: 40px;
-    height: 4px;
-    -webkit-appearance: none;
-    background: #444;
-    border-radius: 2px;
-    cursor: ew-resize;
-}
-.width-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #888;
-}
-
-/* EQ Section Container */
-.eq-section {
-    width: 96%;
-    background: #111;
-    border: 1px solid #333;
-    border-radius: 2px;
-    padding: 4px 1px;
+/* --- NEW FADER CONTAINER UI --- */
+.fader-wrapper {
+    position: relative;
+    width: 100%;
+    flex: 1;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 4px;
+    justify-content: center;
 }
 
-/* --- FIX 1: VERTICAL FADERS --- */
+/* The Background Slot (Grey background behind fader) */
+.fader-bg-slot {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 6px; /* Narrow slot */
+    background-color: #080808;
+    border: 1px solid #222;
+    border-radius: 3px;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
+    z-index: 1;
+}
+
+/* The VU Meter Canvas (Left side) */
+.fader-vu-meter {
+    position: absolute;
+    top: 2%;
+    bottom: 2%;
+    left: 2px; /* Pin to left of strip */
+    width: 4px;
+    background: #000;
+    z-index: 2;
+    border-radius: 2px;
+    opacity: 0.8;
+}
+
+/* The Ruler / Axis (Right side) */
+.fader-ruler {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 2px; /* Pin to right of strip */
+    width: 6px;
+    z-index: 2;
+    /* Logarithmic ticks generated via gradients */
+    background: 
+        repeating-linear-gradient(
+            to bottom,
+            #444 0px,
+            #444 1px,
+            transparent 1px,
+            transparent 10%
+        );
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* The Input Element (Invisible Track, Visible Thumb) */
 input[type=range].v-fader {
-    -webkit-appearance: slider-vertical; /* Chrome/Safari/Edge */
-    writing-mode: bt-lr; /* IE */
-    width: 100%; /* Take full width of the strip container */
-    height: 100%; /* Fill the fader section height */
+    -webkit-appearance: slider-vertical;
+    writing-mode: bt-lr;
+    width: 100%;
+    height: 100%;
     background: transparent;
     cursor: pointer;
-    margin: 0 auto;
+    margin: 0;
+    position: relative;
+    z-index: 10; /* Top layer for interaction */
 }
 
-/* Firefox specific fix for vertical range */
+/* Firefox Fix */
 @-moz-document url-prefix() {
-    input[type=range].v-fader {
-        writing-mode: vertical-lr;
-        direction: rtl;
-    }
+    input[type=range].v-fader { writing-mode: vertical-lr; direction: rtl; }
 }
 
-/* Fix the white box on Distortion Dropdown */
-.drive-select {
-    width: 96%;
-    background-color: #111; /* Force dark background */
-    color: #aaa;            /* Force light text */
-    font-size: 0.45rem;
-    border: 1px solid #333;
-    padding: 1px;
-    margin-bottom: 2px;
-    border-radius: 2px;
-    
-    /* CRITICAL: Strip native OS styling (the white box) */
+/* --- FADER CAP (THUMB) STYLING --- */
+
+/* Webkit (Chrome/Safari) */
+input[type=range].v-fader::-webkit-slider-runnable-track {
+    background: transparent;
+    border: none;
+}
+
+input[type=range].v-fader::-webkit-slider-thumb {
     -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
+    height: var(--thumb-height);
+    width: 36px; /* Wider than the slot to cover it nicely */
+    margin-left: -18px; /* Center adjustment */
     
-    text-align: center;
-    cursor: pointer;
+    /* Cap Design */
+    background: linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 100%);
+    border: 1px solid #000;
+    border-radius: 2px;
+    box-shadow: 
+        0 4px 6px rgba(0,0,0,0.6), /* Drop shadow */
+        inset 0 1px 0 rgba(255,255,255,0.1); /* Highlight */
+    
+    /* Grip Lines */
+    background-image: 
+        linear-gradient(to bottom, transparent 45%, #000 45%, #000 55%, transparent 55%),
+        linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 100%);
 }
 
-.drive-select:hover {
-    border-color: #555;
-    color: #fff;
+/* Hover State for Cap */
+input[type=range].v-fader:hover::-webkit-slider-thumb {
+    background: linear-gradient(180deg, #444 0%, #222 100%);
+    box-shadow: 0 0 0 1px #555, 0 4px 8px rgba(0,0,0,0.8);
 }
 
-/* Fix option elements inheriting white bg in some browsers */
-.drive-select option {
-    background-color: #111;
-    color: #ccc;
-}
+/* Fader Cap Line Indicator (Center) */
+/* Note: Standard input[range] thumbs can't easily have pseudo-elements. 
+   We simulate the line using background-image above or simplify. 
+   For a distinct color line like the knobs, we rely on the gradient trick 
+   or strict JS overlay. I'll use a white horizontal line via gradient.
+*/
 
-/* Tweak Group Section Labels for better readability */
+/* --- GROUP & MASTER STYLES --- */
+.drive-select {
+    width: 96%; background-color: #111; color: #aaa; font-size: 0.45rem;
+    border: 1px solid #333; padding: 1px; margin-bottom: 2px; border-radius: 2px;
+    -webkit-appearance: none; -moz-appearance: none; appearance: none; text-align: center; cursor: pointer;
+}
+.drive-select:hover { border-color: #555; color: #fff; }
+.drive-select option { background-color: #111; color: #ccc; }
+
 .section-label {
-    font-size: 0.45rem;
-    color: #888; /* Slightly brighter than #555 */
-    font-weight: bold;
-    margin-bottom: 2px;
-    width: 100%;
-    text-align: center;
-    border-bottom: 1px solid #333; /* Darker border */
-    padding-bottom: 1px;
-    letter-spacing: 0.5px;
+    font-size: 0.45rem; color: #888; font-weight: bold; margin-bottom: 2px;
+    width: 100%; text-align: center; border-bottom: 1px solid #333; padding-bottom: 1px; letter-spacing: 0.5px;
 }
 
-/* Ensure Kill Switch buttons are distinct */
-.mixer-btn.kill {
-    background: #222;
-    border: 1px solid #444;
-    color: #888;
-    margin: 0 1px;
-}
-.mixer-btn.kill:hover {
-    background: #333;
-    color: #fff;
-}
-.mixer-btn.kill.active {
-    background: #ef4444; /* Red when active */
-    color: white;
-    border-color: #ef4444;
-    box-shadow: 0 0 4px #ef4444;
+.mixer-btn.kill { background: #222; border: 1px solid #444; color: #888; margin: 0 1px; }
+.mixer-btn.kill:hover { background: #333; color: #fff; }
+.mixer-btn.kill.active { background: #ef4444; color: white; border-color: #ef4444; box-shadow: 0 0 4px #ef4444; }
+
+.width-slider { width: 40px; height: 4px; -webkit-appearance: none; background: #444; border-radius: 2px; cursor: ew-resize; }
+.width-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 8px; border-radius: 50%; background: #888; }
+
+.eq-section {
+    width: 96%; background: #111; border: 1px solid #333; border-radius: 2px;
+    padding: 4px 1px; display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 4px;
 }
