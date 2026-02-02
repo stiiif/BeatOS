@@ -9,12 +9,12 @@ import { UIManager } from './ui/UIManager.js';
 import { Visualizer } from './ui/Visualizer.js';
 import { LayoutManager } from './ui/LayoutManager.js';
 import { NUM_LFOS, TRACKS_PER_GROUP } from './utils/constants.js';
-// import { AudioWorkletMonitor } from './ui/AudioWorkletMonitor.js'; // Removed
+import { AudioWorkletMonitor } from './ui/AudioWorkletMonitor.js';
 
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
 
-// let workletMonitor = null; // Removed
+let workletMonitor = null;
 
 const scheduler = new Scheduler(audioEngine, granularSynth);
 const trackManager = new TrackManager(audioEngine);
@@ -86,7 +86,7 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     await granularSynth.init();
     console.log("[Main] ✅ AudioWorklet ready!");
 
-    // workletMonitor = new AudioWorkletMonitor(granularSynth); // Removed
+    workletMonitor = new AudioWorkletMonitor(granularSynth);
 
     trackManager.createBuffersForAllTracks();
     document.getElementById('startOverlay').classList.add('hidden');
@@ -110,29 +110,21 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
 
 document.getElementById('playBtn').addEventListener('click', () => {
     if (!audioEngine.getContext()) return;
-    // V5: Delegate Play to Worklet via Wrapper
-    granularSynth.play();
-    document.getElementById('playBtn').classList.add('text-emerald-500');
-    
-    // Legacy Scheduler Start (Visuals Only)
-    // In V5, visuals pull from Shared Memory, but we might need to kickstart the visualizer loop
-    // if it isn't running. Visualizer.js should handle this in its draw loop.
+    if (!scheduler.getIsPlaying()) {
+        scheduler.start((time, trackId) => visualizer.scheduleVisualDraw(time, trackId));
+        document.getElementById('playBtn').classList.add('text-emerald-500');
+    }
 });
 
 document.getElementById('stopBtn').addEventListener('click', () => {
-    // V5: Delegate Stop to Worklet via Wrapper
-    granularSynth.stop();
+    scheduler.stop();
     document.getElementById('playBtn').classList.remove('text-emerald-500');
     uiManager.clearPlayheadForStop();
 });
 
 // ... rest of event listeners same as before ...
 // Kept concise for brevity, assume remaining event listeners follow standard pattern
-document.getElementById('bpmInput').addEventListener('change', e => { 
-    // V5: Update BPM in Shared Memory
-    granularSynth.setBPM(e.target.value); 
-});
-
+document.getElementById('bpmInput').addEventListener('change', e => { scheduler.setBPM(e.target.value); });
 const applyGrooveBtn = document.getElementById('applyGrooveBtn');
 if (applyGrooveBtn) applyGrooveBtn.addEventListener('click', () => uiManager.applyGroove());
 
@@ -192,10 +184,6 @@ document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
             track.customSample.duration = newBuffer.duration;
         }
         track.rmsMap = audioEngine.analyzeBuffer(newBuffer);
-        
-        // V5: We must upload the trimmed buffer to the Worklet
-        granularSynth.ensureBufferLoaded(track);
-        
         visualizer.drawBufferDisplay();
     }
     setTimeout(() => {
@@ -227,9 +215,16 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
         btn.style.backgroundColor = '';
         btn.innerHTML = originalText;
     }, 300);
-    
-    trackManager.triggerRandomization(Math.ceil(clickRatio * 5));
-    
+    tracks.forEach(t => {
+        if (t.ignoreRandom) return;
+        if (t.type === 'granular') {
+            trackManager.randomizeTrackParams(t, releaseMin, releaseMax);
+            trackManager.randomizeTrackModulators(t);
+        } else if (t.type === 'simple-drum') {
+            t.params.drumTune = Math.random();
+            t.params.drumDecay = Math.random();
+        }
+    });
     uiManager.updateKnobs();
     uiManager.updateLfoUI();
     visualizer.drawBufferDisplay();
@@ -237,12 +232,8 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
 
 document.getElementById('randomizeBtn').addEventListener('click', () => {
     const t = tracks[uiManager.getSelectedTrackIndex()];
-    // TrackManager's setParam handles shared memory sync now
     if (t.type === 'granular') trackManager.randomizeTrackParams(t);
-    else { 
-        trackManager.setParam(t.id, 'drumTune', Math.random());
-        trackManager.setParam(t.id, 'drumDecay', Math.random());
-    }
+    else { t.params.drumTune = Math.random(); t.params.drumDecay = Math.random(); }
     uiManager.updateKnobs();
     visualizer.drawBufferDisplay();
 });
@@ -254,7 +245,7 @@ document.getElementById('randModsBtn').addEventListener('click', () => {
 });
 
 document.getElementById('randPanBtn').addEventListener('click', () => {
-    trackManager.randomizePanning(); // Updated to sync shared memory
+    trackManager.randomizePanning();
     uiManager.savePanBaseline();
     document.getElementById('panShiftSlider').value = 0;
     document.getElementById('panShiftValue').innerText = '0%';
@@ -265,11 +256,21 @@ document.getElementById('randPanBtn').addEventListener('click', () => {
 });
 
 document.getElementById('resetParamBtn').addEventListener('click', () => {
-    // Logic moved to TrackControls.js which calls TrackManager.setParam
-    // This listener might be redundant if TrackControls adds its own, 
-    // but we'll leave it if it triggers global UI updates. 
-    // Actually, TrackControls attaches onclick to the button it creates.
-    // This listener likely targets a static button if one exists, but the UI is dynamic.
+    const t = tracks[uiManager.getSelectedTrackIndex()];
+    if (t.type === 'granular') {
+        t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
+        t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
+    } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
+    t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
+    t.lfos.forEach(lfo => { lfo.target = 'none'; });
+    uiManager.updateKnobs();
+    uiManager.updateLfoUI();
+    visualizer.drawBufferDisplay();
+    const btn = document.getElementById('resetParamBtn');
+    const originalContent = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i>';
+    btn.classList.add('text-emerald-400', 'border-emerald-500');
+    setTimeout(() => { btn.innerHTML = originalContent; btn.classList.remove('text-emerald-400', 'border-emerald-500'); }, 800);
 });
 
 document.querySelectorAll('.sound-gen-btn').forEach(btn => {
@@ -278,20 +279,13 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
         const type = e.target.dataset.type;
         const currentTrackIdx = uiManager.getSelectedTrackIndex();
         const t = tracks[currentTrackIdx];
-        
         t.type = 'granular';
-        trackManager.setParam(t.id, 'type', 0); // 0=Granular
         updateTrackControlsVisibility();
-        
         const newBuf = audioEngine.generateBufferByType(type);
         if (newBuf) {
             t.buffer = newBuf;
             t.customSample = null;
             t.rmsMap = audioEngine.analyzeBuffer(newBuf);
-            
-            // Upload to Worklet
-            granularSynth.ensureBufferLoaded(t);
-            
             visualizer.drawBufferDisplay();
             const typeLabel = document.getElementById('trackTypeLabel');
             typeLabel.textContent = type.toUpperCase() + ' (Synth)';
@@ -306,12 +300,7 @@ document.getElementById('load909Btn').addEventListener('click', () => {
     if (!audioEngine.getContext()) return;
     const t = tracks[uiManager.getSelectedTrackIndex()];
     t.type = 'simple-drum';
-    // Sync Type & Params
-    trackManager.setParam(t.id, 'type', 1); // Default Kick
-    trackManager.setParam(t.id, 'drumTune', 0.5);
-    trackManager.setParam(t.id, 'drumDecay', 0.5);
-    
-    t.params.drumType = 'kick'; 
+    t.params.drumType = 'kick'; t.params.drumTune = 0.5; t.params.drumDecay = 0.5;
     updateTrackControlsVisibility();
     uiManager.updateKnobs();
     const bufCanvas = document.getElementById('bufferDisplay');
@@ -320,19 +309,35 @@ document.getElementById('load909Btn').addEventListener('click', () => {
     ctx.font = '10px monospace'; ctx.fillStyle = '#f97316'; ctx.fillText("909 ENGINE ACTIVE", 10, 40);
 });
 
-// ... Auto Button Logic ...
+const btnContainer = document.querySelector('.flex.gap-1.ml-2');
+if (btnContainer && !document.getElementById('loadAutoBtn')) {
+    const autoBtn = document.createElement('button');
+    autoBtn.id = 'loadAutoBtn';
+    autoBtn.className = 'text-[9px] font-bold bg-indigo-900/30 hover:bg-indigo-800 text-indigo-400 px-2 py-1 rounded transition border border-indigo-900/50';
+    autoBtn.title = 'Convert to Automation Track';
+    autoBtn.innerText = 'AUTO';
+    btnContainer.appendChild(autoBtn);
+    autoBtn.addEventListener('click', () => {
+        const t = tracks[uiManager.getSelectedTrackIndex()];
+        t.type = 'automation';
+        t.steps.fill(0);
+        const stepElements = uiManager.matrixStepElements[t.id];
+        if (stepElements) {
+            stepElements.forEach(el => { el.className = 'step-btn'; el.classList.remove('active'); });
+        }
+        updateTrackControlsVisibility();
+        const bufCanvas = document.getElementById('bufferDisplay');
+        const ctx = bufCanvas.getContext('2d');
+        ctx.fillStyle = '#111'; ctx.fillRect(0, 0, bufCanvas.width, bufCanvas.height);
+        ctx.font = '10px monospace'; ctx.fillStyle = '#818cf8'; ctx.fillText("AUTOMATION TRACK", 10, 40);
+    });
+}
 
 document.querySelectorAll('.drum-sel-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
         const t = tracks[uiManager.getSelectedTrackIndex()];
         if (t.type === 'simple-drum') {
             t.params.drumType = e.target.dataset.drum;
-            
-            // Map string type to int code for Shared Memory
-            const typeMap = { 'kick': 1, 'snare': 2, 'closed-hat': 3, 'open-hat': 3, 'cymbal': 3 };
-            const typeCode = typeMap[t.params.drumType] || 1;
-            trackManager.setParam(t.id, 'type', typeCode);
-            
             updateTrackControlsVisibility();
         }
     });
@@ -353,14 +358,9 @@ if (loadSampleBtnInline && sampleInput) {
         const originalText = btn.innerHTML;
         try {
             currentTrack.type = 'granular';
-            trackManager.setParam(currentTrack.id, 'type', 0);
             updateTrackControlsVisibility();
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; btn.disabled = true;
-            
             await audioEngine.loadCustomSample(file, currentTrack);
-            // Upload to Worklet
-            await granularSynth.ensureBufferLoaded(currentTrack);
-            
             const typeLabel = document.getElementById('trackTypeLabel');
             if (typeLabel) { typeLabel.textContent = currentTrack.customSample.name; typeLabel.title = currentTrack.customSample.name; }
             visualizer.drawBufferDisplay();
@@ -385,7 +385,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     const btn = document.getElementById('saveBtn');
     const originalHtml = btn.innerHTML;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; btn.disabled = true;
-    try { await presetManager.savePreset(tracks, granularSynth.getBPM ? granularSynth.getBPM() : 120); } catch (e) { alert("Save failed"); }
+    try { await presetManager.savePreset(tracks, scheduler.getBPM()); } catch (e) { alert("Save failed"); }
     finally { btn.innerHTML = originalHtml; btn.disabled = false; }
 });
 
@@ -393,10 +393,7 @@ document.getElementById('loadBtn').addEventListener('click', () => { document.ge
 document.getElementById('fileInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) {
-        audioEngine.onBpmChange = (bpm) => { 
-            granularSynth.setBPM(bpm); 
-            document.getElementById('bpmInput').value = bpm; 
-        };
+        audioEngine.onBpmChange = (bpm) => { scheduler.setBPM(bpm); document.getElementById('bpmInput').value = bpm; };
         presetManager.loadPreset(file, tracks, addTrack, (i) => uiManager.updateTrackStateUI(i), uiManager.matrixStepElements, (i) => {
             uiManager.selectTrack(i); visualizer.setSelectedTrackIndex(i); visualizer.drawBufferDisplay(); updateTrackControlsVisibility();
         }, uiManager.getSelectedTrackIndex(), audioEngine);
@@ -407,12 +404,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
 document.querySelectorAll('.param-slider').forEach(el => {
     el.addEventListener('input', e => {
         const t = tracks[uiManager.getSelectedTrackIndex()];
-        const param = e.target.dataset.param;
-        const val = parseFloat(e.target.value);
-        
-        // Use TrackManager to sync
-        trackManager.setParam(t.id, param, val);
-        
+        t.params[e.target.dataset.param] = parseFloat(e.target.value);
         uiManager.updateKnobs();
         if (t.type === 'granular') visualizer.drawBufferDisplay();
     });
@@ -431,5 +423,110 @@ uiManager.initUI(addTrack, addGroup, () => { visualizer.setSelectedTrackIndex(ui
 window.addEventListener('resize', () => visualizer.resizeCanvas());
 visualizer.resizeCanvas();
 
-// Removed Stats Loop
-// setInterval(() => { if (grainMonitorEl) grainMonitorEl.innerText = granularSynth.getActiveGrainCount(); }, 100);
+document.getElementById('saveTrackBtn').addEventListener('click', () => {
+    try {
+        if (!tracks || tracks.length === 0) { alert('Init Audio First'); return; }
+        if (trackLibrary.saveTrack(tracks[uiManager.getSelectedTrackIndex()])) {
+            const btn = document.getElementById('saveTrackBtn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check mr-1"></i>Saved!'; btn.classList.add('bg-amber-600');
+            setTimeout(() => { btn.innerHTML = originalText; btn.classList.remove('bg-amber-600'); }, 1000);
+        }
+    } catch (error) { alert('Failed: ' + error.message); }
+});
+
+document.getElementById('exportCurrentTrackBtn').addEventListener('click', async () => { await trackLibrary.exportTrackToZip(tracks[uiManager.getSelectedTrackIndex()]); });
+document.getElementById('loadTrackBtn').addEventListener('click', () => { if (tracks.length > 0) { document.getElementById('trackLibraryModal').classList.remove('hidden'); renderTrackLibrary(); } });
+
+function renderTrackLibrary() {
+    const list = document.getElementById('trackLibraryList');
+    const tracks = trackLibrary.getSavedTracks();
+    const emptyMsg = document.getElementById('emptyLibraryMsg');
+    list.innerHTML = '';
+    if (tracks.length === 0) { emptyMsg.classList.remove('hidden'); } else {
+        emptyMsg.classList.add('hidden');
+        tracks.forEach((t, index) => {
+            const item = document.createElement('div');
+            item.className = 'bg-neutral-800 p-3 rounded hover:bg-neutral-750 border border-neutral-700 flex justify-between items-center group';
+            const info = document.createElement('div');
+            info.className = 'flex-1 cursor-pointer';
+            info.onclick = () => loadTrackFromLibrary(index);
+            const name = document.createElement('div');
+            name.className = 'font-bold text-sm text-white group-hover:text-emerald-400 transition';
+            name.innerText = t.name;
+            const date = document.createElement('div');
+            date.className = 'text-xs text-neutral-500';
+            date.innerText = new Date(t.timestamp).toLocaleString();
+            info.appendChild(name); info.appendChild(date);
+            const actions = document.createElement('div');
+            actions.className = 'flex gap-2 opacity-50 group-hover:opacity-100 transition';
+            const delBtn = document.createElement('button');
+            delBtn.className = 'text-neutral-400 hover:text-red-500 transition px-2';
+            delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            delBtn.onclick = (e) => { e.stopPropagation(); if (confirm('Delete?')) { trackLibrary.deleteTrack(index); renderTrackLibrary(); } };
+            const exportBtn = document.createElement('button');
+            exportBtn.className = 'text-neutral-400 hover:text-indigo-400 transition px-2';
+            exportBtn.innerHTML = '<i class="fas fa-file-export"></i>';
+            exportBtn.onclick = (e) => { e.stopPropagation(); trackLibrary.exportTrack(index); };
+            actions.appendChild(exportBtn); actions.appendChild(delBtn);
+            item.appendChild(info); item.appendChild(actions); list.appendChild(item);
+        });
+    }
+}
+
+document.getElementById('closeLibraryBtn').addEventListener('click', () => { document.getElementById('trackLibraryModal').classList.add('hidden'); });
+function loadTrackFromLibrary(index) {
+    const currentTrackIdx = uiManager.getSelectedTrackIndex();
+    const targetTrack = tracks[currentTrackIdx];
+    if (trackLibrary.loadTrackInto(index, targetTrack)) {
+        if (targetTrack.needsSampleReload) alert(`Note: Custom sample "${targetTrack.customSample.name}" must be reloaded manually.`);
+        uiManager.updateTrackStateUI(currentTrackIdx);
+        updateTrackControlsVisibility();
+        uiManager.updateKnobs();
+        uiManager.updateLfoUI();
+        visualizer.drawBufferDisplay();
+        for (let s = 0; s < NUM_STEPS; s++) {
+            const btn = uiManager.matrixStepElements[currentTrackIdx][s];
+            if (targetTrack.steps[s]) btn.classList.add('active'); else btn.classList.remove('active');
+        }
+        document.getElementById('trackLibraryModal').classList.add('hidden');
+    }
+}
+
+document.getElementById('importTrackBtn').addEventListener('click', () => { document.getElementById('importTrackInput').click(); });
+document.getElementById('importTrackInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file && (file.name.endsWith('.beattrk') || file.name.endsWith('.zip'))) {
+        trackLibrary.importTrackFromZip(file, async (success, trackData, arrayBuffer) => {
+            if (success) {
+                const currentTrack = tracks[uiManager.getSelectedTrackIndex()];
+                const audioCtx = audioEngine.getContext();
+                currentTrack.params = { ...currentTrack.params, ...trackData.params };
+                currentTrack.steps = [...trackData.steps];
+                currentTrack.type = trackData.type || 'granular';
+                if (arrayBuffer && audioCtx) {
+                    try {
+                        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                        currentTrack.customSample = { name: trackData.sampleName, buffer: audioBuffer, duration: audioBuffer.duration };
+                        currentTrack.buffer = audioBuffer;
+                        currentTrack.rmsMap = audioEngine.analyzeBuffer(audioBuffer);
+                    } catch (err) { console.error(err); }
+                }
+                updateTrackControlsVisibility();
+                uiManager.updateKnobs();
+                document.getElementById('trackLibraryModal').classList.add('hidden');
+            }
+        });
+    }
+});
+
+const grainMonitorEl = document.getElementById('grainMonitor');
+const maxGrainsInput = document.getElementById('maxGrainsInput');
+if (maxGrainsInput) {
+    maxGrainsInput.addEventListener('change', (e) => {
+        let val = parseInt(e.target.value);
+        if (isNaN(val) || val < 10) val = 400;
+        granularSynth.setMaxGrains(val);
+    });
+}
+setInterval(() => { if (grainMonitorEl) grainMonitorEl.innerText = granularSynth.getActiveGrainCount(); }, 100);

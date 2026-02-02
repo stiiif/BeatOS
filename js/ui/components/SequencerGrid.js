@@ -7,7 +7,6 @@ export class SequencerGrid {
         this.trackLabelElements = [];
         this.trackRowElements = [];
         this.tracks = [];
-        this.audioEngine = null; // Needs reference for updates
         this.keyMapping = {
             'Digit1': 0, 'KeyQ': 1, 'KeyA': 2, 'KeyZ': 3,
             'Digit2': 4, 'KeyW': 5, 'KeyS': 6, 'KeyX': 7,
@@ -22,11 +21,6 @@ export class SequencerGrid {
 
     setTracks(tracks) {
         this.tracks = tracks;
-    }
-    
-    // Helper to inject engine
-    setAudioEngine(engine) {
-        this.audioEngine = engine;
     }
 
     initializeGrid(addTrackCallback, addGroupCallback, getSelectedTrackIndex, onToggleStep) {
@@ -263,11 +257,6 @@ export class SequencerGrid {
         else if (val === 1) nextVal = 0; // Ghost -> Off
         
         track.steps[step] = nextVal;
-        
-        // V5: Sync to Shared Memory
-        if (this.audioEngine) {
-            this.audioEngine.updateTrackStep(trk, step, nextVal);
-        }
         
         btn.classList.remove('vel-1', 'vel-2', 'vel-3');
         if (nextVal > 0) {

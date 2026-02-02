@@ -1,4 +1,4 @@
-// js/ui/components/TrackOperations.js - Updated for Shared Memory (Phase B)
+// js/ui/components/TrackOperations.js
 import { NUM_STEPS, TRACKS_PER_GROUP } from '../../utils/constants.js';
 
 export class TrackOperations {
@@ -11,16 +11,10 @@ export class TrackOperations {
         this.matrixStepElements = [];
         this.trackLabelElements = [];
         this.trackRowElements = [];
-        this.audioEngine = null; // Needed for Shared Memory updates
     }
 
     setTracks(tracks) {
         this.tracks = tracks;
-    }
-    
-    // Inject Engine to access updateTrackStep
-    setAudioEngine(engine) {
-        this.audioEngine = engine;
     }
 
     setGridElements(matrixStepElements, trackLabelElements, trackRowElements) {
@@ -36,15 +30,6 @@ export class TrackOperations {
     toggleMute(trk) {
         this.tracks[trk].muted = !this.tracks[trk].muted;
         this.updateTrackStateUI(trk);
-        // V5: Mute is handled by setting Volume to 0 in ParamBuffer? 
-        // Or keeping mute logic in UI? For zero-latency, better to set Volume param to 0.
-        // However, restoring volume requires remembering the previous value.
-        // For simplicity in Phase B, we might rely on UI-side mute logic updating the pattern buffer 
-        // OR simply set volume to 0 in shared memory.
-        // Let's stick to updating the param for instant result.
-        
-        const targetVol = this.tracks[trk].muted ? 0 : (this.tracks[trk].params.volume || 0.8);
-        if (this.audioEngine) this.audioEngine.updateParam(trk, 0, targetVol); // 0 = P_VOL
     }
 
     toggleMuteGroup(grpIdx) {
@@ -56,9 +41,6 @@ export class TrackOperations {
             if(this.tracks[i]) {
                 this.tracks[i].muted = newState;
                 this.updateTrackStateUI(i);
-                // Update Shared Memory
-                const targetVol = newState ? 0 : (this.tracks[i].params.volume || 0.8);
-                if (this.audioEngine) this.audioEngine.updateParam(i, 0, targetVol);
             }
         }
     }
@@ -66,7 +48,6 @@ export class TrackOperations {
     toggleSolo(trk) {
         this.tracks[trk].soloed = !this.tracks[trk].soloed;
         this.updateTrackStateUI(trk);
-        this.applySoloState();
     }
 
     toggleSoloGroup(grpIdx) {
@@ -80,27 +61,6 @@ export class TrackOperations {
                 this.updateTrackStateUI(i);
             }
         }
-        this.applySoloState();
-    }
-    
-    // Helper to update volumes based on Solo state
-    applySoloState() {
-        const anySolo = this.tracks.some(t => t.soloed);
-        
-        for(let i=0; i<this.tracks.length; i++) {
-            const t = this.tracks[i];
-            let shouldPlay = true;
-            
-            if (anySolo) {
-                shouldPlay = t.soloed;
-            } else {
-                shouldPlay = !t.muted;
-            }
-            
-            // Write to Shared Memory Volume
-            const vol = shouldPlay ? (t.params.volume || 0.8) : 0;
-            if (this.audioEngine) this.audioEngine.updateParam(i, 0, vol);
-        }
     }
 
     // ============================================================================
@@ -110,19 +70,34 @@ export class TrackOperations {
     toggleStepLock(trk) {
         this.tracks[trk].stepLock = !this.tracks[trk].stepLock;
         const btnL = document.getElementById(`btnL_${trk}`);
-        if (this.tracks[trk].stepLock) btnL.classList.add('lock-active'); else btnL.classList.remove('lock-active');
+        
+        if (this.tracks[trk].stepLock) {
+            btnL.classList.add('lock-active');
+        } else {
+            btnL.classList.remove('lock-active');
+        }
     }
 
     toggleIgnoreRandom(trk) {
         this.tracks[trk].ignoreRandom = !this.tracks[trk].ignoreRandom;
         const btn = document.getElementById(`btnX_${trk}`);
-        if(this.tracks[trk].ignoreRandom) btn.classList.add('exclude-active'); else btn.classList.remove('exclude-active');
+        
+        if(this.tracks[trk].ignoreRandom) {
+            btn.classList.add('exclude-active');
+        } else {
+            btn.classList.remove('exclude-active');
+        }
     }
 
     toggleIgnoreVelocityParams(trk) {
         this.tracks[trk].ignoreVelocityParams = !this.tracks[trk].ignoreVelocityParams;
         const btn = document.getElementById(`btnV_${trk}`);
-        if(this.tracks[trk].ignoreVelocityParams) btn.classList.add('ignore-vel-active'); else btn.classList.remove('ignore-vel-active');
+        
+        if(this.tracks[trk].ignoreVelocityParams) {
+            btn.classList.add('ignore-vel-active');
+        } else {
+            btn.classList.remove('ignore-vel-active');
+        }
     }
 
     updateTrackStateUI(trk) { 
@@ -136,8 +111,14 @@ export class TrackOperations {
         if(t.muted) btnM.classList.add('mute-active'); else btnM.classList.remove('mute-active'); 
         if(t.soloed) btnS.classList.add('solo-active'); else btnS.classList.remove('solo-active'); 
         if(t.stepLock) btnL.classList.add('lock-active'); else btnL.classList.remove('lock-active'); 
-        if(btnX) { if(t.ignoreRandom) btnX.classList.add('exclude-active'); else btnX.classList.remove('exclude-active'); }
-        if(btnV) { if(t.ignoreVelocityParams) btnV.classList.add('ignore-vel-active'); else btnV.classList.remove('ignore-vel-active'); }
+        if(btnX) { 
+            if(t.ignoreRandom) btnX.classList.add('exclude-active'); 
+            else btnX.classList.remove('exclude-active'); 
+        }
+        if(btnV) {
+            if(t.ignoreVelocityParams) btnV.classList.add('ignore-vel-active');
+            else btnV.classList.remove('ignore-vel-active');
+        }
         
         if(this.trackRowElements[trk]) {
             this.trackRowElements[trk].forEach(el => el.style.opacity = t.muted ? '0.4' : '1.0');
@@ -149,11 +130,10 @@ export class TrackOperations {
     // ============================================================================
 
     clearTrack(trk) { 
-        this.tracks[trk].steps.fill(0);
-        
-        // Update Shared Memory Grid
-        if (this.audioEngine) {
-            for(let s=0; s<NUM_STEPS; s++) this.audioEngine.updateTrackStep(trk, s, 0);
+        if(this.tracks[trk].type === 'automation') {
+             this.tracks[trk].steps.fill(0);
+        } else {
+             this.tracks[trk].steps.fill(0); 
         }
         
         for(let s=0; s<NUM_STEPS; s++) {
@@ -166,8 +146,11 @@ export class TrackOperations {
     clearGroup(grp) {
         const start = grp * TRACKS_PER_GROUP;
         const end = start + TRACKS_PER_GROUP;
+        
         for(let i=start; i<end; i++) {
-            if(this.tracks[i]) this.clearTrack(i);
+            if(this.tracks[i]) {
+                this.clearTrack(i);
+            }
         }
     }
 
@@ -179,32 +162,41 @@ export class TrackOperations {
         const t = this.tracks[trkIdx]; 
         
         if(t.type === 'automation') {
-             // ... keep automation logic local or move to shared param later ...
+             for(let i=0; i<NUM_STEPS; i++) {
+                 const roll = Math.random();
+                 let val = 0;
+                 if (roll < 0.3) {
+                      val = Math.floor(Math.random() * 5) + 1;
+                 }
+                 t.steps[i] = val;
+                 const btn = this.matrixStepElements[trkIdx][i];
+                 btn.className = btn.className.replace(/auto-level-\d/g, '').trim();
+                 btn.classList.remove('active');
+                 if(val > 0) {
+                     btn.classList.add('active', `auto-level-${val}`);
+                 }
+             }
              return;
         }
 
         for(let i=0; i<NUM_STEPS; i++) { 
-            let vel = 0;
             const active = Math.random() < 0.25; 
-            
             if (active) { 
                 if (t.stepLock) continue;
+                
                 const rnd = Math.random();
-                vel = 2; // Normal
+                let vel = 2; // Normal
                 if (rnd > 0.8) vel = 3; // Accent
                 else if (rnd < 0.2) vel = 1; // Ghost
+                
+                t.steps[i] = vel;
             } else { 
-                if (t.stepLock) continue;
-                vel = 0;
+                if (!t.stepLock) t.steps[i] = 0; 
             }
-            
-            t.steps[i] = vel;
-            // Update Shared Memory
-            if (this.audioEngine) this.audioEngine.updateTrackStep(trkIdx, i, vel);
             
             const btn = this.matrixStepElements[trkIdx][i]; 
             btn.classList.remove('vel-1', 'vel-2', 'vel-3');
-            if(vel > 0) btn.classList.add(`vel-${vel}`);
+            if(t.steps[i] > 0) btn.classList.add(`vel-${t.steps[i]}`);
         } 
         
         if (this.randomChokeMode) this.applyRandomChokeDimming(); 
@@ -225,15 +217,11 @@ export class TrackOperations {
                     if (!this.tracks[trkId]) continue;
                     
                     const shouldBeActive = plays && (trkId === activeTrackId);
-                    const vel = shouldBeActive ? 2 : 0;
-                    
-                    this.tracks[trkId].steps[step] = vel;
-                    
-                    if (this.audioEngine) this.audioEngine.updateTrackStep(trkId, step, vel);
+                    this.tracks[trkId].steps[step] = shouldBeActive;
                     
                     const btn = this.matrixStepElements[trkId][step];
-                    btn.classList.remove('active', 'vel-1', 'vel-2', 'vel-3');
-                    if(shouldBeActive) btn.classList.add('vel-2');
+                    if(shouldBeActive) btn.classList.add('active');
+                    else btn.classList.remove('active');
                 }
             }
         }
@@ -346,16 +334,14 @@ export class TrackOperations {
             const shiftInGroups = shiftAmount * numGroups;
             const newGroupPosition = (groupIdx + shiftInGroups) % numGroups;
             const newGroupCenter = -1 + (newGroupPosition / (numGroups - 1)) * 2;
+            const originalGroupCenter = -1 + (groupIdx / (numGroups - 1)) * 2;
             const offsetFromCenter = basePan - originalGroupCenter;
             let newPan = newGroupCenter + offsetFromCenter;
             newPan = Math.max(-1, Math.min(1, newPan));
-            
-            // 1. Update UI Object
             this.tracks[i].params.pan = parseFloat(newPan.toFixed(3));
             
-            // 2. Update Shared Memory (V5)
-            if (this.audioEngine) {
-                this.audioEngine.updateParam(i, 1, newPan); // 1 = P_PAN
+            if(this.tracks[i].bus && this.tracks[i].bus.pan) {
+                this.tracks[i].bus.pan.pan.value = newPan;
             }
         }
     }
