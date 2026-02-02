@@ -172,16 +172,30 @@ export class TrackControls {
         rstBtn.innerHTML = '<i class="fas fa-undo"></i>';
         rstBtn.title = 'Reset Parameters';
         rstBtn.onclick = () => {
-             const t = this.tracks[this.selectedTrackIndex];
-             if (t.type === 'granular') {
-                 t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
-                 t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
-                 t.params.sampleStart = 0.000; t.params.sampleEnd = 1.000;
-             } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
-             t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
-             t.lfos.forEach(lfo => { lfo.target = 'none'; });
-             this.updateKnobs();
-             this.updateLfoUI();
+             // Let TrackManager handle the setParam calls for shared memory sync
+             if (this.trackManager) {
+                 const t = this.tracks[this.selectedTrackIndex];
+                 if (t.type === 'granular') {
+                     this.trackManager.setParam(t.id, 'position', 0);
+                     this.trackManager.setParam(t.id, 'spray', 0);
+                     this.trackManager.setParam(t.id, 'grainSize', 0.11);
+                     this.trackManager.setParam(t.id, 'density', 3);
+                     this.trackManager.setParam(t.id, 'pitch', 1);
+                     this.trackManager.setParam(t.id, 'relGrain', 0.5);
+                     this.trackManager.setParam(t.id, 'sampleStart', 0);
+                     this.trackManager.setParam(t.id, 'sampleEnd', 1);
+                 } else { 
+                     this.trackManager.setParam(t.id, 'drumTune', 0.5);
+                     this.trackManager.setParam(t.id, 'drumDecay', 0.5);
+                 }
+                 this.trackManager.setParam(t.id, 'hpFilter', 20);
+                 this.trackManager.setParam(t.id, 'filter', 20000);
+                 this.trackManager.setParam(t.id, 'volume', 0.8);
+                 
+                 t.lfos.forEach(lfo => { lfo.target = 'none'; });
+                 this.updateKnobs();
+                 this.updateLfoUI();
+             }
         };
         row2.appendChild(rstBtn);
 
@@ -196,6 +210,7 @@ export class TrackControls {
                 
                 if (isAuto) {
                     t.type = 'automation';
+                    // Don't need to sync type 99, automation is handled differently logic-wise
                     t.steps.fill(0);
                     const stepElements = this.matrixStepElements[t.id];
                     if(stepElements) {
@@ -207,7 +222,14 @@ export class TrackControls {
                     this.updateTrackControlsVisibility();
                 } else if (is909) {
                     t.type = 'simple-drum';
-                    t.params.drumType = 'kick'; t.params.drumTune = 0.5; t.params.drumDecay = 0.5;
+                    // Update Shared Memory Type
+                    const typeMap = { 'kick': 1, 'snare': 2, 'closed-hat': 3, 'open-hat': 3, 'cymbal': 3 };
+                    const drumType = 'kick'; // Default to kick when switching to 909
+                    t.params.drumType = drumType;
+                    this.trackManager.setParam(t.id, 'type', typeMap[drumType]);
+                    this.trackManager.setParam(t.id, 'drumTune', 0.5);
+                    this.trackManager.setParam(t.id, 'drumDecay', 0.5);
+                    
                     this.updateTrackControlsVisibility();
                     this.updateKnobs();
                 } else if (label === 'SMP') {
@@ -215,12 +237,16 @@ export class TrackControls {
                     if(sampleInput) sampleInput.click();
                 } else {
                     t.type = 'granular';
+                    this.trackManager.setParam(t.id, 'type', 0); // 0 = Granular
                     this.updateTrackControlsVisibility();
                     const newBuf = ae.generateBufferByType(type);
                     if (newBuf) {
                         t.buffer = newBuf;
                         t.customSample = null;
                         t.rmsMap = ae.analyzeBuffer(newBuf);
+                        // Wrapper must upload
+                        // We rely on main.js visualizer update or explicit call
+                        // Here we just set the buffer object, next 'note on' logic will check wrapper cache
                     }
                 }
                 this.selectTrack(this.selectedTrackIndex); 

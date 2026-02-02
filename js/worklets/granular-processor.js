@@ -1,463 +1,334 @@
-// BeatOS Granular Synthesis AudioWorklet Processor
-// Runs on dedicated audio rendering thread for ultra-low latency
-// Supports: polyphonic grains, pitch shifting, RMS-based position finding, velocity
-// Phase 1 Improvements: Cubic Interpolation, Window LUT, De-clicking
-// Phase 2 Improvements: Event-Based Internal Scheduling
+// BeatOS "Super Processor"
+// Integrates Sequencer, Granular Engine, and 909 Synthesis in a single AudioWorklet.
+// Powered by SharedArrayBuffer for Zero-Latency State Synchronization.
 
-class BeatOSGranularProcessor extends AudioWorkletProcessor {
+const LAYOUT = {
+    IDX_STATE: 0, IDX_CURRENT_STEP: 1, IDX_BPM: 2, IDX_SAMPLE_RATE: 3, IDX_TOTAL_SAMPLES: 4, IDX_ACTIVE_VOICES: 5,
+    STEPS_PER_TRACK: 64, MAX_TRACKS: 32, PARAMS_PER_TRACK: 24,
+    P_VOL: 0, P_PAN: 1, P_PITCH: 2, P_DECAY: 3, P_POSITION: 4, 
+    P_DENSITY: 5, P_SPRAY: 6, P_FILTER: 7, P_DRIVE: 9, P_TYPE: 10,
+    P_SEND_A: 11, P_SEND_B: 12
+};
+
+class BeatOSProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
         
-        // Voice pool for polyphonic grains (64 simultaneous grains!)
-        this.MAX_VOICES = 64;
-        this.voices = Array(this.MAX_VOICES).fill(null).map((_, id) => ({
-            id,
-            active: false,
-            
-            // Buffer data
-            buffer: null,
-            bufferLength: 0,
-            
-            // Grain parameters
-            position: 0,          // Position in buffer (0-1)
-            phase: 0,             // Current sample within grain
-            grainLength: 0,       // Grain length in samples
-            pitch: 1.0,
-            velocity: 1.0,
-            
-            // Timing
-            startFrame: 0,
-            
-            // Track routing
-            trackId: null,
-
-            // De-clicking / Release
-            releasing: false,
-            releaseAmp: 1.0
-        }));
+        this.controlView = null;
+        this.trackView = null;
+        this.paramView = null;
+        this.meterView = null;
         
-        // Active Notes (Internal Scheduler)
-        // Stores notes that are currently generating grains
-        this.activeNotes = [];
-
-        // Shared buffers (transferred from main thread)
-        this.trackBuffers = new Map(); // trackId -> { buffer: Float32Array, rmsMap: boolean[] }
+        // --- Internal State ---
+        this.sampleCounter = 0;
+        this.lastStep = -1;
+        this.buffers = new Map(); 
         
-        // Stats
-        this.currentFrame = 0;
-        this.totalGrainsTriggered = 0;
+        // Local State Fallback (If Shared Memory fails)
+        this.localState = { isPlaying: false, bpm: 120 };
 
-        // Phase 1.2: Window Function Lookup Table (Hanning)
-        // Pre-calculating this reduces CPU load by avoiding Math.cos() per sample
         this.windowLUT = new Float32Array(4096);
         for(let i=0; i<4096; i++) {
-            const phase = i / 4095;
-            this.windowLUT[i] = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * phase));
+            this.windowLUT[i] = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * (i / 4095)));
         }
         
-        // Message handling from main thread
-        this.port.onmessage = (e) => {
-            const { type, data } = e.data;
-            
-            switch(type) {
-                case 'trigger': // Legacy trigger (single grain)
-                    this.triggerGrain(data);
-                    break;
-                
-                case 'noteOn': // Phase 2: New Event-Based Trigger
-                    this.handleNoteOn(data);
-                    break;
-                    
-                case 'setBuffer':
-                    this.setBuffer(data.trackId, data.buffer, data.rmsMap);
-                    break;
-                    
-                case 'updateBuffer':
-                    this.updateBuffer(data.trackId, data.buffer, data.rmsMap);
-                    break;
-                    
-                case 'stopAll':
-                    this.stopAllVoices();
-                    this.activeNotes = []; // Clear scheduler
-                    break;
-                    
-                case 'stopTrack':
-                    this.stopTrack(data.trackId);
-                    break;
-                    
-                case 'getStats':
-                    this.sendStats();
-                    break;
-            }
-        };
-    }
-
-    // Phase 1.1: Cubic Hermite Interpolation
-    // Returns a much smoother interpolated value than linear (less metallic artifacts)
-    cubicHermite(y0, y1, y2, y3, x) {
-        const c0 = y1;
-        const c1 = 0.5 * (y2 - y0);
-        const c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
-        const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+        this.noiseBuffer = new Float32Array(48000);
+        for(let i=0; i<48000; i++) this.noiseBuffer[i] = Math.random() * 2 - 1;
         
-        return ((c3 * x + c2) * x + c1) * x + c0;
+        this.MAX_VOICES = 64;
+        this.voices = [];
+        for(let i=0; i<this.MAX_VOICES; i++) {
+            this.voices.push({
+                active: false, trackId: -1, type: 0, age: 0,
+                vol: 0, pan: 0, drive: 0, sendA: 0, sendB: 0,
+                buffer: null, position: 0, speed: 1, grainLen: 0,
+                startFreq: 0, endFreq: 0, decay: 0, tone: 0
+            });
+        }
+        
+        this.port.onmessage = (e) => this.handleMessage(e.data);
     }
     
-    // Phase 2: Handle Note On Event
-    handleNoteOn(data) {
-        const { trackId, time, duration, params } = data;
-        
-        // Convert Start Time to Frame Count (approx) or keep as time
-        // Note: 'currentFrame' is local to this processor since start.
-        // Ideally we sync 'time' with audioContext.currentTime but accessing that inside Worklet is tricky directly.
-        // We assume 'time' passed in is relative to AudioContext.currentTime.
-        // However, 'currentTime' in process() is available globally in AudioWorkletGlobalScope, or we track locally.
-        // Standard practice: Pass 'currentTime' from main thread or use relative offsets.
-        // Better: Main thread sends 'startTime' relative to NOW.
-        // If data.time is absolute AudioContext time, we need to know current AudioContext time.
-        // Using 'currentTime' (global in Worklet)
-        
-        this.activeNotes.push({
-            trackId,
-            startTime: time,
-            duration: duration, // in seconds
-            params: params, // { density, grainSize, position, spray, pitch, etc }
-            nextGrainTime: time // Schedule first grain immediately at start time
-        });
+    handleMessage(msg) {
+        if (msg.type === 'initMemory') {
+            this.controlView = new Int32Array(msg.buffers.control);
+            this.trackView = new Uint8Array(msg.buffers.tracks);
+            this.paramView = new Float32Array(msg.buffers.params);
+            this.meterView = new Float32Array(msg.buffers.meters);
+        }
+        else if (msg.type === 'setBuffer') {
+            this.buffers.set(msg.trackId, msg.buffer);
+        }
+        // --- Fallback Handlers ---
+        else if (msg.type === 'play') {
+            this.localState.isPlaying = true;
+            // Also update local view if it's a copy
+            if (this.controlView) this.controlView[LAYOUT.IDX_STATE] = 1;
+        }
+        else if (msg.type === 'stop') {
+            this.localState.isPlaying = false;
+            if (this.controlView) this.controlView[LAYOUT.IDX_STATE] = 0;
+        }
+        else if (msg.type === 'setBPM') {
+            this.localState.bpm = msg.value;
+            if (this.controlView) this.controlView[LAYOUT.IDX_BPM] = msg.value;
+        }
     }
-
+    
     process(inputs, outputs, parameters) {
-        const output = outputs[0];
-        const channelCount = output.length;
-        const frameCount = output[0].length; // Always 128 samples
+        if (!this.controlView) return true;
         
-        // Global time in seconds (provided by AudioWorkletGlobalScope)
-        const now = currentTime; 
+        const outputChannels = outputs; 
+        const frameCount = outputChannels[0][0].length;
         
-        // Phase 2: Internal Grain Scheduler
-        // Iterate backwards to allow removal
-        for (let i = this.activeNotes.length - 1; i >= 0; i--) {
-            const note = this.activeNotes[i];
+        // 2. Read Global State (Priority: Shared Memory -> Local Fallback)
+        let isPlaying = this.controlView[LAYOUT.IDX_STATE] === 1;
+        // If SharedMemory isn't working (value is 0 but we received 'play' msg), use local
+        if (this.localState.isPlaying) isPlaying = true;
+
+        let bpm = this.controlView[LAYOUT.IDX_BPM] || 120;
+        if (this.localState.bpm !== 120) bpm = this.localState.bpm; // Use msg value if set
+
+        const sr = sampleRate; 
+        
+        // 3. Sequencer Clock Logic
+        if (isPlaying) {
+            const samplesPerStep = (sr * 60) / (bpm * 4);
             
-            // Check if note is finished
-            if (now > note.startTime + note.duration) {
-                this.activeNotes.splice(i, 1);
-                continue;
-            }
+            this.sampleCounter += frameCount; 
             
-            // Check if note has started
-            if (now >= note.startTime) {
-                // Determine density interval
-                let density = Math.max(1, note.params.density || 20);
-                let interval = 1 / density;
+            if (this.sampleCounter >= samplesPerStep) {
+                this.sampleCounter -= samplesPerStep;
                 
-                // Overlap logic (if provided) overrides density
-                if (note.params.overlap > 0) {
-                    const grainDur = note.params.grainSize || 0.1;
-                    interval = grainDur / Math.max(0.1, note.params.overlap);
+                let currentStep = this.controlView[LAYOUT.IDX_CURRENT_STEP];
+                currentStep = (currentStep + 1) % 64;
+                
+                // Atomic Store (Instant UI update - might fail if SAB missing but safe to try)
+                try {
+                    Atomics.store(this.controlView, LAYOUT.IDX_CURRENT_STEP, currentStep);
+                } catch(e) {
+                    this.controlView[LAYOUT.IDX_CURRENT_STEP] = currentStep;
                 }
-
-                // Spawn grains until nextGrainTime is in the future
-                // We limit the number of grains per block to prevent infinite loops if density is insane
-                let grainsSpawnedThisBlock = 0;
-                while (note.nextGrainTime < now + (frameCount / sampleRate) && grainsSpawnedThisBlock < 10) {
-                    if (note.nextGrainTime >= now) {
-                        // Time to spawn!
-                        // Apply randomization/spray here in the scheduler
-                        this.spawnGrainFromNote(note);
-                    }
-                    note.nextGrainTime += interval;
-                    grainsSpawnedThisBlock++;
-                }
+                
+                this.controlView[LAYOUT.IDX_TOTAL_SAMPLES] += samplesPerStep;
+                
+                this.triggerStep(currentStep);
             }
-        }
-
-        if (channelCount === 0) return true;
-        
-        // Clear output buffers
-        for (let channel = 0; channel < channelCount; channel++) {
-            output[channel].fill(0);
+        } else {
+            this.sampleCounter = 0;
         }
         
-        // Process each active voice
+        // 4. Clear Outputs
+        for (let i = 0; i < outputChannels.length; i++) {
+            if (outputChannels[i][0]) outputChannels[i][0].fill(0);
+            if (outputChannels[i][1]) outputChannels[i][1].fill(0);
+        }
+        
+        // 5. Render Active Voices
+        let activeCount = 0;
+        
         for (let v = 0; v < this.voices.length; v++) {
             const voice = this.voices[v];
-            if (!voice.active || !voice.buffer) continue;
+            if (!voice.active) continue;
             
-            // Generate samples for this grain
+            activeCount++;
+            
+            const trackOut = outputChannels[voice.trackId];
+            if (!trackOut) continue;
+            
+            const sendAOut = outputChannels[32];
+            const sendBOut = outputChannels[33];
+            
+            const left = trackOut[0];
+            const right = trackOut[1];
+            
+            const panRad = (voice.pan + 1) * (Math.PI / 4);
+            const gainL = Math.cos(panRad) * voice.vol;
+            const gainR = Math.sin(panRad) * voice.vol;
+            
             for (let i = 0; i < frameCount; i++) {
-                // Phase 1.3: De-clicking (Release Envelope)
-                if (voice.releasing) {
-                    voice.releaseAmp -= (1.0 / 64.0); // Fade out over 64 samples
-                    if (voice.releaseAmp <= 0) {
-                        voice.active = false;
-                        voice.releasing = false;
-                        break; // Stop processing this voice immediately
-                    }
-                }
-
-                if (voice.phase >= voice.grainLength) {
-                    // Grain finished naturally
-                    voice.active = false;
-                    break;
+                let sample = 0;
+                
+                switch (voice.type) {
+                    case 0: sample = this.renderGranular(voice); break;
+                    case 1: sample = this.renderKick(voice); break;
+                    case 2: sample = this.renderSnare(voice); break;
+                    case 3: sample = this.renderHat(voice); break;
+                    case 4: sample = this.renderSample(voice); break;
                 }
                 
-                // Calculate buffer read position with pitch shift
-                const baseReadPos = voice.position * voice.bufferLength;
-                const pitchOffset = voice.phase * voice.pitch;
-                const readPos = baseReadPos + pitchOffset;
-                
-                // Wrap position if needed
-                const wrappedPos = readPos % voice.bufferLength;
-                const sampleIndex = Math.floor(wrappedPos);
-                const frac = wrappedPos - sampleIndex;
-
-                // Phase 1.1: Cubic Interpolation
-                // Fetch 4 samples for Hermite interpolation
-                const idx0 = (sampleIndex - 1 + voice.bufferLength) % voice.bufferLength;
-                const idx1 = sampleIndex;
-                const idx2 = (sampleIndex + 1) % voice.bufferLength;
-                const idx3 = (sampleIndex + 2) % voice.bufferLength;
-
-                const y0 = voice.buffer[idx0] || 0;
-                const y1 = voice.buffer[idx1] || 0;
-                const y2 = voice.buffer[idx2] || 0;
-                const y3 = voice.buffer[idx3] || 0;
-
-                const sample = this.cubicHermite(y0, y1, y2, y3, frac);
-                
-                // Phase 1.2: Apply Hann window envelope using LUT
-                // Map phase (0 to grainLength) to LUT size (0 to 4096)
-                const lutIndex = Math.floor((voice.phase / voice.grainLength) * 4095);
-                // Safety clamp
-                const safeLutIndex = Math.max(0, Math.min(4095, lutIndex));
-                const envelope = this.windowLUT[safeLutIndex];
-                
-                // Apply velocity, window envelope, and release envelope
-                const outputSample = sample * envelope * voice.velocity * voice.releaseAmp;
-                
-                // Mix to output (mono source -> stereo output)
-                output[0][i] += outputSample;
-                if (channelCount > 1) {
-                    output[1][i] += outputSample;
+                if (voice.drive > 0) {
+                    const driven = sample * (1 + voice.drive * 4);
+                    sample = Math.tanh(driven);
                 }
                 
-                voice.phase++;
+                const stereoL = sample * gainL;
+                const stereoR = sample * gainR;
+                
+                left[i] += stereoL;
+                right[i] += stereoR;
+                
+                if (sendAOut && voice.sendA > 0) {
+                    sendAOut[0][i] += stereoL * voice.sendA;
+                    sendAOut[1][i] += stereoR * voice.sendA;
+                }
+                if (sendBOut && voice.sendB > 0) {
+                    sendBOut[0][i] += stereoL * voice.sendB;
+                    sendBOut[1][i] += stereoR * voice.sendB;
+                }
+                
+                voice.age++;
             }
         }
         
-        // Soft limiter to prevent clipping (fast tanh approximation)
-        const outputGain = 0.5; // Pre-gain to avoid clipping with many voices
-        for (let channel = 0; channel < channelCount; channel++) {
-            for (let i = 0; i < frameCount; i++) {
-                const sample = output[channel][i] * outputGain;
-                // Fast tanh approximation
-                const x = Math.max(-3, Math.min(3, sample));
-                output[channel][i] = x * (27 + x * x) / (27 + 9 * x * x);
-            }
+        // Write Active Voice Count
+        try {
+            Atomics.store(this.controlView, LAYOUT.IDX_ACTIVE_VOICES, activeCount);
+        } catch(e) {
+            this.controlView[LAYOUT.IDX_ACTIVE_VOICES] = activeCount;
         }
         
-        this.currentFrame += frameCount;
+        // 6. Metering (Write RMS to Shared Memory)
+        this.updateMeters(outputChannels, frameCount);
         
-        return true; // Keep processor alive
+        return true;
     }
     
-    // Phase 2: Helper to spawn grain from note params
-    spawnGrainFromNote(note) {
-        const { params } = note;
-        const trackData = this.trackBuffers.get(note.trackId);
-        
-        if (!trackData || !trackData.buffer) return;
-
-        // Find free voice or steal
-        let voice = this.voices.find(v => !v.active);
-        if (!voice) {
-            voice = this.voices.reduce((oldest, v) => 
-                v.startFrame < oldest.startFrame ? v : oldest
-            );
-            // Quick fade out for stolen voice to avoid click
-            voice.releasing = true; 
-            // In a real scenario, we might want to allocate a NEW voice and fade the old one,
-            // but for fixed polyphony, we hard reset here after fading next block?
-            // For now, hard reset but rely on overlap masking it mostly. 
-            // Actually, simply resetting logic:
+    triggerStep(step) {
+        for (let t = 0; t < LAYOUT.MAX_TRACKS; t++) {
+            const velIndex = t * LAYOUT.STEPS_PER_TRACK + step;
+            const velocity = this.trackView[velIndex];
+            
+            if (velocity > 0) {
+                const pOffset = t * LAYOUT.PARAMS_PER_TRACK;
+                
+                let voice = this.voices.find(v => !v.active);
+                if (!voice) {
+                    voice = this.voices[0]; 
+                }
+                
+                this.initVoice(voice, t, velocity, pOffset);
+            }
         }
-
-        // Apply parameters from Note
-        // Note: Main thread calculates effective position (including LFOs) at Note On
-        // Ideally, we'd calculate LFOs here for sample accuracy, but passing LFO state is complex.
-        // We will stick to "Params at trigger time" for simplicity, or simple linear interpolation if params are automated.
-        
-        let finalPos = params.position;
-        
-        // Apply Spray (Randomness)
-        if (params.spray > 0) {
-            finalPos += (Math.random() * 2 - 1) * params.spray;
-            finalPos = Math.max(0, Math.min(1, finalPos));
-        }
-
-        // Initialize voice
-        voice.active = true;
-        voice.trackId = note.trackId;
-        voice.buffer = trackData.buffer;
-        voice.bufferLength = trackData.buffer.length;
-        voice.position = finalPos;
-        voice.phase = 0;
-        voice.grainLength = Math.max(128, Math.floor((params.grainSize || 0.1) * sampleRate));
-        voice.pitch = Math.max(0.05, Math.min(8.0, params.pitch || 1.0));
-        voice.velocity = params.velocity || 1.0;
-        voice.startFrame = this.currentFrame;
-        voice.releasing = false;
-        voice.releaseAmp = 1.0;
-
-        this.totalGrainsTriggered++;
     }
-
-    triggerGrain(data) {
-        const {
-            trackId,
-            position = 0.5,
-            grainSize = 0.1,
-            pitch = 1.0,
-            velocity = 1.0,
-            spray = 0.0,
-            useRmsMap = true
-        } = data;
+    
+    initVoice(voice, trackId, velocity, pOffset) {
+        const type = this.paramView[pOffset + LAYOUT.P_TYPE];
         
-        const trackData = this.trackBuffers.get(trackId);
-        if (!trackData || !trackData.buffer) {
-            return;
-        }
-        
-        // Find free voice
-        let voice = this.voices.find(v => !v.active);
-        if (!voice) {
-            // Voice stealing: take the oldest grain
-            voice = this.voices.reduce((oldest, v) => 
-                v.startFrame < oldest.startFrame ? v : oldest
-            );
-        }
-        
-        // Apply spray (random position variation)
-        let finalPosition = position;
-        if (spray > 0) {
-            finalPosition += (Math.random() * 2 - 1) * spray;
-            finalPosition = Math.max(0, Math.min(1, finalPosition));
-        }
-        
-        // Skip silence using RMS map if available
-        if (useRmsMap && trackData.rmsMap && trackData.rmsMap.length > 0) {
-            finalPosition = this.findActivePosition(finalPosition, trackData.rmsMap);
-        }
-        
-        // Initialize voice
         voice.active = true;
-        voice.buffer = trackData.buffer;
-        voice.bufferLength = trackData.buffer.length;
-        voice.position = finalPosition;
-        voice.phase = 0;
-        voice.grainLength = Math.max(128, Math.floor(grainSize * sampleRate)); // Minimum 128 samples
-        voice.pitch = Math.max(0.05, Math.min(8.0, pitch)); // Updated Limits
-        voice.velocity = Math.max(0, Math.min(2.0, velocity));
-        voice.startFrame = this.currentFrame;
         voice.trackId = trackId;
+        voice.type = type;
+        voice.age = 0;
         
-        // Reset Release State for new grain
-        voice.releasing = false;
-        voice.releaseAmp = 1.0;
+        const velGain = velocity === 1 ? 0.4 : (velocity === 2 ? 0.75 : 1.0);
+        voice.vol = this.paramView[pOffset + LAYOUT.P_VOL] * velGain;
+        voice.pan = this.paramView[pOffset + LAYOUT.P_PAN];
+        voice.drive = this.paramView[pOffset + LAYOUT.P_DRIVE];
+        voice.sendA = this.paramView[pOffset + LAYOUT.P_SEND_A];
+        voice.sendB = this.paramView[pOffset + LAYOUT.P_SEND_B];
         
-        this.totalGrainsTriggered++;
-    }
-    
-    findActivePosition(requestedPos, rmsMap) {
-        if (!rmsMap || rmsMap.length === 0) return requestedPos;
+        const tune = this.paramView[pOffset + LAYOUT.P_POSITION] || 0.5;
+        const decay = this.paramView[pOffset + LAYOUT.P_DECAY] || 0.5;
         
-        const mapIdx = Math.floor(requestedPos * (rmsMap.length - 1));
-        
-        // If current position has audio, use it
-        if (rmsMap[mapIdx]) return requestedPos;
-        
-        // Search for nearest non-silent position
-        for (let i = 1; i < 50; i++) {
-            // Check forward
-            const forwardIdx = Math.min(mapIdx + i, rmsMap.length - 1);
-            if (rmsMap[forwardIdx]) {
-                return forwardIdx / (rmsMap.length - 1);
-            }
-            
-            // Check backward
-            const backwardIdx = Math.max(mapIdx - i, 0);
-            if (rmsMap[backwardIdx]) {
-                return backwardIdx / (rmsMap.length - 1);
-            }
-        }
-        
-        // No active position found, return original
-        return requestedPos;
-    }
-    
-    setBuffer(trackId, buffer, rmsMap = null) {
-        // Convert rmsMap from numbers to booleans if needed
-        let processedRmsMap = null;
-        if (rmsMap && rmsMap.length > 0) {
-            processedRmsMap = rmsMap.map(val => val > 0.01);
-        }
-        
-        this.trackBuffers.set(trackId, {
-            buffer: buffer,
-            rmsMap: processedRmsMap
-        });
-        
-        // Send confirmation back to main thread
-        this.port.postMessage({
-            type: 'bufferLoaded',
-            trackId,
-            bufferLength: buffer.length,
-            hasRmsMap: !!processedRmsMap
-        });
-    }
-    
-    updateBuffer(trackId, buffer, rmsMap = null) {
-        // Same as setBuffer but used for updates
-        this.setBuffer(trackId, buffer, rmsMap);
-    }
-    
-    stopAllVoices() {
-        for (let v = 0; v < this.voices.length; v++) {
-            // Phase 1.3: Soft Stop
-            if (this.voices[v].active) {
-                this.voices[v].releasing = true;
-                this.voices[v].releaseAmp = 1.0;
-            }
+        if (type === 1) { // KICK
+            voice.startFreq = 150 + (tune * 100);
+            voice.endFreq = 50;
+            voice.decay = (0.1 + decay * 0.5) * sampleRate;
+        } 
+        else if (type === 2) { // SNARE
+            voice.startFreq = 180 + (tune * 100);
+            voice.decay = (0.05 + decay * 0.3) * sampleRate;
+            voice.tone = this.paramView[pOffset + LAYOUT.P_DENSITY] || 0.5; 
+        } 
+        else if (type === 3) { // HAT
+            voice.startFreq = 8000 + (tune * 2000); 
+            voice.decay = (0.01 + decay * 0.3) * sampleRate;
+        } 
+        else { // GRANULAR (0) or SAMPLE (4)
+            const buffer = this.buffers.get(trackId);
+            if (!buffer) { voice.active = false; return; }
+            voice.buffer = buffer;
+            voice.position = Math.floor(tune * buffer.length); 
+            voice.speed = this.paramView[pOffset + LAYOUT.P_PITCH] || 1.0;
+            voice.grainLen = Math.max(128, (decay * 0.5) * sampleRate); 
         }
     }
     
-    stopTrack(trackId) {
-        for (let v = 0; v < this.voices.length; v++) {
-            // Phase 1.3: Soft Stop for specific track
-            if (this.voices[v].trackId === trackId && this.voices[v].active) {
-                this.activeNotes = this.activeNotes.filter(n => n.trackId !== trackId); // Stop scheduler
-                this.voices[v].releasing = true;
-                this.voices[v].releaseAmp = 1.0;
-            }
-        }
+    renderKick(v) {
+        if (v.age > v.decay) { v.active = false; return 0; }
+        const t = v.age / sampleRate;
+        const progress = v.age / v.decay;
+        const amp = 1.0 - progress;
+        const freq = v.endFreq + (v.startFreq - v.endFreq) * Math.exp(-v.age * 0.005);
+        const phase = t * freq * 2 * Math.PI;
+        return Math.sin(phase) * (amp * amp); 
     }
     
-    sendStats() {
-        const activeVoices = this.voices.filter(v => v.active).length;
-        const loadedBuffers = this.trackBuffers.size;
-        
-        this.port.postMessage({
-            type: 'stats',
-            data: {
-                activeVoices,
-                maxVoices: this.MAX_VOICES,
-                loadedBuffers,
-                totalGrainsTriggered: this.totalGrainsTriggered,
-                currentFrame: this.currentFrame
-            }
-        });
+    renderSnare(v) {
+        if (v.age > v.decay) { v.active = false; return 0; }
+        const t = v.age / sampleRate;
+        const progress = v.age / v.decay;
+        const amp = 1.0 - progress;
+        const toneFreq = v.startFreq * (1.0 - (v.age * 0.0005));
+        const toneVal = Math.sin(t * toneFreq * 2 * Math.PI);
+        const noiseVal = this.noiseBuffer[v.age % this.noiseBuffer.length];
+        const mix = 0.5; 
+        return (toneVal * (1-mix) + noiseVal * mix) * amp;
+    }
+    
+    renderHat(v) {
+        if (v.age > v.decay) { v.active = false; return 0; }
+        const amp = Math.exp(-v.age * 0.005); 
+        if (amp < 0.001) { v.active = false; return 0; }
+        let sample = this.noiseBuffer[(v.age * 2) % this.noiseBuffer.length];
+        const hp = sample - (v.lastSample || 0);
+        v.lastSample = sample;
+        return hp * amp;
+    }
+    
+    renderGranular(v) {
+        if (v.age >= v.grainLen) { v.active = false; return 0; }
+        const winIdx = Math.floor((v.age / v.grainLen) * 4095);
+        const env = this.windowLUT[winIdx] || 0;
+        const readPos = v.position + (v.age * v.speed);
+        const idx = Math.floor(readPos);
+        const frac = readPos - idx;
+        if (idx < 0 || idx >= v.buffer.length - 1) return 0;
+        const s1 = v.buffer[idx];
+        const s2 = v.buffer[idx+1];
+        return (s1 + (s2 - s1) * frac) * env;
+    }
+    
+    renderSample(v) {
+        const readPos = v.age * v.speed;
+        const idx = Math.floor(readPos);
+        if (idx >= v.buffer.length) { v.active = false; return 0; }
+        return v.buffer[idx];
+    }
+    
+    updateMeters(outputs, frameCount) {
+        const factor = 0.9;
+        for (let t = 0; t < LAYOUT.MAX_TRACKS; t++) {
+            this.calcRMS(outputs[t], t * 2, frameCount, factor);
+        }
+        this.calcRMS(outputs[32], LAYOUT.METER_OFFSET_SEND_A || 64, frameCount, factor);
+        this.calcRMS(outputs[33], LAYOUT.METER_OFFSET_SEND_B || 66, frameCount, factor);
+    }
+    
+    calcRMS(output, memIdx, len, smoothing) {
+        if (!output || !output[0]) return;
+        let sumL = 0, sumR = 0;
+        for (let i = 0; i < len; i += 4) {
+            sumL += output[0][i] * output[0][i];
+            sumR += output[1][i] * output[1][i];
+        }
+        const rmsL = Math.sqrt(sumL / (len / 4));
+        const rmsR = Math.sqrt(sumR / (len / 4));
+        const oldL = this.meterView[memIdx];
+        const oldR = this.meterView[memIdx+1];
+        this.meterView[memIdx] = rmsL > oldL ? rmsL : oldL * smoothing;
+        this.meterView[memIdx+1] = rmsR > oldR ? rmsR : oldR * smoothing;
     }
 }
 
-registerProcessor('beatos-granular-processor', BeatOSGranularProcessor);
+registerProcessor('beatos-granular-processor', BeatOSProcessor);
