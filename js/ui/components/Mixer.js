@@ -99,20 +99,13 @@ export class Mixer {
         // Ensure relative positioning so canvas can overlay absolutely
         mixerContainer.style.position = 'relative';
         
-        // Create Single Canvas Overlay
-        // We append it *inside* the scrollable container so it scrolls with content?
-        // Or we make it fixed size matching scrollWidth?
-        // Better: Append it to mixerContainer and size it to scrollWidth/scrollHeight.
-        // NOTE: This requires resizing canvas if tracks are added dynamically.
-        
         this.meterOverlay = document.createElement('canvas');
         this.meterOverlay.id = 'meterOverlay';
         this.meterOverlay.style.position = 'absolute';
         this.meterOverlay.style.top = '0';
         this.meterOverlay.style.left = '0';
         this.meterOverlay.style.pointerEvents = 'none'; // Click-through
-        this.meterOverlay.style.zIndex = '5'; // Above backgrounds, below knobs handles? 
-        // Actually, z-index logic in CSS might need adjustment. Knobs are z-10 usually.
+        this.meterOverlay.style.zIndex = '5'; 
         
         this.meterCtx = this.meterOverlay.getContext('2d');
         
@@ -141,7 +134,6 @@ export class Mixer {
         this.isRendered = true;
         
         // Resize canvas to match the full scrollable area
-        // We defer this slightly to ensure DOM layout is complete
         requestAnimationFrame(() => {
             this.resizeOverlay();
         });
@@ -188,23 +180,15 @@ export class Mixer {
         this.meterRegistry.forEach((meta, id) => {
             if (!meta.analyser) return;
             
-            // Get DOM position relative to the container
-            // We use offsetLeft/offsetTop relative to the mixer-container
-            // Note: 'meta.el' is the .fader-wrapper div
-            
             const el = meta.el;
-            // The meter bar is positioned absolute left:2px top:2% bottom:2% inside wrapper
-            // We need to calculate those exact pixel coordinates on the main canvas
             
-            // Wrapper dimensions/pos relative to offsetParent (which should be strip or container?)
-            // offsetParent of wrapper is strip. offsetParent of strip is mixer-container.
-            
-            // Simplest way: accumulate offsets up to mixer-container
+            // Calculate absolute position relative to mixer-container
             let x = el.offsetLeft;
             let y = el.offsetTop;
             let parent = el.offsetParent;
             const container = this.container.querySelector('.mixer-container');
             
+            // Traverse up to find position relative to scrolling container
             while(parent && parent !== container) {
                 x += parent.offsetLeft;
                 y += parent.offsetTop;
@@ -259,11 +243,6 @@ export class Mixer {
     clearMeters() {
         if(this.meterCtx && this.meterOverlay) {
             this.meterCtx.clearRect(0, 0, this.meterOverlay.width, this.meterOverlay.height);
-            // Optionally draw "inactive" state for all meters once
-            this.meterRegistry.forEach((meta) => {
-                 // ... draw inactive gray bars ...
-                 // For now, clear is fine to save GPU
-            });
         }
     }
 
@@ -389,12 +368,22 @@ export class Mixer {
         bgSlot.className = 'fader-bg-slot';
         wrapper.appendChild(bgSlot);
 
-        // REMOVED: Individual Canvas creation
-        // Instead, register this wrapper for the global overlay loop
-        if (busObject && busObject.analyser) {
+        // Correctly find Analyser: 
+        // - Tracks pass a Track object (analyser is in .bus.analyser)
+        // - Groups/Master pass a Bus object (analyser is in .analyser)
+        let analyserNode = null;
+        if (busObject) {
+            if (busObject.analyser) {
+                analyserNode = busObject.analyser;
+            } else if (busObject.bus && busObject.bus.analyser) {
+                analyserNode = busObject.bus.analyser;
+            }
+        }
+
+        if (analyserNode) {
             this.meterRegistry.set(idForMeter, {
                 el: wrapper,
-                analyser: busObject.analyser
+                analyser: analyserNode
             });
         }
 
