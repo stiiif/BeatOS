@@ -6,8 +6,8 @@ export const NUM_LFOS = 3;
 export const TRACKS_PER_GROUP = 8; // Changed from 4 to 8 for V2 patterns
 
 export const DEFAULT_BPM = 120;
-export const LOOKAHEAD = 25.0;
-export const SCHEDULE_AHEAD_TIME = 0.1;
+export const LOOKAHEAD = 15.0;
+export const SCHEDULE_AHEAD_TIME = 0.2;
 
 // Automation Intensity Zones (Min/Max Release Times)
 export const AUTOMATION_INTENSITIES = {
@@ -21,7 +21,7 @@ export const AUTOMATION_INTENSITIES = {
 // New Velocity Constants for V2 Engine
 export const VELOCITY_GAINS = {
     0: 0.0,  // Off
-    1: 0.4,  // Ghost (Low Velocity)
+    1: 0.3,  // Ghost (Low Velocity)
     2: 0.75, // Normal (Medium Velocity)
     3: 1.0   // Accent (High Velocity)
 };
