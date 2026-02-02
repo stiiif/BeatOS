@@ -1,4 +1,6 @@
 // Visualizer Module
+import { globalBus } from '../events/EventBus.js';
+
 export class Visualizer {
     constructor(canvasId, bufferCanvasId, audioEngine) {
         // Main canvas ID ignored now if we move to per-track logic, but kept for compatibility
@@ -13,7 +15,15 @@ export class Visualizer {
         this.scopeMode = 'wave'; // 'wave' or 'spectrum'
         
         // Visual Styles: 'mirror', 'neon', 'bars', 'precision'
-        this.waveStyle = 'mirror'; 
+        this.waveStyle = 'mirror';
+
+        // NEW: State Flags for Optimization
+        this.isRunning = false;
+        this.needsRedraw = false;
+
+        // NEW: Event Subscriptions
+        globalBus.on('playback:start', () => this.startLoop());
+        globalBus.on('playback:stop', () => this.stopLoop());
     }
 
     setTracks(tracks) {
@@ -48,7 +58,32 @@ export class Visualizer {
         this.drawQueue.push({time, trackId});
     }
 
-    drawVisuals() {
+    // NEW: Loop Control Methods
+    startLoop() {
+        if (!this.isRunning) {
+            this.isRunning = true;
+            this.drawVisuals();
+        }
+    }
+
+    stopLoop() {
+        this.isRunning = false;
+        // Optional: Draw one final frame to ensure clean state or clear
+        // requestAnimationFrame(() => this.drawVisuals(true)); 
+    }
+
+    triggerRedraw() {
+        this.needsRedraw = true;
+        if (!this.isRunning) {
+            // Trigger a single frame if not currently looping
+            requestAnimationFrame(() => this.drawVisuals(true));
+        }
+    }
+
+    drawVisuals(forceOnce = false) {
+        // Stop if not running, not forced, and no redraw requested
+        if (!this.isRunning && !this.needsRedraw && !forceOnce) return;
+
         const audioCtx = this.audioEngine.getContext();
         const now = audioCtx ? audioCtx.currentTime : 0;
         
@@ -88,7 +123,13 @@ export class Visualizer {
         // Continuous animate buffer scope to show LFOs or Spectrum
         if(this.bufCanvas) this.drawBufferDisplay();
         
-        requestAnimationFrame(() => this.drawVisuals());
+        // Reset single-shot flag
+        this.needsRedraw = false;
+
+        // Continue loop ONLY if running
+        if (this.isRunning) {
+            requestAnimationFrame(() => this.drawVisuals());
+        }
     }
 
     drawBufferDisplay() {
@@ -137,12 +178,6 @@ export class Visualizer {
         const endIdx = Math.floor(sampleEnd * data.length);
         const windowLength = Math.max(1, endIdx - startIdx); // Prevent division by zero
         
-        // Create a view/slice for drawing if needed, or just pass indices to draw functions
-        // For performance, we'll modify the draw functions to accept start/end indices or adjust loops
-        // But for simplicity here, let's adapt the loop logic inside the styles slightly or pass a subarray if small enough
-        // Passing subarray creates garbage. Better to adapt draw logic.
-        // Let's modify the drawStyle calls to respect the window.
-        
         switch(this.waveStyle) {
             case 'mirror': this.drawStyleMirror(ctx, data, w, h, startIdx, windowLength); break;
             case 'neon':   this.drawStyleNeon(ctx, data, w, h, startIdx, windowLength); break;
@@ -152,7 +187,6 @@ export class Visualizer {
         }
 
         // Draw Overlays (Grain Position, Spray, etc.)
-        // Note: Overlays need to be re-mapped to the zoomed view
         this.drawOverlays(ctx, t, w, h, audioCtx.currentTime, sampleStart, sampleEnd);
     }
 
@@ -351,16 +385,11 @@ export class Visualizer {
         const p = t.params;
         
         // --- Calculate ACTIVE Window (Parameter + LFO) ---
-        // This is what the Granular Engine actually plays
         let actStart = Math.max(0, Math.min(1, (p.sampleStart || 0) + mod.sampleStart));
         let actEnd = Math.max(0, Math.min(1, (p.sampleEnd !== undefined ? p.sampleEnd : 1) + mod.sampleEnd));
         if (actStart > actEnd) { const temp = actStart; actStart = actEnd; actEnd = temp; }
         
         // --- Calculate View Window (Zoom) ---
-        // The display is already zoomed to 'start' and 'end' (the base params)
-        // We need to map positions relative to this view window.
-        // Formula: Pixel X = ((AbsolutePos - ViewStart) / (ViewEnd - ViewStart)) * Width
-        
         const viewStart = start;
         const viewEnd = end;
         const viewRange = Math.max(0.0001, viewEnd - viewStart);
@@ -370,22 +399,15 @@ export class Visualizer {
         };
 
         // --- Calculate Playhead Position ---
-        // Use playhead if scanning, otherwise param position
         const effectivePos = (p.scanSpeed !== 0) ? t.playhead : p.position;
         
-        // Relative position (0-1) within the ACTIVE window
         let relativePos = effectivePos + mod.position;
         relativePos = Math.max(0, Math.min(1, relativePos));
         
-        // Absolute position in the original buffer (0-1)
         const absPos = actStart + (relativePos * (actEnd - actStart));
+        const finalPos = Math.max(0, Math.min(1, absPos)); 
         
-        const finalPos = Math.max(0, Math.min(1, absPos)); // Should be redundant due to actStart/End but safe
-        
-        // Grain Size in absolute terms (fraction of total buffer)
-        // Grain size is in seconds. Convert to fraction of buffer duration.
         const bufDur = t.buffer ? t.buffer.duration : 1;
-        
         const finalGrainSizeSec = Math.max(0.01, p.grainSize + mod.grainSize);
         const finalGrainSizeFrac = finalGrainSizeSec / bufDur;
         
@@ -395,36 +417,22 @@ export class Visualizer {
         
         const finalSpray = Math.max(0, p.spray + mod.spray);
         
-        // IMPORTANT: Clip drawing to canvas bounds if playhead goes outside zoomed view
-        if (posPx < -grainPx || posPx > w + grainPx) {
-            // Optimally, draw indicators at edge if out of view, or just clip
-            // Let's just clip naturally
-        }
-
-        // 1. Draw Active Window LFO Movement (if LFOs affecting Start/End)
-        // Only draw if different from base View
+        // 1. Draw Active Window LFO Movement
         if (Math.abs(actStart - viewStart) > 0.001 || Math.abs(actEnd - viewEnd) > 0.001) {
             const lfoStartPx = mapToView(actStart);
             const lfoEndPx = mapToView(actEnd);
             
             ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-            // Draw regions outside active but inside view (if any) to show "truncation" by LFO
             if (lfoStartPx > 0) ctx.fillRect(0, 0, lfoStartPx, h);
             if (lfoEndPx < w) ctx.fillRect(lfoEndPx, 0, w - lfoEndPx, h);
             
-            // Draw active boundary lines
             ctx.strokeStyle = 'rgba(100, 200, 255, 0.5)';
             ctx.lineWidth = 1;
             if (lfoStartPx > 0 && lfoStartPx < w) { ctx.beginPath(); ctx.moveTo(lfoStartPx, 0); ctx.lineTo(lfoStartPx, h); ctx.stroke(); }
             if (lfoEndPx > 0 && lfoEndPx < w) { ctx.beginPath(); ctx.moveTo(lfoEndPx, 0); ctx.lineTo(lfoEndPx, h); ctx.stroke(); }
         }
 
-        // 2. Draw Spray Range (Yellow Transparent)
-        // Spray is relative to the ACTIVE window's width? No, usually absolute time variation.
-        // Granular engine: gPos += (random * 2 - 1) * spray
-        // Spray param is usually 0-1. In our engine, it adds directly to position (0-1).
-        // So spray is absolute fraction of buffer.
-        
+        // 2. Draw Spray Range
         if (finalSpray > 0) {
             const sprayLeftAbs = Math.max(0, finalPos - finalSpray);
             const sprayRightAbs = Math.min(1, finalPos + finalSpray);
@@ -439,7 +447,6 @@ export class Visualizer {
         }
 
         // 3. Draw Density/Overlap Indicator
-        // (Visual logic remains similar, just positioned at posPx)
         const rawOverlap = (p.overlap || 0) + mod.overlap;
         
         if (rawOverlap > 0.01) {

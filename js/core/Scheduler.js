@@ -1,5 +1,6 @@
-// Scheduler Module - Final (Debug logs removed)
+// Scheduler Module - Optimized with EventBus
 import { LOOKAHEAD, SCHEDULE_AHEAD_TIME, NUM_STEPS } from '../utils/constants.js';
+import { globalBus } from '../events/EventBus.js';
 
 export class Scheduler {
     constructor(audioEngine, granularSynth) {
@@ -55,6 +56,9 @@ export class Scheduler {
             this.activeSnapshot = null;
             this.tracks.forEach(t => { if(t.type === 'automation') t.lastAutoValue = 0; });
 
+            // OPTIMIZATION: Emit start event to wake up visualizers
+            globalBus.emit('playback:start');
+
             this.schedule(scheduleVisualDrawCallback);
         }
     }
@@ -69,6 +73,9 @@ export class Scheduler {
         this.tracks.forEach(t => {
             if(t.stopAllSources) t.stopAllSources();
         });
+
+        // OPTIMIZATION: Emit stop event to put visualizers to sleep
+        globalBus.emit('playback:stop');
     }
 
     getIsPlaying() {

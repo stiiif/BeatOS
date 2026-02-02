@@ -1,4 +1,5 @@
 import { TRACKS_PER_GROUP } from '../../utils/constants.js';
+import { globalBus } from '../../events/EventBus.js';
 
 export class Mixer {
     constructor(containerSelector, trackManager, audioEngine) {
@@ -26,6 +27,22 @@ export class Mixer {
         // Animation Loop Binding
         this.animateMeters = this.animateMeters.bind(this);
         this.animationFrameId = null;
+
+        // NEW: State Flag
+        this.isMetering = false;
+
+        // NEW: Event Subscriptions
+        globalBus.on('playback:start', () => {
+            if (!this.isMetering) {
+                this.isMetering = true;
+                this.animateMeters();
+            }
+        });
+        
+        globalBus.on('playback:stop', () => {
+            this.isMetering = false;
+            // Loop will terminate naturally on next frame check
+        });
     }
 
     setCallbacks(onMute, onSolo, onMuteGroup, onSoloGroup) {
@@ -98,8 +115,10 @@ export class Mixer {
         
         this.updateAllTrackStates();
         
-        // Start Meter Loop
-        this.animateMeters();
+        // Start Meter Loop if already playing and flagged
+        if (this.audioEngine.getContext() && this.audioEngine.getContext().state === 'running' && this.isMetering) {
+             this.animateMeters();
+        }
     }
 
     setTrackStripWidth(widthPx) {
@@ -109,6 +128,12 @@ export class Mixer {
     // --- ANIMATION LOOP FOR METERS ---
     animateMeters() {
         if (!this.isRendered) return;
+
+        // CHECK FLAG
+        if (!this.isMetering) {
+            this.clearMeters();
+            return; 
+        }
 
         // Loop through all registered meters
         this.meterCanvases.forEach((canvas, id) => {
@@ -174,6 +199,14 @@ export class Mixer {
         });
 
         this.animationFrameId = requestAnimationFrame(this.animateMeters);
+    }
+
+    clearMeters() {
+        this.meterCanvases.forEach((canvas) => {
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        });
     }
 
     // --- COMPONENT FACTORIES ---

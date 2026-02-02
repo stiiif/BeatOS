@@ -10,6 +10,7 @@ import { Visualizer } from './ui/Visualizer.js';
 import { LayoutManager } from './ui/LayoutManager.js';
 import { NUM_LFOS, TRACKS_PER_GROUP } from './utils/constants.js';
 import { AudioWorkletMonitor } from './ui/AudioWorkletMonitor.js';
+import { globalBus } from './events/EventBus.js'; // Ensure EventBus is available
 
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
@@ -53,7 +54,7 @@ function addTrack() {
     if (newId !== null) {
         uiManager.appendTrackRow(newId, () => {
             visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex());
-            visualizer.drawBufferDisplay();
+            visualizer.triggerRedraw();
             updateTrackControlsVisibility();
         });
         visualizer.resizeCanvas();
@@ -70,7 +71,7 @@ function addGroup() {
     }
     tracksAdded.forEach(id => uiManager.appendTrackRow(id, () => {
         visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex());
-        visualizer.drawBufferDisplay();
+        visualizer.triggerRedraw();
         updateTrackControlsVisibility();
     }));
     if (tracksAdded.length > 0) {
@@ -90,7 +91,7 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
 
     trackManager.createBuffersForAllTracks();
     document.getElementById('startOverlay').classList.add('hidden');
-    visualizer.drawVisuals();
+    visualizer.drawVisuals(true); // Force initial draw
     
     // Refresh Mixer to ensure it binds to the newly created Audio Buses
     if (uiManager.mixer) {
@@ -100,10 +101,10 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
 
     uiManager.selectTrack(0, () => {
         visualizer.setSelectedTrackIndex(0);
-        visualizer.drawBufferDisplay();
+        visualizer.triggerRedraw();
     });
     visualizer.setSelectedTrackIndex(0);
-    visualizer.drawBufferDisplay();
+    visualizer.triggerRedraw();
     updateTrackControlsVisibility();
     uiManager.updateLfoUI();
 });
@@ -149,7 +150,7 @@ document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
     btnSpec.classList.replace('text-white', 'hover:text-white');
     btnSpec.classList.remove('rounded-sm');
     
-    visualizer.drawBufferDisplay();
+    visualizer.triggerRedraw();
 });
 
 document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
@@ -165,7 +166,7 @@ document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
     btnWave.classList.replace('text-white', 'hover:text-white');
     btnWave.classList.remove('rounded-sm');
     
-    visualizer.drawBufferDisplay();
+    visualizer.triggerRedraw();
 });
 
 document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
@@ -184,7 +185,7 @@ document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
             track.customSample.duration = newBuffer.duration;
         }
         track.rmsMap = audioEngine.analyzeBuffer(newBuffer);
-        visualizer.drawBufferDisplay();
+        visualizer.triggerRedraw();
     }
     setTimeout(() => {
         btn.innerText = originalText;
@@ -227,7 +228,7 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
     });
     uiManager.updateKnobs();
     uiManager.updateLfoUI();
-    visualizer.drawBufferDisplay();
+    visualizer.triggerRedraw();
 });
 
 document.getElementById('randomizeBtn').addEventListener('click', () => {
@@ -235,7 +236,7 @@ document.getElementById('randomizeBtn').addEventListener('click', () => {
     if (t.type === 'granular') trackManager.randomizeTrackParams(t);
     else { t.params.drumTune = Math.random(); t.params.drumDecay = Math.random(); }
     uiManager.updateKnobs();
-    visualizer.drawBufferDisplay();
+    visualizer.triggerRedraw();
 });
 
 document.getElementById('randModsBtn').addEventListener('click', () => {
@@ -265,7 +266,7 @@ document.getElementById('resetParamBtn').addEventListener('click', () => {
     t.lfos.forEach(lfo => { lfo.target = 'none'; });
     uiManager.updateKnobs();
     uiManager.updateLfoUI();
-    visualizer.drawBufferDisplay();
+    visualizer.triggerRedraw();
     const btn = document.getElementById('resetParamBtn');
     const originalContent = btn.innerHTML;
     btn.innerHTML = '<i class="fas fa-check"></i>';
@@ -286,7 +287,7 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
             t.buffer = newBuf;
             t.customSample = null;
             t.rmsMap = audioEngine.analyzeBuffer(newBuf);
-            visualizer.drawBufferDisplay();
+            visualizer.triggerRedraw();
             const typeLabel = document.getElementById('trackTypeLabel');
             typeLabel.textContent = type.toUpperCase() + ' (Synth)';
             const originalBg = e.target.style.backgroundColor;
@@ -363,7 +364,7 @@ if (loadSampleBtnInline && sampleInput) {
             await audioEngine.loadCustomSample(file, currentTrack);
             const typeLabel = document.getElementById('trackTypeLabel');
             if (typeLabel) { typeLabel.textContent = currentTrack.customSample.name; typeLabel.title = currentTrack.customSample.name; }
-            visualizer.drawBufferDisplay();
+            visualizer.triggerRedraw();
             btn.innerHTML = '<i class="fas fa-check"></i>'; btn.classList.add('bg-sky-600');
             setTimeout(() => { btn.innerHTML = originalText; btn.classList.remove('bg-sky-600'); btn.disabled = false; }, 1500);
         } catch (err) { alert('Failed: ' + err.message); btn.innerHTML = originalText; btn.disabled = false; }
@@ -395,7 +396,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
     if (file) {
         audioEngine.onBpmChange = (bpm) => { scheduler.setBPM(bpm); document.getElementById('bpmInput').value = bpm; };
         presetManager.loadPreset(file, tracks, addTrack, (i) => uiManager.updateTrackStateUI(i), uiManager.matrixStepElements, (i) => {
-            uiManager.selectTrack(i); visualizer.setSelectedTrackIndex(i); visualizer.drawBufferDisplay(); updateTrackControlsVisibility();
+            uiManager.selectTrack(i); visualizer.setSelectedTrackIndex(i); visualizer.triggerRedraw(); updateTrackControlsVisibility();
         }, uiManager.getSelectedTrackIndex(), audioEngine);
     }
     document.getElementById('fileInput').value = '';
@@ -406,7 +407,7 @@ document.querySelectorAll('.param-slider').forEach(el => {
         const t = tracks[uiManager.getSelectedTrackIndex()];
         t.params[e.target.dataset.param] = parseFloat(e.target.value);
         uiManager.updateKnobs();
-        if (t.type === 'granular') visualizer.drawBufferDisplay();
+        if (t.type === 'granular') visualizer.triggerRedraw();
     });
 });
 
@@ -419,7 +420,7 @@ document.getElementById('lfoWave').addEventListener('change', e => { tracks[uiMa
 document.getElementById('lfoRate').addEventListener('input', e => { const v = parseFloat(e.target.value); tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].rate = v; document.getElementById('lfoRateVal').innerText = v.toFixed(1); });
 document.getElementById('lfoAmt').addEventListener('input', e => { const v = parseFloat(e.target.value); tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].amount = v; document.getElementById('lfoAmtVal').innerText = v.toFixed(2); });
 
-uiManager.initUI(addTrack, addGroup, () => { visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex()); visualizer.drawBufferDisplay(); updateTrackControlsVisibility(); });
+uiManager.initUI(addTrack, addGroup, () => { visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex()); visualizer.triggerRedraw(); updateTrackControlsVisibility(); });
 window.addEventListener('resize', () => visualizer.resizeCanvas());
 visualizer.resizeCanvas();
 
@@ -484,7 +485,7 @@ function loadTrackFromLibrary(index) {
         updateTrackControlsVisibility();
         uiManager.updateKnobs();
         uiManager.updateLfoUI();
-        visualizer.drawBufferDisplay();
+        visualizer.triggerRedraw();
         for (let s = 0; s < NUM_STEPS; s++) {
             const btn = uiManager.matrixStepElements[currentTrackIdx][s];
             if (targetTrack.steps[s]) btn.classList.add('active'); else btn.classList.remove('active');
