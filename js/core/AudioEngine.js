@@ -1,4 +1,6 @@
 // Audio Engine Module - Fixed Routing (Analyser Leak Plugged)
+// Updated for Phase 3.2: Integrate Oversampled Drive Processor
+
 import { VELOCITY_GAINS, TRACKS_PER_GROUP } from '../utils/constants.js';
 
 export class AudioEngine {
@@ -8,6 +10,28 @@ export class AudioEngine {
         this.masterBus = null;
         this.groupBuses = [];
         this.driveCurves = {};
+
+        // Phase 1.2: Analysis Worker Initialization
+        this.analysisWorker = new Worker('js/workers/analysis.worker.js');
+        this.pendingAnalysis = new Map(); // Stores promises {resolve, reject} keyed by trackId
+
+        // Handle messages from the worker
+        this.analysisWorker.onmessage = (e) => {
+            const { command, rmsMap, trackId, error } = e.data;
+            
+            if (this.pendingAnalysis.has(trackId)) {
+                const { resolve, reject } = this.pendingAnalysis.get(trackId);
+                
+                if (command === 'result') {
+                    resolve(rmsMap);
+                } else {
+                    console.error(`[AudioEngine] Worker Error for Track ${trackId}:`, error);
+                    reject(error);
+                }
+                // Cleanup
+                this.pendingAnalysis.delete(trackId);
+            }
+        };
     }
 
     async initialize() {
@@ -18,6 +42,72 @@ export class AudioEngine {
             await this.audioCtx.resume();
         }
         
+        // Phase 3.2: Load Drive Processor Worklet
+        try {
+            // Create worklet code as Blob to bypass CSP if file load fails or for portability
+            // Ideally load from file, but using inline fallback pattern for robustness in this env
+            const driveCode = `
+                class BeatOSDriveProcessor extends AudioWorkletProcessor {
+                    static get parameterDescriptors() {
+                        return [
+                            { name: 'drive', defaultValue: 0, minValue: 0, maxValue: 1 },
+                            { name: 'outputGain', defaultValue: 1, minValue: 0, maxValue: 2 }
+                        ];
+                    }
+                    constructor() {
+                        super();
+                        this.lpCoeffs = [0.05, 0.25, 0.4, 0.25, 0.05]; 
+                        this.upHistory = new Float32Array(4).fill(0);
+                        this.downHistory = new Float32Array(4).fill(0);
+                    }
+                    saturate(x, drive) {
+                        if (drive === 0) return x;
+                        const gain = 1 + (drive * 8); 
+                        const signal = x * gain;
+                        if (signal < -3) return -1;
+                        if (signal > 3) return 1;
+                        return signal * (27 + signal * signal) / (27 + 9 * signal * signal);
+                    }
+                    process(inputs, outputs, parameters) {
+                        const input = inputs[0];
+                        const output = outputs[0];
+                        if (!input || !output || input.length === 0) return true;
+                        const drive = parameters.drive[0];
+                        const outGain = parameters.outputGain[0];
+                        const channelCount = input.length;
+                        const frameCount = input[0].length;
+                        if (drive < 0.01) {
+                            for (let ch = 0; ch < channelCount; ch++) {
+                                output[ch].set(input[ch]);
+                            }
+                            return true;
+                        }
+                        for (let ch = 0; ch < channelCount; ch++) {
+                            const inputChannel = input[ch];
+                            const outputChannel = output[ch];
+                            for (let i = 0; i < frameCount; i++) {
+                                const x = inputChannel[i];
+                                const x_half = (x + this.upHistory[ch]) * 0.5;
+                                this.upHistory[ch] = x; 
+                                const y1 = this.saturate(x_half, drive); 
+                                const y2 = this.saturate(x, drive);      
+                                outputChannel[i] = ((y1 + y2) * 0.5) * outGain;
+                            }
+                        }
+                        return true;
+                    }
+                }
+                registerProcessor('beatos-drive-processor', BeatOSDriveProcessor);
+            `;
+            const blob = new Blob([driveCode], { type: 'application/javascript' });
+            const blobURL = URL.createObjectURL(blob);
+            await this.audioCtx.audioWorklet.addModule(blobURL);
+            URL.revokeObjectURL(blobURL);
+            console.log('[AudioEngine] Drive Processor Loaded');
+        } catch (e) {
+            console.warn('[AudioEngine] Drive Processor load failed, falling back to WaveShaper:', e);
+        }
+
         this.generateDriveCurves();
         this.initMasterBus();
         // Initialize 4 Group Buses
@@ -100,11 +190,28 @@ export class AudioEngine {
         const eqMid = ctx.createBiquadFilter(); eqMid.type = 'peaking'; eqMid.frequency.value = 1000; eqMid.Q.value = 1;
         const eqHigh = ctx.createBiquadFilter(); eqHigh.type = 'highshelf'; eqHigh.frequency.value = 4000;
         
-        // Drive Section
-        const preDriveGain = ctx.createGain(); 
-        const shaper = ctx.createWaveShaper();
-        shaper.curve = this.driveCurves['Soft Clipping']; 
-        shaper.oversample = '2x';
+        // Phase 3.2: Drive Section with Worklet
+        // Note: Group bus typically uses more complex routing, for now we apply standard drive
+        // Ideally we keep the Drive Curves option for groups if user wants specific flavors, 
+        // but Worklet is superior for quality. Let's use Worklet but expose parameter.
+        // HOWEVER, the Mixer UI expects 'curve' property for WaveShaper.
+        // For compatibility, we will check if Worklet is available.
+        
+        let driveNode;
+        // Fallback or Upgrade check
+        try {
+            driveNode = new AudioWorkletNode(ctx, 'beatos-drive-processor');
+        } catch(e) {
+            // Fallback to WaveShaper if worklet failed to register
+            driveNode = ctx.createWaveShaper();
+            driveNode.curve = this.driveCurves['Soft Clipping'];
+            driveNode.oversample = '2x';
+        }
+
+        const preDriveGain = ctx.createGain(); // Input gain into drive
+        // Note: For Worklet, 'drive' param handles gain. For WaveShaper, preDriveGain handles it.
+        // We keep preDriveGain for signal flow consistency.
+
         const postDriveGain = ctx.createGain(); 
         
         // Compressor
@@ -124,8 +231,8 @@ export class AudioEngine {
         eqLow.connect(eqMid);
         eqMid.connect(eqHigh);
         eqHigh.connect(preDriveGain);
-        preDriveGain.connect(shaper);
-        shaper.connect(postDriveGain);
+        preDriveGain.connect(driveNode); // Connect to Worklet or Shaper
+        driveNode.connect(postDriveGain);
         postDriveGain.connect(compressor);
         compressor.connect(volume);
         
@@ -139,7 +246,7 @@ export class AudioEngine {
         this.groupBuses[index] = {
             input,
             eq: { low: eqLow, mid: eqMid, high: eqHigh },
-            drive: { input: preDriveGain, shaper: shaper, output: postDriveGain },
+            drive: { input: preDriveGain, node: driveNode, output: postDriveGain }, // Store node generic ref
             comp: compressor,
             volume,
             analyser
@@ -162,10 +269,16 @@ export class AudioEngine {
         const eqMid = ctx.createBiquadFilter(); eqMid.type = 'peaking'; eqMid.frequency.value = 1000; eqMid.Q.value = 1;
         const eqHigh = ctx.createBiquadFilter(); eqHigh.type = 'highshelf'; eqHigh.frequency.value = 3000;
         
-        // Drive
+        // Phase 3.2: Drive with Worklet
         const preDrive = ctx.createGain();
-        const shaper = ctx.createWaveShaper();
-        shaper.curve = this.driveCurves['Soft Clipping'];
+        let driveNode;
+        
+        try {
+            driveNode = new AudioWorkletNode(ctx, 'beatos-drive-processor');
+        } catch(e) {
+            driveNode = ctx.createWaveShaper();
+            driveNode.curve = this.driveCurves['Soft Clipping'];
+        }
         
         // Compressor
         const comp = ctx.createDynamicsCompressor();
@@ -188,8 +301,8 @@ export class AudioEngine {
         eqLow.connect(eqMid);
         eqMid.connect(eqHigh);
         eqHigh.connect(preDrive);
-        preDrive.connect(shaper);
-        shaper.connect(comp);
+        preDrive.connect(driveNode);
+        driveNode.connect(comp);
         comp.connect(vol);
         vol.connect(pan);
         
@@ -220,15 +333,32 @@ export class AudioEngine {
         track.bus = { 
             input, trim, hp, lp, 
             eq: { low: eqLow, mid: eqMid, high: eqHigh },
-            drive: { input: preDrive, shaper },
+            drive: { input: preDrive, node: driveNode },
             comp, vol, pan, analyser 
         };
     }
 
-    setDriveAmount(node, amount) {
-        // Simple 0 to +20dB boost into shaper
-        const gain = 1 + (amount * 20); 
-        node.gain.value = gain;
+    setDriveAmount(nodeInfo, amount) {
+        // Handle both Worklet and WaveShaper scenarios
+        // nodeInfo is { input: GainNode, node: AudioWorkletNode|WaveShaperNode }
+        
+        if (!nodeInfo) return;
+
+        if (nodeInfo.node instanceof AudioWorkletNode) {
+            // Worklet Approach: Use 'drive' param
+            // 0 to 1 range mapping
+            const driveParam = nodeInfo.node.parameters.get('drive');
+            if (driveParam) {
+                driveParam.setValueAtTime(amount, this.audioCtx.currentTime);
+            }
+            // Reset input gain as Worklet handles it internally
+            if (nodeInfo.input) nodeInfo.input.gain.value = 1.0; 
+        } else {
+            // WaveShaper Approach: Use input gain
+            // Simple 0 to +20dB boost into shaper
+            const gain = 1 + (amount * 20); 
+            if (nodeInfo.input) nodeInfo.input.gain.value = gain;
+        }
     }
 
     setCompAmount(node, amount) {
@@ -309,6 +439,29 @@ export class AudioEngine {
         return newBuffer;
     }
 
+    // Phase 1.2: New Async method for Non-Blocking UI
+    async analyzeBufferAsync(buffer, trackId) {
+        if (!buffer) return [];
+        
+        return new Promise((resolve, reject) => {
+            const channelData = buffer.getChannelData(0);
+            
+            // Critical: We MUST copy the data. 
+            // AudioBuffer.getChannelData returns a reference. If we transfer the underlying buffer,
+            // the AudioBuffer becomes empty and unplayable in the main thread.
+            const dataCopy = new Float32Array(channelData);
+            
+            this.pendingAnalysis.set(trackId, { resolve, reject });
+            
+            this.analysisWorker.postMessage({
+                command: 'analyze',
+                audioData: dataCopy,
+                trackId: trackId
+            }, [dataCopy.buffer]); // Transfer the COPY, keep original safe
+        });
+    }
+
+    // Deprecated: Sync method (Keep as fallback if needed, or for very small buffers)
     analyzeBuffer(buffer) {
         if(!buffer) return [];
         const data = buffer.getChannelData(0);
@@ -338,7 +491,11 @@ export class AudioEngine {
                     audioBuffer = this.trimBuffer(audioBuffer, 0.005, true);
                     track.customSample = { name: file.name, buffer: audioBuffer, duration: audioBuffer.duration };
                     track.buffer = audioBuffer;
+                    
+                    // Note: We are still using the sync method here for now to avoid breaking the API contract 
+                    // before Phase 1.4 update. Will be replaced by analyzeBufferAsync later.
                     track.rmsMap = this.analyzeBuffer(audioBuffer);
+                    
                     resolve(audioBuffer);
                 } catch (err) { console.error('Failed to decode audio:', err); reject(err); }
             };
@@ -409,6 +566,8 @@ export class AudioEngine {
     }
 
     triggerDrum(track, time, velocityLevel = 2) {
+        // This method is now legacy/unused if Scheduler is using Worklet clock.
+        // Kept for backward compatibility if needed during transition or verification.
         if (!this.audioCtx || !track.bus) return;
         const ctx = this.audioCtx;
         const t = time;

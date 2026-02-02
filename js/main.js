@@ -57,6 +57,8 @@ function addTrack() {
             updateTrackControlsVisibility();
         });
         visualizer.resizeCanvas();
+        // Sync new track to worklet
+        scheduler.syncToWorklet();
     }
 }
 
@@ -75,6 +77,8 @@ function addGroup() {
     }));
     if (tracksAdded.length > 0) {
         visualizer.resizeCanvas();
+        // Sync new tracks to worklet
+        scheduler.syncToWorklet();
     }
 }
 
@@ -106,6 +110,9 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     visualizer.drawBufferDisplay();
     updateTrackControlsVisibility();
     uiManager.updateLfoUI();
+    
+    // Initial Sync
+    scheduler.syncToWorklet();
 });
 
 document.getElementById('playBtn').addEventListener('click', () => {
@@ -122,22 +129,18 @@ document.getElementById('stopBtn').addEventListener('click', () => {
     uiManager.clearPlayheadForStop();
 });
 
-// ... rest of event listeners same as before ...
-// Kept concise for brevity, assume remaining event listeners follow standard pattern
 document.getElementById('bpmInput').addEventListener('change', e => { scheduler.setBPM(e.target.value); });
 const applyGrooveBtn = document.getElementById('applyGrooveBtn');
-if (applyGrooveBtn) applyGrooveBtn.addEventListener('click', () => uiManager.applyGroove());
+if (applyGrooveBtn) applyGrooveBtn.addEventListener('click', () => {
+    uiManager.applyGroove();
+    // CRITICAL: Sync new groove params/steps to Worklet
+    scheduler.syncToWorklet();
+});
 
-// Update scope button listener to cycle styles
 document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
     visualizer.setScopeMode('wave');
-    
-    // Cycle style
     const newStyle = visualizer.cycleWaveStyle();
-    
-    // Update button text to show current style (optional but nice)
     const btn = e.target;
-    // Map style names to short codes
     const codes = { 'mirror': 'WAVE', 'neon': 'NEON', 'bars': 'BARS', 'precision': 'FINE' };
     btn.innerText = codes[newStyle] || 'WAVE';
 
@@ -148,14 +151,11 @@ document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
     btnSpec.classList.replace('bg-neutral-600', 'text-neutral-400');
     btnSpec.classList.replace('text-white', 'hover:text-white');
     btnSpec.classList.remove('rounded-sm');
-    
     visualizer.drawBufferDisplay();
 });
 
 document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
     visualizer.setScopeMode('spectrum');
-    // Reset Wave button text if we want, or keep it as memory
-    
     const btnSpec = e.target;
     const btnWave = document.getElementById('scopeBtnWave');
     btnSpec.classList.replace('text-neutral-400', 'bg-neutral-600');
@@ -164,7 +164,6 @@ document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
     btnWave.classList.replace('bg-neutral-600', 'text-neutral-400');
     btnWave.classList.replace('text-white', 'hover:text-white');
     btnWave.classList.remove('rounded-sm');
-    
     visualizer.drawBufferDisplay();
 });
 
@@ -185,6 +184,8 @@ document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
         }
         track.rmsMap = audioEngine.analyzeBuffer(newBuffer);
         visualizer.drawBufferDisplay();
+        // Update worklet buffer
+        granularSynth.ensureBufferLoaded(track);
     }
     setTimeout(() => {
         btn.innerText = originalText;
@@ -193,7 +194,11 @@ document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
     }, 500);
 });
 
-document.getElementById('randomizeAllPatternsBtn').addEventListener('click', () => uiManager.randomizeAllPatterns());
+document.getElementById('randomizeAllPatternsBtn').addEventListener('click', () => {
+    uiManager.randomizeAllPatterns();
+    scheduler.syncToWorklet(); // Sync new patterns
+});
+
 document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -228,6 +233,7 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
     uiManager.updateKnobs();
     uiManager.updateLfoUI();
     visualizer.drawBufferDisplay();
+    scheduler.syncToWorklet(); // Sync randomized params
 });
 
 document.getElementById('randomizeBtn').addEventListener('click', () => {
@@ -236,12 +242,15 @@ document.getElementById('randomizeBtn').addEventListener('click', () => {
     else { t.params.drumTune = Math.random(); t.params.drumDecay = Math.random(); }
     uiManager.updateKnobs();
     visualizer.drawBufferDisplay();
+    scheduler.syncToWorklet(); // Sync params
 });
 
 document.getElementById('randModsBtn').addEventListener('click', () => {
     const t = tracks[uiManager.getSelectedTrackIndex()];
     if (t.type === 'granular') trackManager.randomizeTrackModulators(t);
     uiManager.updateLfoUI();
+    // LFOs handled on main thread usually, but if we move LFOs to worklet later, sync needed.
+    // For now, LFOs are applied in Scheduler 'processAutomationTrack' or similar which syncs.
 });
 
 document.getElementById('randPanBtn').addEventListener('click', () => {
@@ -253,6 +262,7 @@ document.getElementById('randPanBtn').addEventListener('click', () => {
     const originalBg = btn.style.backgroundColor;
     btn.style.backgroundColor = '#0891b2';
     setTimeout(() => { btn.style.backgroundColor = originalBg; }, 200);
+    // Pan is an AudioParam on Main Thread Mixer, so no syncToWorklet needed unless Pan moves to worklet
 });
 
 document.getElementById('resetParamBtn').addEventListener('click', () => {
@@ -271,6 +281,7 @@ document.getElementById('resetParamBtn').addEventListener('click', () => {
     btn.innerHTML = '<i class="fas fa-check"></i>';
     btn.classList.add('text-emerald-400', 'border-emerald-500');
     setTimeout(() => { btn.innerHTML = originalContent; btn.classList.remove('text-emerald-400', 'border-emerald-500'); }, 800);
+    scheduler.syncToWorklet(); // Sync reset
 });
 
 document.querySelectorAll('.sound-gen-btn').forEach(btn => {
@@ -285,13 +296,15 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
         if (newBuf) {
             t.buffer = newBuf;
             t.customSample = null;
-            t.rmsMap = audioEngine.analyzeBuffer(newBuf);
+            t.rmsMap = audioEngine.analyzeBuffer(newBuf); // Ideally use async but this is sync for now
+            granularSynth.ensureBufferLoaded(t); // Load to worklet
             visualizer.drawBufferDisplay();
             const typeLabel = document.getElementById('trackTypeLabel');
             typeLabel.textContent = type.toUpperCase() + ' (Synth)';
             const originalBg = e.target.style.backgroundColor;
             e.target.style.backgroundColor = '#059669';
             setTimeout(() => { e.target.style.backgroundColor = originalBg; }, 200);
+            scheduler.syncToWorklet(); // Sync type change
         }
     });
 });
@@ -307,6 +320,7 @@ document.getElementById('load909Btn').addEventListener('click', () => {
     const ctx = bufCanvas.getContext('2d');
     ctx.fillStyle = '#111'; ctx.fillRect(0, 0, bufCanvas.width, bufCanvas.height);
     ctx.font = '10px monospace'; ctx.fillStyle = '#f97316'; ctx.fillText("909 ENGINE ACTIVE", 10, 40);
+    scheduler.syncToWorklet(); // Sync type change to Worklet!
 });
 
 const btnContainer = document.querySelector('.flex.gap-1.ml-2');
@@ -330,6 +344,7 @@ if (btnContainer && !document.getElementById('loadAutoBtn')) {
         const ctx = bufCanvas.getContext('2d');
         ctx.fillStyle = '#111'; ctx.fillRect(0, 0, bufCanvas.width, bufCanvas.height);
         ctx.font = '10px monospace'; ctx.fillStyle = '#818cf8'; ctx.fillText("AUTOMATION TRACK", 10, 40);
+        scheduler.syncToWorklet(); // Sync change
     });
 }
 
@@ -339,6 +354,7 @@ document.querySelectorAll('.drum-sel-btn').forEach(btn => {
         if (t.type === 'simple-drum') {
             t.params.drumType = e.target.dataset.drum;
             updateTrackControlsVisibility();
+            scheduler.syncToWorklet(); // Sync drum type change to Worklet
         }
     });
 });
@@ -361,11 +377,13 @@ if (loadSampleBtnInline && sampleInput) {
             updateTrackControlsVisibility();
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; btn.disabled = true;
             await audioEngine.loadCustomSample(file, currentTrack);
+            granularSynth.ensureBufferLoaded(currentTrack); // Load to worklet
             const typeLabel = document.getElementById('trackTypeLabel');
             if (typeLabel) { typeLabel.textContent = currentTrack.customSample.name; typeLabel.title = currentTrack.customSample.name; }
             visualizer.drawBufferDisplay();
             btn.innerHTML = '<i class="fas fa-check"></i>'; btn.classList.add('bg-sky-600');
             setTimeout(() => { btn.innerHTML = originalText; btn.classList.remove('bg-sky-600'); btn.disabled = false; }, 1500);
+            scheduler.syncToWorklet(); // Sync type/sample change
         } catch (err) { alert('Failed: ' + err.message); btn.innerHTML = originalText; btn.disabled = false; }
         e.target.value = '';
     });
@@ -377,7 +395,10 @@ document.getElementById('panShiftSlider').addEventListener('input', (e) => {
     document.getElementById('panShiftValue').innerText = Math.round(shiftAmount * 100) + '%';
 });
 
-document.getElementById('clearTrackBtn').addEventListener('click', () => { uiManager.clearTrack(uiManager.getSelectedTrackIndex()); });
+document.getElementById('clearTrackBtn').addEventListener('click', () => { 
+    uiManager.clearTrack(uiManager.getSelectedTrackIndex()); 
+    scheduler.syncToWorklet();
+});
 document.getElementById('snapshotBtn').addEventListener('click', () => { uiManager.toggleSnapshot(); });
 document.getElementById('rndChokeBtn').addEventListener('click', () => { uiManager.toggleRandomChoke(); });
 
@@ -397,6 +418,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
         presetManager.loadPreset(file, tracks, addTrack, (i) => uiManager.updateTrackStateUI(i), uiManager.matrixStepElements, (i) => {
             uiManager.selectTrack(i); visualizer.setSelectedTrackIndex(i); visualizer.drawBufferDisplay(); updateTrackControlsVisibility();
         }, uiManager.getSelectedTrackIndex(), audioEngine);
+        scheduler.syncToWorklet(); // Sync loaded preset
     }
     document.getElementById('fileInput').value = '';
 });
@@ -407,6 +429,7 @@ document.querySelectorAll('.param-slider').forEach(el => {
         t.params[e.target.dataset.param] = parseFloat(e.target.value);
         uiManager.updateKnobs();
         if (t.type === 'granular') visualizer.drawBufferDisplay();
+        scheduler.syncToWorklet(); // CRITICAL: Sync params (tune, decay) to worklet
     });
 });
 
@@ -490,6 +513,7 @@ function loadTrackFromLibrary(index) {
             if (targetTrack.steps[s]) btn.classList.add('active'); else btn.classList.remove('active');
         }
         document.getElementById('trackLibraryModal').classList.add('hidden');
+        scheduler.syncToWorklet(); // Sync loaded library track
     }
 }
 
@@ -510,11 +534,13 @@ document.getElementById('importTrackInput').addEventListener('change', (e) => {
                         currentTrack.customSample = { name: trackData.sampleName, buffer: audioBuffer, duration: audioBuffer.duration };
                         currentTrack.buffer = audioBuffer;
                         currentTrack.rmsMap = audioEngine.analyzeBuffer(audioBuffer);
+                        granularSynth.ensureBufferLoaded(currentTrack);
                     } catch (err) { console.error(err); }
                 }
                 updateTrackControlsVisibility();
                 uiManager.updateKnobs();
                 document.getElementById('trackLibraryModal').classList.add('hidden');
+                scheduler.syncToWorklet(); // Sync imported track
             }
         });
     }

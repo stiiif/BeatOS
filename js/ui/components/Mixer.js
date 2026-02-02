@@ -1,7 +1,9 @@
+// ... existing imports ...
 import { TRACKS_PER_GROUP } from '../../utils/constants.js';
 
 export class Mixer {
     constructor(containerSelector, trackManager, audioEngine) {
+        // ... existing constructor ...
         this.container = document.querySelector(containerSelector);
         this.trackManager = trackManager;
         this.audioEngine = audioEngine;
@@ -15,8 +17,11 @@ export class Mixer {
         // DOM Caches
         this.trackStripElements = new Map();
         this.groupStripElements = new Map();
-        this.meterCanvases = new Map(); // Store canvases for animation loop
+        this.meterCanvases = new Map(); 
         
+        // Optimization: Store previous RMS values to avoid redundant draws
+        this.prevRmsValues = new Map(); 
+
         // Callbacks
         this.onMute = null;
         this.onSolo = null;
@@ -28,6 +33,7 @@ export class Mixer {
         this.animationFrameId = null;
     }
 
+    // ... setCallbacks, updateTrackState, updateGroupState, updateAllTrackStates, render, setTrackStripWidth ...
     setCallbacks(onMute, onSolo, onMuteGroup, onSoloGroup) {
         this.onMute = onMute;
         this.onSolo = onSolo;
@@ -71,6 +77,7 @@ export class Mixer {
         this.trackStripElements.clear(); 
         this.groupStripElements.clear(); 
         this.meterCanvases.clear();
+        this.prevRmsValues.clear(); // Reset cache
         
         const mixerContainer = document.createElement('div');
         mixerContainer.className = 'mixer-container custom-scrollbar';
@@ -106,77 +113,88 @@ export class Mixer {
         document.documentElement.style.setProperty('--track-width', `${widthPx}px`);
     }
 
-    // --- ANIMATION LOOP FOR METERS ---
+    // --- ANIMATION LOOP FOR METERS (OPTIMIZED) ---
     animateMeters() {
         if (!this.isRendered) return;
 
-        // Loop through all registered meters
         this.meterCanvases.forEach((canvas, id) => {
-            const ctx = canvas.getContext('2d');
-            const width = canvas.width;
-            const height = canvas.height;
             let analyser = null;
 
-            // Determine source based on ID type (string vs number)
-            if (typeof id === 'number') { // Track
+            if (typeof id === 'number') { 
                 const track = this.trackManager.getTracks()[id];
                 if (track && track.bus) analyser = track.bus.analyser;
-            } else if (id.startsWith('group')) { // Group
+            } else if (id.startsWith('group')) { 
                 const idx = parseInt(id.split('_')[1]);
                 if (this.audioEngine.groupBuses[idx]) analyser = this.audioEngine.groupBuses[idx].analyser;
-            } else if (id === 'master') { // Master
+            } else if (id === 'master') { 
                 if (this.audioEngine.masterBus) analyser = this.audioEngine.masterBus.analyser;
             }
-
-            // Clear
-            ctx.clearRect(0, 0, width, height);
 
             if (analyser) {
                 const bufferLength = analyser.frequencyBinCount;
                 const dataArray = new Uint8Array(bufferLength);
                 analyser.getByteTimeDomainData(dataArray);
 
-                // Calculate RMS
                 let sum = 0;
-                for(let i = 0; i < bufferLength; i++) {
+                for(let i = 0; i < bufferLength; i += 4) { // Optimization: Downsample loop
                     const x = (dataArray[i] - 128) / 128.0;
                     sum += x * x;
                 }
-                const rms = Math.sqrt(sum / bufferLength);
+                const rms = Math.sqrt(sum / (bufferLength / 4));
                 
-                // Scale RMS to height (boosted slightly for visibility)
-                const value = Math.min(1, rms * 4); 
-                const barHeight = value * height;
+                // OPTIMIZATION: Only draw if value changed significantly or is non-zero
+                const prevRms = this.prevRmsValues.get(id) || 0;
+                
+                if (rms < 0.005 && prevRms < 0.005) {
+                    // It's silent and was silent before. Do nothing.
+                    return; 
+                }
+                
+                this.prevRmsValues.set(id, rms);
 
-                // Draw LED segments
+                const ctx = canvas.getContext('2d', { alpha: false }); // Optimize for no transparency
+                const width = canvas.width;
+                const height = canvas.height;
+
+                ctx.clearRect(0, 0, width, height);
+
+                const value = Math.min(1, rms * 4); 
+                
+                // Simple block fill for efficiency instead of many small rects if possible
+                // Keeping segments for style but optimized loop
                 const segHeight = 2;
                 const gap = 1;
                 const numSegs = Math.floor(height / (segHeight + gap));
                 const activeSegs = Math.floor(value * numSegs);
 
-                for (let i = 0; i < numSegs; i++) {
-                    const y = height - (i * (segHeight + gap));
-                    if (i < activeSegs) {
-                        // Color Gradient
-                        if (i > numSegs * 0.9) ctx.fillStyle = '#ef4444'; // Red (Clip)
-                        else if (i > numSegs * 0.7) ctx.fillStyle = '#eab308'; // Yellow
-                        else ctx.fillStyle = '#10b981'; // Green
-                    } else {
-                        ctx.fillStyle = '#1a1a1a'; // Inactive LED
-                    }
-                    ctx.fillRect(0, y, width, segHeight);
-                }
-            } else {
-                // Draw empty meter if no analyser
-                ctx.fillStyle = '#111';
+                // Draw background (inactive)
+                ctx.fillStyle = '#1a1a1a';
                 ctx.fillRect(0, 0, width, height);
+
+                // Draw active segments
+                if (activeSegs > 0) {
+                    for (let i = 0; i < activeSegs; i++) {
+                        const y = height - (i * (segHeight + gap));
+                        if (i > numSegs * 0.9) ctx.fillStyle = '#ef4444'; 
+                        else if (i > numSegs * 0.7) ctx.fillStyle = '#eab308'; 
+                        else ctx.fillStyle = '#10b981'; 
+                        ctx.fillRect(0, y, width, segHeight);
+                    }
+                }
             }
         });
 
         this.animationFrameId = requestAnimationFrame(this.animateMeters);
     }
 
-    // --- COMPONENT FACTORIES ---
+    // ... smoothUpdate, createKnob, createFaderSection, createLabelStrip, createTrackStrip, createGroupStrip, createMasterStrip ...
+    // (Rest of the class methods remain unchanged, just ensure they are included)
+    smoothUpdate(audioParam, value) {
+        if(audioParam && this.audioEngine.getContext()) {
+            const ctx = this.audioEngine.getContext();
+            audioParam.setTargetAtTime(value, ctx.currentTime, 0.02);
+        }
+    }
 
     createKnob(label, value, min, max, step, onChange, colorClass = '', showLabel = false) {
         const wrapper = document.createElement('div');
@@ -273,7 +291,6 @@ export class Mixer {
         const section = document.createElement('div');
         section.className = 'strip-fader-section';
 
-        // 1. Mute/Solo Buttons Row
         const btnRow = document.createElement('div');
         btnRow.className = 'strip-btn-row';
         
@@ -289,29 +306,24 @@ export class Mixer {
         btnRow.appendChild(soloBtn);
         section.appendChild(btnRow);
 
-        // 2. Fader Wrapper (Axis + Meter + Fader)
         const wrapper = document.createElement('div');
         wrapper.className = 'fader-wrapper';
 
-        // Background Slot
         const bgSlot = document.createElement('div');
         bgSlot.className = 'fader-bg-slot';
         wrapper.appendChild(bgSlot);
 
-        // VU Meter Canvas
         const canvas = document.createElement('canvas');
         canvas.className = 'fader-vu-meter';
-        canvas.width = 10; // Low res for crisp pixel look
+        canvas.width = 10; 
         canvas.height = 100;
         this.meterCanvases.set(idForMeter, canvas);
         wrapper.appendChild(canvas);
 
-        // Ruler (Axis)
         const ruler = document.createElement('div');
         ruler.className = 'fader-ruler';
         wrapper.appendChild(ruler);
 
-        // Vertical Fader Input
         const fader = document.createElement('input');
         fader.type = 'range';
         fader.className = 'v-fader';
@@ -389,25 +401,31 @@ export class Mixer {
 
         const getBus = () => track.bus;
 
-        controls.appendChild(this.createKnob('Gain', track.params.gain || 1, 0, 2, 0.01, (v) => { track.params.gain = v; const bus = getBus(); if(bus && bus.trim) bus.trim.gain.value = v; }, 'knob-color-green'));
-        controls.appendChild(this.createKnob('Hi', track.params.eqHigh || 0, -15, 15, 0.1, (v) => { track.params.eqHigh = v; const bus = getBus(); if(bus && bus.eq && bus.eq.high) bus.eq.high.gain.value = v; }, 'knob-color-blue'));
-        controls.appendChild(this.createKnob('Mid', track.params.eqMid || 0, -15, 15, 0.1, (v) => { track.params.eqMid = v; const bus = getBus(); if(bus && bus.eq && bus.eq.mid) bus.eq.mid.gain.value = v; }, 'knob-color-green'));
-        controls.appendChild(this.createKnob('Freq', track.params.eqMidFreq || 1000, 200, 5000, 10, (v) => { track.params.eqMidFreq = v; const bus = getBus(); if(bus && bus.eq && bus.eq.mid) bus.eq.mid.frequency.value = v; }, 'knob-color-green'));
-        controls.appendChild(this.createKnob('Lo', track.params.eqLow || 0, -15, 15, 0.1, (v) => { track.params.eqLow = v; const bus = getBus(); if(bus && bus.eq && bus.eq.low) bus.eq.low.gain.value = v; }, 'knob-color-red'));
+        controls.appendChild(this.createKnob('Gain', track.params.gain || 1, 0, 2, 0.01, (v) => { track.params.gain = v; const bus = getBus(); if(bus && bus.trim) this.smoothUpdate(bus.trim.gain, v); }, 'knob-color-green'));
+        controls.appendChild(this.createKnob('Hi', track.params.eqHigh || 0, -15, 15, 0.1, (v) => { track.params.eqHigh = v; const bus = getBus(); if(bus && bus.eq && bus.eq.high) this.smoothUpdate(bus.eq.high.gain, v); }, 'knob-color-blue'));
+        controls.appendChild(this.createKnob('Mid', track.params.eqMid || 0, -15, 15, 0.1, (v) => { track.params.eqMid = v; const bus = getBus(); if(bus && bus.eq && bus.eq.mid) this.smoothUpdate(bus.eq.mid.gain, v); }, 'knob-color-green'));
+        controls.appendChild(this.createKnob('Freq', track.params.eqMidFreq || 1000, 200, 5000, 10, (v) => { track.params.eqMidFreq = v; const bus = getBus(); if(bus && bus.eq && bus.eq.mid) this.smoothUpdate(bus.eq.mid.frequency, v); }, 'knob-color-green'));
+        controls.appendChild(this.createKnob('Lo', track.params.eqLow || 0, -15, 15, 0.1, (v) => { track.params.eqLow = v; const bus = getBus(); if(bus && bus.eq && bus.eq.low) this.smoothUpdate(bus.eq.low.gain, v); }, 'knob-color-red'));
+        
         controls.appendChild(this.createKnob('A', track.params.sendA || 0, 0, 1, 0.01, (v) => track.params.sendA = v, 'knob-color-yellow'));
         controls.appendChild(this.createKnob('B', track.params.sendB || 0, 0, 1, 0.01, (v) => track.params.sendB = v, 'knob-color-yellow'));
-        controls.appendChild(this.createKnob('Drive', track.params.drive || 0, 0, 1, 0.01, (v) => { track.params.drive = v; const bus = getBus(); if(bus && bus.drive && bus.drive.input) this.audioEngine.setDriveAmount(bus.drive.input, v); }, 'knob-color-red'));
+        
+        controls.appendChild(this.createKnob('Drive', track.params.drive || 0, 0, 1, 0.01, (v) => { 
+            track.params.drive = v; 
+            const bus = getBus(); 
+            if(bus && bus.drive) this.audioEngine.setDriveAmount(bus.drive, v); 
+        }, 'knob-color-red'));
+        
         controls.appendChild(this.createKnob('Comp', track.params.comp || 0, 0, 1, 0.01, (v) => { track.params.comp = v; const bus = getBus(); if(bus && bus.comp) this.audioEngine.setCompAmount(bus.comp, v); }, 'knob-color-purple'));
-        controls.appendChild(this.createKnob('Pan', track.params.pan, -1, 1, 0.01, (v) => { track.params.pan = v; const bus = getBus(); if(bus && bus.pan) bus.pan.pan.value = v; }, 'knob-color-blue'));
+        controls.appendChild(this.createKnob('Pan', track.params.pan, -1, 1, 0.01, (v) => { track.params.pan = v; const bus = getBus(); if(bus && bus.pan) this.smoothUpdate(bus.pan.pan, v); }, 'knob-color-blue'));
 
         strip.appendChild(controls);
 
-        // Fader Section
         const faderComp = this.createFaderSection(track, (v) => {
             track.params.volume = v;
             const bus = getBus();
-            if(bus && bus.vol) bus.vol.gain.value = v;
-        }, track.id); // Pass numeric ID for track
+            if(bus && bus.vol) this.smoothUpdate(bus.vol.gain, v);
+        }, track.id); 
 
         faderComp.muteBtn.className += ` ${track.muted ? 'active' : ''}`;
         faderComp.muteBtn.onclick = () => { if (this.onMute) this.onMute(track.id); };
@@ -451,7 +469,7 @@ export class Mixer {
         };
         driveDiv.appendChild(driveSel);
         driveDiv.appendChild(this.createKnob('Amt', 0, 0, 1, 0.01, (v) => {
-            const bus = getBus(); if(bus && bus.drive && bus.drive.input) this.audioEngine.setDriveAmount(bus.drive.input, v);
+            const bus = getBus(); if(bus && bus.drive) this.audioEngine.setDriveAmount(bus.drive, v);
         }, 'knob-color-red', true));
         controls.appendChild(driveDiv);
 
@@ -474,9 +492,9 @@ export class Mixer {
                 btn.classList.toggle('active');
                 const isKill = btn.classList.contains('active'); const gainVal = isKill ? -40 : 0; const bus = getBus();
                 if(bus && bus.eq) {
-                    if(band === 'HI') bus.eq.high.gain.value = gainVal;
-                    if(band === 'MID') bus.eq.mid.gain.value = gainVal;
-                    if(band === 'LO') bus.eq.low.gain.value = gainVal;
+                    if(band === 'HI') this.smoothUpdate(bus.eq.high.gain, gainVal);
+                    if(band === 'MID') this.smoothUpdate(bus.eq.mid.gain, gainVal);
+                    if(band === 'LO') this.smoothUpdate(bus.eq.low.gain, gainVal);
                 }
             };
             killRow.appendChild(btn);
@@ -485,9 +503,8 @@ export class Mixer {
         controls.appendChild(eqSec);
         strip.appendChild(controls);
 
-        // Group Fader
         const faderComp = this.createFaderSection(this.audioEngine.groupBuses[index], (v) => {
-            const bus = getBus(); if(bus && bus.volume) bus.volume.gain.value = v;
+            const bus = getBus(); if(bus && bus.volume) this.smoothUpdate(bus.volume.gain, v);
         }, `group_${index}`);
 
         faderComp.muteBtn.onclick = () => { if (this.onMuteGroup) this.onMuteGroup(index); };
@@ -525,7 +542,7 @@ export class Mixer {
 
         const faderComp = this.createFaderSection(this.audioEngine.masterBus, (v) => {
             if(this.audioEngine.masterBus && this.audioEngine.masterBus.volume) 
-                this.audioEngine.masterBus.volume.gain.value = v;
+                this.smoothUpdate(this.audioEngine.masterBus.volume.gain, v);
         }, 'master');
         
         // Hide mute/solo on master for now
