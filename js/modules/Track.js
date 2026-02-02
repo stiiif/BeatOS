@@ -9,9 +9,6 @@ export class Track {
         this.clockDivider = 1; 
         this.lastAutoValue = 0; 
         
-        // Phase 1.3: Async Processing Flag
-        this.isProcessing = false;
-
         this.buffer = null;
         this.rmsMap = []; 
         this.steps = new Uint8Array(NUM_STEPS).fill(0);
