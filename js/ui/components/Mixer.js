@@ -16,7 +16,11 @@ export class Mixer {
         // DOM Caches
         this.trackStripElements = new Map();
         this.groupStripElements = new Map();
-        this.meterCanvases = new Map(); // Store canvases for animation loop
+        
+        // Optimization: Single Overlay Canvas for Meters
+        this.meterOverlay = null;
+        this.meterCtx = null;
+        this.meterRegistry = new Map(); // Key: ID, Value: { el: DOMElement, analyser: AnalyserNode }
         
         // Callbacks
         this.onMute = null;
@@ -28,10 +32,10 @@ export class Mixer {
         this.animateMeters = this.animateMeters.bind(this);
         this.animationFrameId = null;
 
-        // NEW: State Flag
+        // State Flag
         this.isMetering = false;
 
-        // NEW: Event Subscriptions
+        // Event Subscriptions
         globalBus.on('playback:start', () => {
             if (!this.isMetering) {
                 this.isMetering = true;
@@ -87,10 +91,30 @@ export class Mixer {
         this.container.innerHTML = '';
         this.trackStripElements.clear(); 
         this.groupStripElements.clear(); 
-        this.meterCanvases.clear();
+        this.meterRegistry.clear();
         
+        // Main Scrollable Container for Strips
         const mixerContainer = document.createElement('div');
         mixerContainer.className = 'mixer-container custom-scrollbar';
+        // Ensure relative positioning so canvas can overlay absolutely
+        mixerContainer.style.position = 'relative';
+        
+        // Create Single Canvas Overlay
+        // We append it *inside* the scrollable container so it scrolls with content?
+        // Or we make it fixed size matching scrollWidth?
+        // Better: Append it to mixerContainer and size it to scrollWidth/scrollHeight.
+        // NOTE: This requires resizing canvas if tracks are added dynamically.
+        
+        this.meterOverlay = document.createElement('canvas');
+        this.meterOverlay.id = 'meterOverlay';
+        this.meterOverlay.style.position = 'absolute';
+        this.meterOverlay.style.top = '0';
+        this.meterOverlay.style.left = '0';
+        this.meterOverlay.style.pointerEvents = 'none'; // Click-through
+        this.meterOverlay.style.zIndex = '5'; // Above backgrounds, below knobs handles? 
+        // Actually, z-index logic in CSS might need adjustment. Knobs are z-10 usually.
+        
+        this.meterCtx = this.meterOverlay.getContext('2d');
         
         const tracks = this.trackManager.getTracks();
         
@@ -110,9 +134,21 @@ export class Mixer {
         // 3. Master
         mixerContainer.appendChild(this.createMasterStrip());
 
+        // Append Overlay LAST so it's on top
+        mixerContainer.appendChild(this.meterOverlay);
+
         this.container.appendChild(mixerContainer);
         this.isRendered = true;
         
+        // Resize canvas to match the full scrollable area
+        // We defer this slightly to ensure DOM layout is complete
+        requestAnimationFrame(() => {
+            this.resizeOverlay();
+        });
+        
+        // Also bind resize listener to window to handle layout changes
+        window.addEventListener('resize', () => this.resizeOverlay());
+
         this.updateAllTrackStates();
         
         // Start Meter Loop if already playing and flagged
@@ -120,14 +156,24 @@ export class Mixer {
              this.animateMeters();
         }
     }
+    
+    resizeOverlay() {
+        const container = this.container.querySelector('.mixer-container');
+        if (container && this.meterOverlay) {
+            this.meterOverlay.width = container.scrollWidth;
+            this.meterOverlay.height = container.scrollHeight;
+        }
+    }
 
     setTrackStripWidth(widthPx) {
         document.documentElement.style.setProperty('--track-width', `${widthPx}px`);
+        // Trigger resize of overlay after transition (approx 300ms)
+        setTimeout(() => this.resizeOverlay(), 350);
     }
 
-    // --- ANIMATION LOOP FOR METERS ---
+    // --- ANIMATION LOOP FOR METERS (Single Canvas) ---
     animateMeters() {
-        if (!this.isRendered) return;
+        if (!this.isRendered || !this.meterCtx || !this.meterOverlay) return;
 
         // CHECK FLAG
         if (!this.isMetering) {
@@ -135,66 +181,75 @@ export class Mixer {
             return; 
         }
 
-        // Loop through all registered meters
-        this.meterCanvases.forEach((canvas, id) => {
-            const ctx = canvas.getContext('2d');
-            const width = canvas.width;
-            const height = canvas.height;
-            let analyser = null;
+        // Clear the entire overlay
+        this.meterCtx.clearRect(0, 0, this.meterOverlay.width, this.meterOverlay.height);
 
-            // Determine source based on ID type (string vs number)
-            if (typeof id === 'number') { // Track
-                const track = this.trackManager.getTracks()[id];
-                if (track && track.bus) analyser = track.bus.analyser;
-            } else if (id.startsWith('group')) { // Group
-                const idx = parseInt(id.split('_')[1]);
-                if (this.audioEngine.groupBuses[idx]) analyser = this.audioEngine.groupBuses[idx].analyser;
-            } else if (id === 'master') { // Master
-                if (this.audioEngine.masterBus) analyser = this.audioEngine.masterBus.analyser;
+        // Iterate Registry
+        this.meterRegistry.forEach((meta, id) => {
+            if (!meta.analyser) return;
+            
+            // Get DOM position relative to the container
+            // We use offsetLeft/offsetTop relative to the mixer-container
+            // Note: 'meta.el' is the .fader-wrapper div
+            
+            const el = meta.el;
+            // The meter bar is positioned absolute left:2px top:2% bottom:2% inside wrapper
+            // We need to calculate those exact pixel coordinates on the main canvas
+            
+            // Wrapper dimensions/pos relative to offsetParent (which should be strip or container?)
+            // offsetParent of wrapper is strip. offsetParent of strip is mixer-container.
+            
+            // Simplest way: accumulate offsets up to mixer-container
+            let x = el.offsetLeft;
+            let y = el.offsetTop;
+            let parent = el.offsetParent;
+            const container = this.container.querySelector('.mixer-container');
+            
+            while(parent && parent !== container) {
+                x += parent.offsetLeft;
+                y += parent.offsetTop;
+                parent = parent.offsetParent;
             }
+            
+            // Adjust for internal meter position (left: 2px, top: 2%, height: 96%)
+            const meterX = x + 2; 
+            const meterH = el.offsetHeight * 0.96; // 96% height
+            const meterY = y + (el.offsetHeight * 0.02); // 2% top margin
+            const meterW = 4; // Width defined in CSS logic
+            
+            // Audio Processing
+            const bufferLength = meta.analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            meta.analyser.getByteTimeDomainData(dataArray);
 
-            // Clear
-            ctx.clearRect(0, 0, width, height);
+            // Calculate RMS
+            let sum = 0;
+            for(let i = 0; i < bufferLength; i++) {
+                const val = (dataArray[i] - 128) / 128.0;
+                sum += val * val;
+            }
+            const rms = Math.sqrt(sum / bufferLength);
+            
+            // Scale RMS
+            const value = Math.min(1, rms * 4); 
+            
+            // Draw LED segments on the single context
+            const segHeight = 2;
+            const gap = 1;
+            const numSegs = Math.floor(meterH / (segHeight + gap));
+            const activeSegs = Math.floor(value * numSegs);
 
-            if (analyser) {
-                const bufferLength = analyser.frequencyBinCount;
-                const dataArray = new Uint8Array(bufferLength);
-                analyser.getByteTimeDomainData(dataArray);
-
-                // Calculate RMS
-                let sum = 0;
-                for(let i = 0; i < bufferLength; i++) {
-                    const x = (dataArray[i] - 128) / 128.0;
-                    sum += x * x;
+            for (let i = 0; i < numSegs; i++) {
+                const segmentY = (meterY + meterH) - (i * (segHeight + gap));
+                if (i < activeSegs) {
+                    // Color Gradient
+                    if (i > numSegs * 0.9) this.meterCtx.fillStyle = '#ef4444'; // Red
+                    else if (i > numSegs * 0.7) this.meterCtx.fillStyle = '#eab308'; // Yellow
+                    else this.meterCtx.fillStyle = '#10b981'; // Green
+                } else {
+                    this.meterCtx.fillStyle = '#1a1a1a'; // Inactive
                 }
-                const rms = Math.sqrt(sum / bufferLength);
-                
-                // Scale RMS to height (boosted slightly for visibility)
-                const value = Math.min(1, rms * 4); 
-                const barHeight = value * height;
-
-                // Draw LED segments
-                const segHeight = 2;
-                const gap = 1;
-                const numSegs = Math.floor(height / (segHeight + gap));
-                const activeSegs = Math.floor(value * numSegs);
-
-                for (let i = 0; i < numSegs; i++) {
-                    const y = height - (i * (segHeight + gap));
-                    if (i < activeSegs) {
-                        // Color Gradient
-                        if (i > numSegs * 0.9) ctx.fillStyle = '#ef4444'; // Red (Clip)
-                        else if (i > numSegs * 0.7) ctx.fillStyle = '#eab308'; // Yellow
-                        else ctx.fillStyle = '#10b981'; // Green
-                    } else {
-                        ctx.fillStyle = '#1a1a1a'; // Inactive LED
-                    }
-                    ctx.fillRect(0, y, width, segHeight);
-                }
-            } else {
-                // Draw empty meter if no analyser
-                ctx.fillStyle = '#111';
-                ctx.fillRect(0, 0, width, height);
+                this.meterCtx.fillRect(meterX, segmentY, meterW, segHeight);
             }
         });
 
@@ -202,11 +257,14 @@ export class Mixer {
     }
 
     clearMeters() {
-        this.meterCanvases.forEach((canvas) => {
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#111';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-        });
+        if(this.meterCtx && this.meterOverlay) {
+            this.meterCtx.clearRect(0, 0, this.meterOverlay.width, this.meterOverlay.height);
+            // Optionally draw "inactive" state for all meters once
+            this.meterRegistry.forEach((meta) => {
+                 // ... draw inactive gray bars ...
+                 // For now, clear is fine to save GPU
+            });
+        }
     }
 
     // --- COMPONENT FACTORIES ---
@@ -331,13 +389,14 @@ export class Mixer {
         bgSlot.className = 'fader-bg-slot';
         wrapper.appendChild(bgSlot);
 
-        // VU Meter Canvas
-        const canvas = document.createElement('canvas');
-        canvas.className = 'fader-vu-meter';
-        canvas.width = 10; // Low res for crisp pixel look
-        canvas.height = 100;
-        this.meterCanvases.set(idForMeter, canvas);
-        wrapper.appendChild(canvas);
+        // REMOVED: Individual Canvas creation
+        // Instead, register this wrapper for the global overlay loop
+        if (busObject && busObject.analyser) {
+            this.meterRegistry.set(idForMeter, {
+                el: wrapper,
+                analyser: busObject.analyser
+            });
+        }
 
         // Ruler (Axis)
         const ruler = document.createElement('div');
