@@ -183,17 +183,14 @@ export class Mixer {
             const el = meta.el;
             
             // Calculate absolute position relative to mixer-container
-            let x = el.offsetLeft;
-            let y = el.offsetTop;
-            let parent = el.offsetParent;
+            // Use getBoundingClientRect for reliability across scroll and flex contexts
+            const elRect = el.getBoundingClientRect();
             const container = this.container.querySelector('.mixer-container');
+            const containerRect = container.getBoundingClientRect();
             
-            // Traverse up to find position relative to scrolling container
-            while(parent && parent !== container) {
-                x += parent.offsetLeft;
-                y += parent.offsetTop;
-                parent = parent.offsetParent;
-            }
+            // Calculate position relative to container, accounting for scroll
+            const x = (elRect.left - containerRect.left) + container.scrollLeft;
+            const y = (elRect.top - containerRect.top) + container.scrollTop;
             
             // Adjust for internal meter position (left: 2px, top: 2%, height: 96%)
             const meterX = x + 2; 
