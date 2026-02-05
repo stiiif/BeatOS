@@ -236,7 +236,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             if (now >= note.startTime) {
                 let interval = 1 / Math.max(1, note.params.density || 20);
                 if (note.params.overlap > 0) interval = (note.params.grainSize||0.1) / Math.max(0.1, note.params.overlap);
-                let spawnLimit = 5;
+                let spawnLimit = 3; // Reduced from 5 to prevent bursts
                 while (note.nextGrainTime < now + (frameCount * 0.000023) && spawnLimit > 0) {
                     if (note.nextGrainTime >= now) this.spawnGrain(note);
                     note.nextGrainTime += interval;
@@ -251,32 +251,66 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
             const vIdx = this.activeVoiceIndices[i];
             const voice = this.voices[vIdx];
-            const out = outputs[voice.trackId];
-            if (!out) { this.killVoice(i); continue; }
-            const L = out[0], R = out[1];
             
-            const buf = voice.buffer, bufLen = voice.bufferLength;
-            let ph = voice.phase, rel = voice.releasing, amp = voice.releaseAmp;
-            const pitch = voice.pitch, gLen = voice.grainLength, invGL = voice.invGrainLength;
-            const start = voice.position * bufLen, vel = voice.velocity;
+            // Direct array access is faster
+            const trackOut = outputs[voice.trackId];
+            if (!trackOut) { this.killVoice(i); continue; }
+            
+            // Assume 2 channels (stereo) as configured in init()
+            const L = trackOut[0];
+            const R = trackOut[1];
+            
+            const buf = voice.buffer;
+            const bufLen = voice.bufferLength;
+            const pitch = voice.pitch;
+            const gLen = voice.grainLength;
+            const invGL = voice.invGrainLength;
+            const start = voice.position * bufLen;
+            const baseAmp = voice.velocity;
+            
+            let ph = voice.phase;
+            let amp = voice.releaseAmp;
+            let rel = voice.releasing;
 
             for (let j = 0; j < frameCount; j++) {
-                if (rel) { amp -= 0.015; if (amp <= 0) { this.killVoice(i); break; } }
+                if (rel) { 
+                    amp -= 0.015; 
+                    if (amp <= 0) { this.killVoice(i); break; } 
+                }
+                
                 if (ph >= gLen) { this.killVoice(i); break; }
                 
+                // Optimized Read Position
                 const rPos = start + (ph * pitch);
-                let idx = rPos | 0;
-                while (idx >= bufLen) idx -= bufLen;
-                const frac = rPos - idx;
-                const s1 = buf[idx];
-                const s2 = buf[(idx + 1) >= bufLen ? 0 : idx + 1];
-                const win = this.windowLUT[(ph * invGL) | 0] || 0;
+                let idx = rPos | 0; // Bitwise floor
                 
-                const val = (s1 + frac * (s2 - s1)) * win * vel * amp;
-                L[j] += val; if(R) R[j] += val;
+                // Fast wrapping (conditional is faster than modulo for single wraps)
+                if (idx >= bufLen) idx %= bufLen;
+                
+                const s1 = buf[idx];
+                // Avoid ternary if possible
+                let idx2 = idx + 1;
+                if (idx2 >= bufLen) idx2 = 0;
+                const s2 = buf[idx2];
+                
+                // Linear Interpolation
+                const frac = rPos - idx;
+                const sample = s1 + frac * (s2 - s1);
+                
+                // Window
+                const winIdx = (ph * invGL) | 0;
+                const win = this.windowLUT[winIdx];
+                
+                const val = sample * win * baseAmp * amp;
+                
+                L[j] += val; 
+                R[j] += val;
+                
                 ph++;
             }
-            voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
+            voice.phase = ph; 
+            voice.releasing = rel; 
+            voice.releaseAmp = amp;
         }
         this.currentFrame += frameCount;
         return true;
@@ -286,14 +320,19 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         if(!buf) return;
         let v = null;
         for(let i=0; i<64; i++) if(!this.voices[i].active) { v = this.voices[i]; this.activeVoiceIndices.push(i); break; }
-        if(!v) return; // Drop grain if full
+        if(!v) return; 
         
         let pos = note.params.position;
         if(note.params.spray > 0) pos += (Math.random()*2-1)*note.params.spray;
+        
         v.active = true; v.trackId = note.trackId; v.buffer = buf; v.bufferLength = buf.length;
         v.position = Math.max(0, Math.min(1, pos)); v.phase = 0;
-        v.grainLength = Math.max(128, Math.floor((note.params.grainSize||0.1)*sampleRate));
-        v.invGrainLength = 4095/v.grainLength;
+        
+        // Use global sampleRate if available, else 44100
+        const sr = sampleRate || 44100;
+        v.grainLength = Math.max(128, Math.floor((note.params.grainSize||0.1) * sr));
+        
+        v.invGrainLength = 4095 / v.grainLength;
         v.pitch = note.params.pitch||1; v.velocity = note.params.velocity||1;
         v.releasing = false; v.releaseAmp = 1.0;
     }
