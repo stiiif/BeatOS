@@ -1,9 +1,9 @@
-// ... existing imports ...
+// ... (imports)
 import { TRACKS_PER_GROUP } from '../../utils/constants.js';
 import { globalBus } from '../../events/EventBus.js';
 
 export class Mixer {
-    // ... constructor remains same ...
+    // ... (constructor and other methods)
     constructor(containerSelector, trackManager, audioEngine) {
         this.container = document.querySelector(containerSelector);
         this.trackManager = trackManager;
@@ -22,8 +22,9 @@ export class Mixer {
         // Optimization: Single Overlay Canvas for Meters
         this.meterOverlay = null;
         this.meterCtx = null;
-        this.meterRegistry = new Map(); 
+        this.meterRegistry = new Map(); // Key: ID, Value: { el: DOMElement, analyser: AnalyserNode }
         
+        // Resize Observer
         this.resizeObserver = null;
 
         // Callbacks
@@ -32,10 +33,14 @@ export class Mixer {
         this.onMuteGroup = null; 
         this.onSoloGroup = null;
 
+        // Animation Loop Binding
         this.animateMeters = this.animateMeters.bind(this);
         this.animationFrameId = null;
+
+        // State Flag
         this.isMetering = false;
 
+        // Event Subscriptions
         globalBus.on('playback:start', () => {
             if (!this.isMetering) {
                 this.isMetering = true;
@@ -45,10 +50,10 @@ export class Mixer {
         
         globalBus.on('playback:stop', () => {
             this.isMetering = false;
+            // Loop will terminate naturally on next frame check
         });
     }
 
-    // ... setCallbacks, updateTrackState, updateGroupState, updateAllTrackStates same ...
     setCallbacks(onMute, onSolo, onMuteGroup, onSoloGroup) {
         this.onMute = onMute;
         this.onSolo = onSolo;
@@ -85,7 +90,10 @@ export class Mixer {
     render() {
         if (!this.container) return;
         
+        // Cleanup old loop if re-rendering
         if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+        
+        // Cleanup old observer
         if (this.resizeObserver) {
             this.resizeObserver.disconnect();
             this.resizeObserver = null;
@@ -96,8 +104,10 @@ export class Mixer {
         this.groupStripElements.clear(); 
         this.meterRegistry.clear();
         
+        // Main Scrollable Container for Strips
         const mixerContainer = document.createElement('div');
         mixerContainer.className = 'mixer-container custom-scrollbar';
+        // Ensure relative positioning so canvas can overlay absolutely
         mixerContainer.style.position = 'relative';
         
         this.meterOverlay = document.createElement('canvas');
@@ -105,7 +115,7 @@ export class Mixer {
         this.meterOverlay.style.position = 'absolute';
         this.meterOverlay.style.top = '0';
         this.meterOverlay.style.left = '0';
-        this.meterOverlay.style.pointerEvents = 'none'; 
+        this.meterOverlay.style.pointerEvents = 'none'; // Click-through
         this.meterOverlay.style.zIndex = '5'; 
         
         this.meterCtx = this.meterOverlay.getContext('2d');
@@ -135,27 +145,38 @@ export class Mixer {
         // 4. Master
         mixerContainer.appendChild(this.createMasterStrip());
 
+        // Append Overlay LAST so it's on top
         mixerContainer.appendChild(this.meterOverlay);
+
         this.container.appendChild(mixerContainer);
         this.isRendered = true;
         
-        this.resizeObserver = new ResizeObserver(() => { this.resizeOverlay(); });
+        // Initialize ResizeObserver to handle container size changes (e.g. layout dragging)
+        this.resizeObserver = new ResizeObserver(() => {
+            this.resizeOverlay();
+        });
         this.resizeObserver.observe(mixerContainer);
         
-        requestAnimationFrame(() => { this.resizeOverlay(); });
+        // Initial resize
+        requestAnimationFrame(() => {
+            this.resizeOverlay();
+        });
+        
+        // Keep window listener for global resize events just in case
         window.addEventListener('resize', () => this.resizeOverlay());
 
         this.updateAllTrackStates();
         
+        // Start Meter Loop if already playing and flagged
         if (this.audioEngine.getContext() && this.audioEngine.getContext().state === 'running' && this.isMetering) {
              this.animateMeters();
         }
     }
-
-    // ... resizeOverlay, setTrackStripWidth, animateMeters, clearMeters same ...
+    
     resizeOverlay() {
         const container = this.container.querySelector('.mixer-container');
         if (container && this.meterOverlay) {
+            // Check if dimensions actually changed to avoid unnecessary canvas clears/flickers
             if (this.meterOverlay.width !== container.scrollWidth || 
                 this.meterOverlay.height !== container.scrollHeight) {
                 this.meterOverlay.width = container.scrollWidth;
@@ -166,42 +187,62 @@ export class Mixer {
 
     setTrackStripWidth(widthPx) {
         document.documentElement.style.setProperty('--track-width', `${widthPx}px`);
+        // Trigger resize of overlay after transition (approx 300ms)
         setTimeout(() => this.resizeOverlay(), 350);
     }
 
+    // --- ANIMATION LOOP FOR METERS (Single Canvas) ---
     animateMeters() {
         if (!this.isRendered || !this.meterCtx || !this.meterOverlay) return;
-        if (!this.isMetering) { this.clearMeters(); return; }
 
+        // CHECK FLAG
+        if (!this.isMetering) {
+            this.clearMeters();
+            return; 
+        }
+
+        // Clear the entire overlay
         this.meterCtx.clearRect(0, 0, this.meterOverlay.width, this.meterOverlay.height);
 
+        // Iterate Registry
         this.meterRegistry.forEach((meta, id) => {
             if (!meta.analyser) return;
+            
             const el = meta.el;
+            
+            // Calculate absolute position relative to mixer-container
+            // Use getBoundingClientRect for reliability across scroll and flex contexts
             const elRect = el.getBoundingClientRect();
             const container = this.container.querySelector('.mixer-container');
             const containerRect = container.getBoundingClientRect();
             
+            // Calculate position relative to container, accounting for scroll
             const x = (elRect.left - containerRect.left) + container.scrollLeft;
             const y = (elRect.top - containerRect.top) + container.scrollTop;
             
+            // Adjust for internal meter position (left: 2px, top: 2%, height: 96%)
             const meterX = x + 2; 
-            const meterH = el.offsetHeight * 0.96; 
-            const meterY = y + (el.offsetHeight * 0.02); 
-            const meterW = 4; 
+            const meterH = el.offsetHeight * 0.96; // 96% height
+            const meterY = y + (el.offsetHeight * 0.02); // 2% top margin
+            const meterW = 4; // Width defined in CSS logic
             
+            // Audio Processing
             const bufferLength = meta.analyser.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
             meta.analyser.getByteTimeDomainData(dataArray);
 
+            // Calculate RMS
             let sum = 0;
             for(let i = 0; i < bufferLength; i++) {
                 const val = (dataArray[i] - 128) / 128.0;
                 sum += val * val;
             }
             const rms = Math.sqrt(sum / bufferLength);
+            
+            // Scale RMS
             const value = Math.min(1, rms * 4); 
             
+            // Draw LED segments on the single context
             const segHeight = 2;
             const gap = 1;
             const numSegs = Math.floor(meterH / (segHeight + gap));
@@ -210,15 +251,17 @@ export class Mixer {
             for (let i = 0; i < numSegs; i++) {
                 const segmentY = (meterY + meterH) - (i * (segHeight + gap));
                 if (i < activeSegs) {
-                    if (i > numSegs * 0.9) this.meterCtx.fillStyle = '#ef4444'; 
-                    else if (i > numSegs * 0.7) this.meterCtx.fillStyle = '#eab308'; 
-                    else this.meterCtx.fillStyle = '#10b981'; 
+                    // Color Gradient
+                    if (i > numSegs * 0.9) this.meterCtx.fillStyle = '#ef4444'; // Red
+                    else if (i > numSegs * 0.7) this.meterCtx.fillStyle = '#eab308'; // Yellow
+                    else this.meterCtx.fillStyle = '#10b981'; // Green
                 } else {
-                    this.meterCtx.fillStyle = '#1a1a1a'; 
+                    this.meterCtx.fillStyle = '#1a1a1a'; // Inactive
                 }
                 this.meterCtx.fillRect(meterX, segmentY, meterW, segHeight);
             }
         });
+
         this.animationFrameId = requestAnimationFrame(this.animateMeters);
     }
 
@@ -228,7 +271,8 @@ export class Mixer {
         }
     }
 
-    // ... createKnob, createFaderSection same ...
+    // --- COMPONENT FACTORIES ---
+
     createKnob(label, value, min, max, step, onChange, colorClass = '', showLabel = false) {
         const wrapper = document.createElement('div');
         wrapper.className = 'mixer-pot track-item';
@@ -324,6 +368,7 @@ export class Mixer {
         const section = document.createElement('div');
         section.className = 'strip-fader-section';
 
+        // 1. Mute/Solo Buttons Row
         const btnRow = document.createElement('div');
         btnRow.className = 'strip-btn-row';
         
@@ -339,13 +384,18 @@ export class Mixer {
         btnRow.appendChild(soloBtn);
         section.appendChild(btnRow);
 
+        // 2. Fader Wrapper (Axis + Meter + Fader)
         const wrapper = document.createElement('div');
         wrapper.className = 'fader-wrapper';
 
+        // Background Slot
         const bgSlot = document.createElement('div');
         bgSlot.className = 'fader-bg-slot';
         wrapper.appendChild(bgSlot);
 
+        // Correctly find Analyser: 
+        // - Tracks pass a Track object (analyser is in .bus.analyser)
+        // - Groups/Master pass a Bus object (analyser is in .analyser)
         let analyserNode = null;
         if (busObject) {
             if (busObject.analyser) {
@@ -362,10 +412,12 @@ export class Mixer {
             });
         }
 
+        // Ruler (Axis)
         const ruler = document.createElement('div');
         ruler.className = 'fader-ruler';
         wrapper.appendChild(ruler);
 
+        // Vertical Fader Input
         const fader = document.createElement('input');
         fader.type = 'range';
         fader.className = 'v-fader';
@@ -379,7 +431,6 @@ export class Mixer {
         return { section, muteBtn, soloBtn, fader };
     }
 
-    // ... createLabelStrip, createTrackStrip, createGroupStrip same ...
     createLabelStrip() {
         const strip = document.createElement('div');
         strip.className = 'mixer-strip label-strip';
@@ -457,11 +508,12 @@ export class Mixer {
 
         strip.appendChild(controls);
 
+        // Fader Section
         const faderComp = this.createFaderSection(track, (v) => {
             track.params.volume = v;
             const bus = getBus();
             if(bus && bus.vol) bus.vol.gain.value = v;
-        }, track.id); 
+        }, track.id); // Pass numeric ID for track
 
         faderComp.muteBtn.className += ` ${track.muted ? 'active' : ''}`;
         faderComp.muteBtn.onclick = () => { if (this.onMute) this.onMute(track.id); };
@@ -568,12 +620,13 @@ export class Mixer {
         const controls = document.createElement('div');
         controls.className = 'strip-controls'; 
 
-        // Reuse Track Logic for Controls (EQ, Drive, Comp, Sends)
-        // Since ReturnBus structure mimics TrackBus closely enough
-        // We pass empty dummy functions for things we don't want to save to 'track' params
-        // Or we just update the AudioNode directly.
-
         const getBus = () => busObject;
+
+        // Added Gain knob for Return Tracks
+        controls.appendChild(this.createKnob('Gain', 1.0, 0, 2, 0.01, (v) => { 
+            const bus = getBus(); 
+            if(bus.input) bus.input.gain.value = v; 
+        }, 'knob-color-green', true));
 
         // No Input Gain/Trim knob on returns usually, start with EQ
         controls.appendChild(this.createKnob('Hi', 0, -15, 15, 0.1, (v) => { const bus = getBus(); if(bus.eq) bus.eq.high.gain.value = v; }, 'knob-color-blue', true));
