@@ -22,6 +22,9 @@ export class Mixer {
         this.meterCtx = null;
         this.meterRegistry = new Map(); // Key: ID, Value: { el: DOMElement, analyser: AnalyserNode }
         
+        // Resize Observer
+        this.resizeObserver = null;
+
         // Callbacks
         this.onMute = null;
         this.onSolo = null;
@@ -88,6 +91,12 @@ export class Mixer {
         // Cleanup old loop if re-rendering
         if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
         
+        // Cleanup old observer
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+            this.resizeObserver = null;
+        }
+        
         this.container.innerHTML = '';
         this.trackStripElements.clear(); 
         this.groupStripElements.clear(); 
@@ -133,12 +142,18 @@ export class Mixer {
         this.container.appendChild(mixerContainer);
         this.isRendered = true;
         
-        // Resize canvas to match the full scrollable area
+        // Initialize ResizeObserver to handle container size changes (e.g. layout dragging)
+        this.resizeObserver = new ResizeObserver(() => {
+            this.resizeOverlay();
+        });
+        this.resizeObserver.observe(mixerContainer);
+        
+        // Initial resize
         requestAnimationFrame(() => {
             this.resizeOverlay();
         });
         
-        // Also bind resize listener to window to handle layout changes
+        // Keep window listener for global resize events just in case
         window.addEventListener('resize', () => this.resizeOverlay());
 
         this.updateAllTrackStates();
@@ -152,8 +167,12 @@ export class Mixer {
     resizeOverlay() {
         const container = this.container.querySelector('.mixer-container');
         if (container && this.meterOverlay) {
-            this.meterOverlay.width = container.scrollWidth;
-            this.meterOverlay.height = container.scrollHeight;
+            // Check if dimensions actually changed to avoid unnecessary canvas clears/flickers
+            if (this.meterOverlay.width !== container.scrollWidth || 
+                this.meterOverlay.height !== container.scrollHeight) {
+                this.meterOverlay.width = container.scrollWidth;
+                this.meterOverlay.height = container.scrollHeight;
+            }
         }
     }
 
