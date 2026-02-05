@@ -1,12 +1,18 @@
-// BeatOS Granular Synthesis AudioWorklet Processor
-// Optimization: Linear Interpolation (Fast)
-// Optimization: Active Voice Tracking (Only loop active voices)
+/**
+ * BeatOS Granular Processor (Optimized)
+ * - Linear Interpolation (Fast)
+ * - Pre-calculated math
+ * - Multi-channel routing support
+ * - "Swap and Pop" array management
+ */
 
 class BeatOSGranularProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
         
         this.MAX_VOICES = 64;
+        
+        // Pre-allocate voices
         this.voices = Array(this.MAX_VOICES).fill(null).map((_, id) => ({
             id,
             active: false,
@@ -18,37 +24,35 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             pitch: 1.0,
             velocity: 1.0,
             startFrame: 0,
-            trackId: null,
+            trackId: 0,
             releasing: false,
-            releaseAmp: 1.0
+            releaseAmp: 1.0,
+            // Pre-calc values to avoid division in loop
+            invGrainLength: 0 
         }));
         
-        // OPTIMIZATION: Track active indices to avoid looping 64 items every frame
+        // Track active indices to avoid scanning all 64 voices
         this.activeVoiceIndices = [];
-        
         this.activeNotes = [];
         this.trackBuffers = new Map(); 
         
         this.currentFrame = 0;
-        this.totalGrainsTriggered = 0;
 
-        // Window Function Lookup Table (Hanning)
-        this.windowLUT = new Float32Array(4096);
-        for(let i=0; i<4096; i++) {
-            const phase = i / 4095;
+        // Hanning Window LUT
+        this.LUT_SIZE = 4096;
+        this.windowLUT = new Float32Array(this.LUT_SIZE);
+        for(let i=0; i<this.LUT_SIZE; i++) {
+            const phase = i / (this.LUT_SIZE - 1);
             this.windowLUT[i] = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * phase));
         }
         
         this.port.onmessage = (e) => {
             const { type, data } = e.data;
             switch(type) {
-                case 'trigger': this.triggerGrain(data); break;
                 case 'noteOn': this.handleNoteOn(data); break;
-                case 'setBuffer': this.setBuffer(data.trackId, data.buffer, data.rmsMap); break;
-                case 'updateBuffer': this.updateBuffer(data.trackId, data.buffer, data.rmsMap); break;
+                case 'setBuffer': this.setBuffer(data.trackId, data.buffer); break;
                 case 'stopAll': this.stopAllVoices(); this.activeNotes = []; break;
                 case 'stopTrack': this.stopTrack(data.trackId); break;
-                case 'getStats': this.sendStats(); break;
             }
         };
     }
@@ -65,13 +69,11 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     }
 
     process(inputs, outputs, parameters) {
-        const output = outputs[0];
-        const channelCount = output.length;
-        const frameCount = output[0].length; 
-        const now = currentTime; 
+        // outputs is [track0_stereo, track1_stereo, ...]
+        const frameCount = outputs[0][0].length;
+        const now = currentTime;
         
-        // 1. Scheduler Logic (Runs once per block)
-        // Iterate backwards to allow safe removal
+        // --- 1. SCHEDULER (Runs once per block) ---
         for (let i = this.activeNotes.length - 1; i >= 0; i--) {
             const note = this.activeNotes[i];
             
@@ -81,7 +83,10 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             }
             
             if (now >= note.startTime) {
-                let density = Math.max(1, note.params.density || 20);
+                // Calculate intervals
+                let density = note.params.density || 20;
+                if (density < 1) density = 1;
+                
                 let interval = 1 / density;
                 
                 if (note.params.overlap > 0) {
@@ -89,210 +94,208 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                     interval = grainDur / Math.max(0.1, note.params.overlap);
                 }
 
-                let grainsSpawnedThisBlock = 0;
-                while (note.nextGrainTime < now + (frameCount / sampleRate) && grainsSpawnedThisBlock < 10) {
+                // Spawn grains needed for this time slice
+                let spawnLimit = 5; // Limit spawns per block to prevent explosion
+                while (note.nextGrainTime < now + (frameCount * 0.0000226) && spawnLimit > 0) { // approx 1/44100
                     if (note.nextGrainTime >= now) {
                         this.spawnGrainFromNote(note);
                     }
                     note.nextGrainTime += interval;
-                    grainsSpawnedThisBlock++;
+                    spawnLimit--;
                 }
             }
         }
 
-        // Fast exit if no channels
-        if (channelCount === 0) return true;
-        
-        // Clear buffers
-        for (let channel = 0; channel < channelCount; channel++) {
-            output[channel].fill(0);
-        }
-        
         // Fast exit if no voices active
         if (this.activeVoiceIndices.length === 0) {
             this.currentFrame += frameCount;
             return true;
         }
         
-        // 2. DSP Logic (Only loop ACTIVE voices)
-        // OPTIMIZATION: Use activeVoiceIndices array
-        // Iterate backwards to allow safe removal from activeVoiceIndices
+        // --- 2. DSP LOOP ---
+        // Iterate backwards for safe removal
         for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
             const voiceIdx = this.activeVoiceIndices[i];
             const voice = this.voices[voiceIdx];
             
-            // Safety check
-            if (!voice.active) {
-                this.activeVoiceIndices.splice(i, 1);
+            // Get output buffer for this voice's track
+            const trackOutput = outputs[voice.trackId];
+            if (!trackOutput) {
+                // Invalid routing, kill voice
+                this.deactivateVoice(i);
                 continue;
             }
-            
+
+            const leftChannel = trackOutput[0];
+            const rightChannel = trackOutput[1]; // Assumes stereo
             const buffer = voice.buffer;
-            const bufferLength = voice.bufferLength;
+            const bufferLen = voice.bufferLength;
             
-            // Pre-calculate constants for the loop
-            const voicePitch = voice.pitch;
-            const grainLength = voice.grainLength;
-            const voiceVelocity = voice.velocity;
-            let currentPhase = voice.phase;
-            let currentReleasing = voice.releasing;
-            let currentReleaseAmp = voice.releaseAmp;
-            const basePos = voice.position * bufferLength;
+            // Localize variables for speed
+            const pitch = voice.pitch;
+            const grainLen = voice.grainLength;
+            const velocity = voice.velocity;
+            const invGrainLen = voice.invGrainLength;
+            const startPos = voice.position * bufferLen;
             
-            // Inner loop processing samples
+            let phase = voice.phase;
+            let releasing = voice.releasing;
+            let relAmp = voice.releaseAmp;
+            
+            // Per-sample loop
             for (let j = 0; j < frameCount; j++) {
-                if (currentReleasing) {
-                    currentReleaseAmp -= 0.015625; // 1.0 / 64.0
-                    if (currentReleaseAmp <= 0) {
-                        voice.active = false;
-                        voice.releasing = false;
-                        this.activeVoiceIndices.splice(i, 1); // Remove from active list
-                        break; 
+                // Release envelope logic
+                if (releasing) {
+                    relAmp -= 0.015; // Fast fade out
+                    if (relAmp <= 0) {
+                        this.deactivateVoice(i);
+                        break; // Stop processing this voice
                     }
                 }
 
-                if (currentPhase >= grainLength) {
-                    voice.active = false;
-                    this.activeVoiceIndices.splice(i, 1); // Remove from active list
+                if (phase >= grainLen) {
+                    this.deactivateVoice(i);
                     break;
                 }
                 
-                const readPos = basePos + (currentPhase * voicePitch);
+                // Calculate Read Head
+                const readPos = startPos + (phase * pitch);
                 
-                // Fast wrap logic
-                let idx = Math.floor(readPos);
-                if (idx >= bufferLength) idx %= bufferLength;
+                // Fast integer floor
+                let idx = readPos | 0; 
                 
-                const frac = readPos - idx;
-
+                // Wrap logic (Manual modulo is faster than %)
+                while (idx >= bufferLen) idx -= bufferLen;
+                
                 // Linear Interpolation
-                // Optimize next index calculation - avoid conditional if possible, but safe check is good
+                // frac = readPos - idx
+                const frac = readPos - idx;
                 let idx2 = idx + 1;
-                if (idx2 >= bufferLength) idx2 = 0;
+                if (idx2 >= bufferLen) idx2 = 0;
                 
                 const s1 = buffer[idx];
                 const s2 = buffer[idx2];
                 const sample = s1 + frac * (s2 - s1);
                 
-                // Window LUT - Fast integer mapping
-                // 4095 is (LUT_SIZE - 1)
-                const lutIndex = ((currentPhase * 4095) / grainLength) | 0; // Bitwise OR 0 truncates to int
-                const envelope = this.windowLUT[lutIndex];
+                // LUT Windowing (Optimization: pre-calced 4095/grainLen)
+                const lutIdx = (phase * invGrainLen) | 0;
+                const window = this.windowLUT[lutIdx] || 0; // Safety fallback
                 
-                const outputSample = sample * envelope * voiceVelocity * currentReleaseAmp;
+                const out = sample * window * velocity * relAmp;
                 
-                // Accumulate to output channels
-                // Assuming stereo output for most cases, optimization by unrolling slightly?
-                // Actually simple loop is fine, channelCount is usually 2
-                output[0][j] += outputSample;
-                if (channelCount > 1) {
-                    output[1][j] += outputSample;
-                }
+                // Sum to output
+                leftChannel[j] += out;
+                if (rightChannel) rightChannel[j] += out;
                 
-                currentPhase++;
+                phase++;
             }
             
-            // Write back state
-            voice.phase = currentPhase;
-            voice.releasing = currentReleasing;
-            voice.releaseAmp = currentReleaseAmp;
-        }
-        
-        // Soft limiter
-        const outputGain = 0.5;
-        for (let channel = 0; channel < channelCount; channel++) {
-            const chData = output[channel];
-            for (let i = 0; i < frameCount; i++) {
-                const sample = chData[i] * outputGain;
-                if (sample < -3) chData[i] = -1;
-                else if (sample > 3) chData[i] = 1;
-                else chData[i] = sample * (27 + sample * sample) / (27 + 9 * sample * sample);
-            }
+            // Save state
+            voice.phase = phase;
+            voice.releasing = releasing;
+            voice.releaseAmp = relAmp;
         }
         
         this.currentFrame += frameCount;
-        
         return true;
     }
     
-    spawnGrainFromNote(note) {
-        const { params } = note;
-        const trackData = this.trackBuffers.get(note.trackId);
+    // Fast remove from active array (Swap & Pop)
+    deactivateVoice(activeArrayIndex) {
+        const voiceIdx = this.activeVoiceIndices[activeArrayIndex];
+        this.voices[voiceIdx].active = false;
         
-        if (!trackData || !trackData.buffer) return;
+        const last = this.activeVoiceIndices.pop();
+        if (activeArrayIndex < this.activeVoiceIndices.length) {
+            this.activeVoiceIndices[activeArrayIndex] = last;
+        }
+    }
 
-        let voice = null;
-        let oldestIndex = -1;
-        let oldestFrame = Infinity;
+    spawnGrainFromNote(note) {
+        const trackData = this.trackBuffers.get(note.trackId);
+        if (!trackData) return;
 
         // Find free voice
+        let voice = null;
+        
+        // 1. Try to find an inactive voice
         for (let i = 0; i < this.MAX_VOICES; i++) {
-            const v = this.voices[i];
-            if (!v.active) {
-                voice = v;
+            if (!this.voices[i].active) {
+                voice = this.voices[i];
+                // Add to active list
+                this.activeVoiceIndices.push(i);
                 break;
             }
-            if (v.startFrame < oldestFrame) {
-                oldestFrame = v.startFrame;
-                oldestIndex = i;
+        }
+
+        // 2. Steal voice if full (Oldest)
+        if (!voice) {
+            let oldestTime = Infinity;
+            let oldestIdx = -1;
+            
+            // Only scan active indices
+            for(let i=0; i<this.activeVoiceIndices.length; i++) {
+                const v = this.voices[this.activeVoiceIndices[i]];
+                if (!v.releasing && v.startFrame < oldestTime) {
+                    oldestTime = v.startFrame;
+                    oldestIdx = i;
+                }
+            }
+            
+            if (oldestIdx !== -1) {
+                const vIdx = this.activeVoiceIndices[oldestIdx];
+                // Force release the old one
+                this.voices[vIdx].releasing = true;
+                // We failed to spawn a NEW one, but we cleared space for next cycle
+                // or we could force overwrite. Let's just return to avoid clicks.
+                return; 
             }
         }
 
-        if (!voice && oldestIndex !== -1) {
-            voice = this.voices[oldestIndex];
-            voice.releasing = true; 
-            // Don't remove from active indices, it's already there
-        } else if (voice) {
-            // New voice, add to active list if not present
-            if (!this.activeVoiceIndices.includes(voice.id)) {
-                this.activeVoiceIndices.push(voice.id);
-            }
+        // Initialize Voice
+        let pos = note.params.position;
+        if (note.params.spray > 0) {
+            pos += (Math.random() * 2 - 1) * note.params.spray;
+            // Clamp 0-1
+            if(pos < 0) pos = 0; 
+            if(pos > 1) pos = 1;
         }
 
-        let finalPos = params.position;
-        if (params.spray > 0) {
-            finalPos += (Math.random() * 2 - 1) * params.spray;
-            finalPos = Math.max(0, Math.min(1, finalPos));
-        }
+        const sampleRate = 44100; // Standard, or pass in
+        const gLen = Math.floor((note.params.grainSize || 0.1) * sampleRate);
 
         voice.active = true;
         voice.trackId = note.trackId;
-        voice.buffer = trackData.buffer;
-        voice.bufferLength = trackData.buffer.length;
-        voice.position = finalPos;
+        voice.buffer = trackData;
+        voice.bufferLength = trackData.length;
+        voice.position = pos;
         voice.phase = 0;
-        voice.grainLength = Math.max(128, Math.floor((params.grainSize || 0.1) * sampleRate));
-        voice.pitch = Math.max(0.05, Math.min(8.0, params.pitch || 1.0));
-        voice.velocity = params.velocity || 1.0;
+        voice.grainLength = Math.max(128, gLen);
+        voice.invGrainLength = 4095 / voice.grainLength; // Pre-calc for LUT
+        voice.pitch = note.params.pitch || 1.0;
+        voice.velocity = note.params.velocity || 1.0;
         voice.startFrame = this.currentFrame;
         voice.releasing = false;
         voice.releaseAmp = 1.0;
-
-        this.totalGrainsTriggered++;
     }
 
-    triggerGrain(data) { /* Legacy stub */ }
-    setBuffer(id, buf, map) {
-        let processed = map ? map.map(v => v > 0.01) : null;
-        this.trackBuffers.set(id, { buffer: buf, rmsMap: processed });
-        this.port.postMessage({ type: 'bufferLoaded', trackId: id, bufferLength: buf.length });
+    setBuffer(id, buf) {
+        this.trackBuffers.set(id, buf);
     }
-    updateBuffer(id, buf, map) { this.setBuffer(id, buf, map); }
+
     stopAllVoices() {
-        for (let i=0; i<this.voices.length; i++) { 
-            if(this.voices[i].active) { this.voices[i].releasing = true; this.voices[i].releaseAmp = 1.0; } 
+        for (let i = 0; i < this.activeVoiceIndices.length; i++) {
+            const v = this.voices[this.activeVoiceIndices[i]];
+            v.releasing = true;
         }
     }
-    stopTrack(trackId) {
-        for (let i=0; i<this.voices.length; i++) { 
-            if(this.voices[i].trackId === trackId && this.voices[i].active) { 
-                this.voices[i].releasing = true; this.voices[i].releaseAmp = 1.0; 
-            } 
+
+    stopTrack(id) {
+        this.activeNotes = this.activeNotes.filter(n => n.trackId !== id);
+        for (let i = 0; i < this.activeVoiceIndices.length; i++) {
+            const v = this.voices[this.activeVoiceIndices[i]];
+            if (v.trackId === id) v.releasing = true;
         }
-        this.activeNotes = this.activeNotes.filter(n => n.trackId !== trackId);
-    }
-    sendStats() {
-        this.port.postMessage({ type: 'stats', data: { activeVoices: this.activeVoiceIndices.length } });
     }
 }
 
