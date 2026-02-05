@@ -1,12 +1,11 @@
 // BeatOS Granular Synthesis AudioWorklet Processor
-// Optimization: Switched to Linear Interpolation for CPU efficiency
-// Optimization: Pre-calculated Window LUT
+// Optimization: Linear Interpolation (Fast)
+// Optimization: Active Voice Tracking (Only loop active voices)
 
 class BeatOSGranularProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
         
-        // Voice pool for polyphonic grains
         this.MAX_VOICES = 64;
         this.voices = Array(this.MAX_VOICES).fill(null).map((_, id) => ({
             id,
@@ -23,6 +22,9 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             releasing: false,
             releaseAmp: 1.0
         }));
+        
+        // OPTIMIZATION: Track active indices to avoid looping 64 items every frame
+        this.activeVoiceIndices = [];
         
         this.activeNotes = [];
         this.trackBuffers = new Map(); 
@@ -51,7 +53,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         };
     }
 
-    // Phase 2: Handle Note On Event
     handleNoteOn(data) {
         const { trackId, time, duration, params } = data;
         this.activeNotes.push({
@@ -67,10 +68,9 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const output = outputs[0];
         const channelCount = output.length;
         const frameCount = output[0].length; 
-        
         const now = currentTime; 
         
-        // Internal Grain Scheduler
+        // 1. Scheduler Logic (Runs once per block)
         for (let i = this.activeNotes.length - 1; i >= 0; i--) {
             const note = this.activeNotes[i];
             
@@ -101,61 +101,65 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
 
         if (channelCount === 0) return true;
         
-        // Clear output buffers
+        // Clear buffers
         for (let channel = 0; channel < channelCount; channel++) {
             output[channel].fill(0);
         }
         
-        // Process each active voice
-        // OPTIMIZATION: Inlined the main loop for speed
-        for (let v = 0; v < this.voices.length; v++) {
-            const voice = this.voices[v];
-            if (!voice.active || !voice.buffer) continue;
+        // 2. DSP Logic (Only loop ACTIVE voices)
+        // OPTIMIZATION: Use activeVoiceIndices array
+        for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
+            const voiceIdx = this.activeVoiceIndices[i];
+            const voice = this.voices[voiceIdx];
+            
+            // Safety check
+            if (!voice.active) {
+                this.activeVoiceIndices.splice(i, 1);
+                continue;
+            }
             
             const buffer = voice.buffer;
             const bufferLength = voice.bufferLength;
             
-            for (let i = 0; i < frameCount; i++) {
+            for (let j = 0; j < frameCount; j++) {
                 if (voice.releasing) {
                     voice.releaseAmp -= (1.0 / 64.0); 
                     if (voice.releaseAmp <= 0) {
                         voice.active = false;
                         voice.releasing = false;
+                        this.activeVoiceIndices.splice(i, 1); // Remove from active list
                         break; 
                     }
                 }
 
                 if (voice.phase >= voice.grainLength) {
                     voice.active = false;
+                    this.activeVoiceIndices.splice(i, 1); // Remove from active list
                     break;
                 }
                 
-                // Position calculation
                 const baseReadPos = voice.position * bufferLength;
                 const pitchOffset = voice.phase * voice.pitch;
                 const readPos = baseReadPos + pitchOffset;
                 
-                // Fast wrap
                 let idx = Math.floor(readPos);
                 if (idx >= bufferLength) idx %= bufferLength;
                 const frac = readPos - Math.floor(readPos);
 
-                // --- LINEAR INTERPOLATION (FAST) ---
-                // Much faster than Cubic Hermite, sufficient for granular textures
+                // Linear Interpolation
                 const idx2 = (idx + 1) < bufferLength ? idx + 1 : 0;
                 const s1 = buffer[idx];
                 const s2 = buffer[idx2];
                 const sample = s1 + frac * (s2 - s1);
                 
-                // Window LUT
                 const lutIndex = Math.floor((voice.phase / voice.grainLength) * 4095);
-                const envelope = this.windowLUT[lutIndex] || 0; // Safety || 0
+                const envelope = this.windowLUT[lutIndex] || 0;
                 
                 const outputSample = sample * envelope * voice.velocity * voice.releaseAmp;
                 
-                output[0][i] += outputSample;
+                output[0][j] += outputSample;
                 if (channelCount > 1) {
-                    output[1][i] += outputSample;
+                    output[1][j] += outputSample;
                 }
                 
                 voice.phase++;
@@ -167,7 +171,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         for (let channel = 0; channel < channelCount; channel++) {
             for (let i = 0; i < frameCount; i++) {
                 const sample = output[channel][i] * outputGain;
-                // Fast tanh approximation
                 if (sample < -3) output[channel][i] = -1;
                 else if (sample > 3) output[channel][i] = 1;
                 else output[channel][i] = sample * (27 + sample * sample) / (27 + 9 * sample * sample);
@@ -185,11 +188,11 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         
         if (!trackData || !trackData.buffer) return;
 
-        // Fast voice finding
         let voice = null;
         let oldestIndex = -1;
         let oldestFrame = Infinity;
 
+        // Find free voice
         for (let i = 0; i < this.MAX_VOICES; i++) {
             const v = this.voices[i];
             if (!v.active) {
@@ -205,6 +208,12 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         if (!voice && oldestIndex !== -1) {
             voice = this.voices[oldestIndex];
             voice.releasing = true; 
+            // Don't remove from active indices, it's already there
+        } else if (voice) {
+            // New voice, add to active list if not present
+            if (!this.activeVoiceIndices.includes(voice.id)) {
+                this.activeVoiceIndices.push(voice.id);
+            }
         }
 
         let finalPos = params.position;
@@ -250,9 +259,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         this.activeNotes = this.activeNotes.filter(n => n.trackId !== trackId);
     }
     sendStats() {
-        let active = 0;
-        for(let i=0; i<this.voices.length; i++) if(this.voices[i].active) active++;
-        this.port.postMessage({ type: 'stats', data: { activeVoices: active } });
+        this.port.postMessage({ type: 'stats', data: { activeVoices: this.activeVoiceIndices.length } });
     }
 }
 
