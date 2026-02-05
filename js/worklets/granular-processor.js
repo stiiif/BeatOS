@@ -71,6 +71,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const now = currentTime; 
         
         // 1. Scheduler Logic (Runs once per block)
+        // Iterate backwards to allow safe removal
         for (let i = this.activeNotes.length - 1; i >= 0; i--) {
             const note = this.activeNotes[i];
             
@@ -108,6 +109,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         
         // 2. DSP Logic (Only loop ACTIVE voices)
         // OPTIMIZATION: Use activeVoiceIndices array
+        // Iterate backwards to allow safe removal from activeVoiceIndices
         for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
             const voiceIdx = this.activeVoiceIndices[i];
             const voice = this.voices[voiceIdx];
@@ -121,10 +123,19 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const buffer = voice.buffer;
             const bufferLength = voice.bufferLength;
             
+            // Pre-calculate constants for the loop
+            const voicePitch = voice.pitch;
+            const grainLength = voice.grainLength;
+            const voiceVelocity = voice.velocity;
+            let currentPhase = voice.phase;
+            let currentReleasing = voice.releasing;
+            let currentReleaseAmp = voice.releaseAmp;
+            
+            // Inner loop processing samples
             for (let j = 0; j < frameCount; j++) {
-                if (voice.releasing) {
-                    voice.releaseAmp -= (1.0 / 64.0); 
-                    if (voice.releaseAmp <= 0) {
+                if (currentReleasing) {
+                    currentReleaseAmp -= (1.0 / 64.0); 
+                    if (currentReleaseAmp <= 0) {
                         voice.active = false;
                         voice.releasing = false;
                         this.activeVoiceIndices.splice(i, 1); // Remove from active list
@@ -132,48 +143,61 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                     }
                 }
 
-                if (voice.phase >= voice.grainLength) {
+                if (currentPhase >= grainLength) {
                     voice.active = false;
                     this.activeVoiceIndices.splice(i, 1); // Remove from active list
                     break;
                 }
                 
                 const baseReadPos = voice.position * bufferLength;
-                const pitchOffset = voice.phase * voice.pitch;
+                const pitchOffset = currentPhase * voicePitch;
                 const readPos = baseReadPos + pitchOffset;
                 
+                // Fast wrap logic without modulo operator for speed if possible
+                // Using modulo for safety on arbitrary buffer lengths
                 let idx = Math.floor(readPos);
                 if (idx >= bufferLength) idx %= bufferLength;
                 const frac = readPos - Math.floor(readPos);
 
                 // Linear Interpolation
-                const idx2 = (idx + 1) < bufferLength ? idx + 1 : 0;
+                // Optimize next index calculation
+                let idx2 = idx + 1;
+                if (idx2 >= bufferLength) idx2 = 0;
+                
                 const s1 = buffer[idx];
                 const s2 = buffer[idx2];
                 const sample = s1 + frac * (s2 - s1);
                 
-                const lutIndex = Math.floor((voice.phase / voice.grainLength) * 4095);
-                const envelope = this.windowLUT[lutIndex] || 0;
+                // Window LUT - Fast integer mapping
+                // 4095 is (LUT_SIZE - 1)
+                const lutIndex = ((currentPhase * 4095) / grainLength) | 0; // Bitwise OR 0 truncates to int
+                const envelope = this.windowLUT[lutIndex];
                 
-                const outputSample = sample * envelope * voice.velocity * voice.releaseAmp;
+                const outputSample = sample * envelope * voiceVelocity * currentReleaseAmp;
                 
                 output[0][j] += outputSample;
                 if (channelCount > 1) {
                     output[1][j] += outputSample;
                 }
                 
-                voice.phase++;
+                currentPhase++;
             }
+            
+            // Write back state
+            voice.phase = currentPhase;
+            voice.releasing = currentReleasing;
+            voice.releaseAmp = currentReleaseAmp;
         }
         
         // Soft limiter
         const outputGain = 0.5;
         for (let channel = 0; channel < channelCount; channel++) {
+            const chData = output[channel];
             for (let i = 0; i < frameCount; i++) {
-                const sample = output[channel][i] * outputGain;
-                if (sample < -3) output[channel][i] = -1;
-                else if (sample > 3) output[channel][i] = 1;
-                else output[channel][i] = sample * (27 + sample * sample) / (27 + 9 * sample * sample);
+                const sample = chData[i] * outputGain;
+                if (sample < -3) chData[i] = -1;
+                else if (sample > 3) chData[i] = 1;
+                else chData[i] = sample * (27 + sample * sample) / (27 + 9 * sample * sample);
             }
         }
         
