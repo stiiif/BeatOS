@@ -100,11 +100,18 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             }
         }
 
+        // Fast exit if no channels
         if (channelCount === 0) return true;
         
         // Clear buffers
         for (let channel = 0; channel < channelCount; channel++) {
             output[channel].fill(0);
+        }
+        
+        // Fast exit if no voices active
+        if (this.activeVoiceIndices.length === 0) {
+            this.currentFrame += frameCount;
+            return true;
         }
         
         // 2. DSP Logic (Only loop ACTIVE voices)
@@ -130,11 +137,12 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             let currentPhase = voice.phase;
             let currentReleasing = voice.releasing;
             let currentReleaseAmp = voice.releaseAmp;
+            const basePos = voice.position * bufferLength;
             
             // Inner loop processing samples
             for (let j = 0; j < frameCount; j++) {
                 if (currentReleasing) {
-                    currentReleaseAmp -= (1.0 / 64.0); 
+                    currentReleaseAmp -= 0.015625; // 1.0 / 64.0
                     if (currentReleaseAmp <= 0) {
                         voice.active = false;
                         voice.releasing = false;
@@ -149,18 +157,16 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                     break;
                 }
                 
-                const baseReadPos = voice.position * bufferLength;
-                const pitchOffset = currentPhase * voicePitch;
-                const readPos = baseReadPos + pitchOffset;
+                const readPos = basePos + (currentPhase * voicePitch);
                 
-                // Fast wrap logic without modulo operator for speed if possible
-                // Using modulo for safety on arbitrary buffer lengths
+                // Fast wrap logic
                 let idx = Math.floor(readPos);
                 if (idx >= bufferLength) idx %= bufferLength;
-                const frac = readPos - Math.floor(readPos);
+                
+                const frac = readPos - idx;
 
                 // Linear Interpolation
-                // Optimize next index calculation
+                // Optimize next index calculation - avoid conditional if possible, but safe check is good
                 let idx2 = idx + 1;
                 if (idx2 >= bufferLength) idx2 = 0;
                 
@@ -175,6 +181,9 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 
                 const outputSample = sample * envelope * voiceVelocity * currentReleaseAmp;
                 
+                // Accumulate to output channels
+                // Assuming stereo output for most cases, optimization by unrolling slightly?
+                // Actually simple loop is fine, channelCount is usually 2
                 output[0][j] += outputSample;
                 if (channelCount > 1) {
                     output[1][j] += outputSample;
