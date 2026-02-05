@@ -86,17 +86,6 @@ export class TrackManager {
         });
     }
 
-    randomizePanning() {
-        const numGroups = 8;
-        for (let i = 0; i < this.tracks.length; i++) {
-            const groupIdx = Math.floor(i / TRACKS_PER_GROUP); 
-            const groupCenter = -1 + (groupIdx / (numGroups - 1)) * 2;
-            const variation = (Math.random() - 0.5) * 0.2;
-            const pan = Math.max(-1, Math.min(1, groupCenter + variation));
-            this.tracks[i].params.pan = parseFloat(pan.toFixed(3));
-        }
-    }
-
     // --- AUTOMATION FEATURES ---
 
     saveGlobalSnapshot() {

@@ -193,8 +193,6 @@ export class UIManager {
     randomizeTrackPattern(trkIdx) { this.trackOps.randomizeTrackPattern(trkIdx); }
     randomizeAllPatterns() { this.trackOps.randomizeAllPatterns(); }
     toggleRandomChoke() { this.trackOps.toggleRandomChoke((idx, cb) => this.selectTrack(idx, cb), this.visualizerCallback, this.getSelectedTrackIndex()); }
-    savePanBaseline() { this.trackOps.savePanBaseline(); }
-    applyPanShift(shiftAmount) { this.trackOps.applyPanShift(shiftAmount); }
 
     toggleSnapshot() {
         this.snapshotManager.toggleSnapshot(

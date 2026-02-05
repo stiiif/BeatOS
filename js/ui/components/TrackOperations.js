@@ -6,8 +6,6 @@ export class TrackOperations {
         this.tracks = [];
         this.randomChokeMode = false;
         this.randomChokeGroups = [];
-        this.basePanValues = [];
-        this.globalPanShift = 0;
         this.matrixStepElements = [];
         this.trackLabelElements = [];
         this.trackRowElements = [];
@@ -310,38 +308,6 @@ export class TrackOperations {
         for (let t = 0; t < this.tracks.length; t++) {
             for (let step = 0; step < NUM_STEPS; step++) {
                 this.matrixStepElements[t][step].classList.remove('step-dimmed');
-            }
-        }
-    }
-
-    // ============================================================================
-    // PAN OPERATIONS
-    // ============================================================================
-
-    savePanBaseline() {
-        this.basePanValues = this.tracks.map(t => t.params.pan);
-    }
-
-    applyPanShift(shiftAmount) {
-        this.globalPanShift = shiftAmount;
-        if (this.basePanValues.length === 0) this.savePanBaseline();
-        
-        const numGroups = 8;
-        
-        for (let i = 0; i < this.tracks.length; i++) {
-            const groupIdx = Math.floor(i / TRACKS_PER_GROUP);
-            const basePan = this.basePanValues[i] || 0;
-            const shiftInGroups = shiftAmount * numGroups;
-            const newGroupPosition = (groupIdx + shiftInGroups) % numGroups;
-            const newGroupCenter = -1 + (newGroupPosition / (numGroups - 1)) * 2;
-            const originalGroupCenter = -1 + (groupIdx / (numGroups - 1)) * 2;
-            const offsetFromCenter = basePan - originalGroupCenter;
-            let newPan = newGroupCenter + offsetFromCenter;
-            newPan = Math.max(-1, Math.min(1, newPan));
-            this.tracks[i].params.pan = parseFloat(newPan.toFixed(3));
-            
-            if(this.tracks[i].bus && this.tracks[i].bus.pan) {
-                this.tracks[i].bus.pan.pan.value = newPan;
             }
         }
     }

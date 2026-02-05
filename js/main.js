@@ -9,13 +9,10 @@ import { UIManager } from './ui/UIManager.js';
 import { Visualizer } from './ui/Visualizer.js';
 import { LayoutManager } from './ui/LayoutManager.js';
 import { NUM_LFOS, TRACKS_PER_GROUP } from './utils/constants.js';
-import { AudioWorkletMonitor } from './ui/AudioWorkletMonitor.js';
 import { globalBus } from './events/EventBus.js'; // Ensure EventBus is available
 
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
-
-let workletMonitor = null;
 
 const scheduler = new Scheduler(audioEngine, granularSynth);
 const trackManager = new TrackManager(audioEngine);
@@ -86,8 +83,6 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     console.log("[Main] Initializing AudioWorklet...");
     await granularSynth.init();
     console.log("[Main] ✅ AudioWorklet ready!");
-
-    workletMonitor = new AudioWorkletMonitor(granularSynth);
 
     trackManager.createBuffersForAllTracks();
     document.getElementById('startOverlay').classList.add('hidden');
@@ -245,17 +240,6 @@ document.getElementById('randModsBtn').addEventListener('click', () => {
     uiManager.updateLfoUI();
 });
 
-document.getElementById('randPanBtn').addEventListener('click', () => {
-    trackManager.randomizePanning();
-    uiManager.savePanBaseline();
-    document.getElementById('panShiftSlider').value = 0;
-    document.getElementById('panShiftValue').innerText = '0%';
-    const btn = document.getElementById('randPanBtn');
-    const originalBg = btn.style.backgroundColor;
-    btn.style.backgroundColor = '#0891b2';
-    setTimeout(() => { btn.style.backgroundColor = originalBg; }, 200);
-});
-
 document.getElementById('resetParamBtn').addEventListener('click', () => {
     const t = tracks[uiManager.getSelectedTrackIndex()];
     if (t.type === 'granular') {
@@ -371,12 +355,6 @@ if (loadSampleBtnInline && sampleInput) {
         e.target.value = '';
     });
 }
-
-document.getElementById('panShiftSlider').addEventListener('input', (e) => {
-    const shiftAmount = parseFloat(e.target.value);
-    uiManager.applyPanShift(shiftAmount);
-    document.getElementById('panShiftValue').innerText = Math.round(shiftAmount * 100) + '%';
-});
 
 document.getElementById('clearTrackBtn').addEventListener('click', () => { uiManager.clearTrack(uiManager.getSelectedTrackIndex()); });
 document.getElementById('snapshotBtn').addEventListener('click', () => { uiManager.toggleSnapshot(); });
