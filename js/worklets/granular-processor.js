@@ -269,18 +269,28 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         
         if (!trackData || !trackData.buffer) return;
 
-        // Find free voice or steal
-        let voice = this.voices.find(v => !v.active);
-        if (!voice) {
-            voice = this.voices.reduce((oldest, v) => 
-                v.startFrame < oldest.startFrame ? v : oldest
-            );
+        // QUICK WIN: Replace .find() and .reduce() with simple loops to avoid GC in audio thread
+        let voice = null;
+        let oldestIndex = -1;
+        let oldestFrame = Infinity;
+
+        for (let i = 0; i < this.MAX_VOICES; i++) {
+            const v = this.voices[i];
+            if (!v.active) {
+                voice = v;
+                break;
+            }
+            if (v.startFrame < oldestFrame) {
+                oldestFrame = v.startFrame;
+                oldestIndex = i;
+            }
+        }
+
+        if (!voice && oldestIndex !== -1) {
+            // Voice stealing
+            voice = this.voices[oldestIndex];
             // Quick fade out for stolen voice to avoid click
             voice.releasing = true; 
-            // In a real scenario, we might want to allocate a NEW voice and fade the old one,
-            // but for fixed polyphony, we hard reset here after fading next block?
-            // For now, hard reset but rely on overlap masking it mostly. 
-            // Actually, simply resetting logic:
         }
 
         // Apply parameters from Note

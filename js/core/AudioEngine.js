@@ -92,7 +92,7 @@ export class AudioEngine {
         
         // NEW: Master Analyser for Metering
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 2048;
+        analyser.fftSize = 1024; // Reduced from 2048 (default) for performance
         analyser.smoothingTimeConstant = 0.85;
         
         input.connect(limiter);
@@ -202,7 +202,7 @@ export class AudioEngine {
         const vol = ctx.createGain();
         const pan = ctx.createStereoPanner();
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 2048;
+        analyser.fftSize = 512; // QUICK WIN: Reduced for performance
 
         // Chain Connections
         fxOutput.connect(eqLow);
@@ -332,7 +332,7 @@ export class AudioEngine {
 
         // NEW: Group Analyser for Metering
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 2048;
+        analyser.fftSize = 512; // QUICK WIN: Reduced for performance
         analyser.smoothingTimeConstant = 0.85;
         
         // Chain: Input -> EQ -> Drive -> Comp -> Vol -> Master
@@ -410,7 +410,7 @@ export class AudioEngine {
         
         // Analyser for visualizer
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 2048;
+        analyser.fftSize = 512; // QUICK WIN: Reduced from 2048
         analyser.smoothingTimeConstant = 0.85;
 
         // Connect Chain: Input -> Trim -> Filters -> EQ -> Drive -> Comp -> Vol -> Pan

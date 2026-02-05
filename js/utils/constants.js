@@ -6,7 +6,7 @@ export const NUM_LFOS = 3;
 export const TRACKS_PER_GROUP = 8; // Changed from 4 to 8 for V2 patterns
 
 export const DEFAULT_BPM = 120;
-export const LOOKAHEAD = 10.0;
+export const LOOKAHEAD = 25.0;
 export const SCHEDULE_AHEAD_TIME = 0.1;
 
 // Automation Intensity Zones (Min/Max Release Times)

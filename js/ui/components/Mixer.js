@@ -256,7 +256,9 @@ export class Mixer {
             
             // Audio Processing (RMS)
             const bufferLength = meta.analyser.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
+            
+            // QUICK WIN: Use the pre-allocated array
+            const dataArray = meta.dataArray;
             meta.analyser.getByteTimeDomainData(dataArray);
 
             let sum = 0;
@@ -462,9 +464,12 @@ export class Mixer {
         }
 
         if (analyserNode) {
+            // QUICK WIN: Pre-allocate the data array ONCE, not every frame
+            const bufferLength = analyserNode.frequencyBinCount;
             this.meterRegistry.set(idForMeter, {
                 el: wrapper,
-                analyser: analyserNode
+                analyser: analyserNode,
+                dataArray: new Uint8Array(bufferLength) // Store it here
             });
         }
 

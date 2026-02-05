@@ -36,6 +36,9 @@ export class Visualizer {
                 this.drawVisuals();
             }
         });
+        
+        // QUICK WIN: Cache track canvases to avoid getElementById in the loop
+        this.canvasCache = new Map();
     }
 
     setTracks(tracks) {
@@ -92,6 +95,16 @@ export class Visualizer {
         }
     }
 
+    // ... add this helper ...
+    getTrackCanvas(trackId) {
+        if (!this.canvasCache.has(trackId)) {
+            const el = document.getElementById(`vis-canvas-${trackId}`);
+            if (el) this.canvasCache.set(trackId, el);
+        }
+        return this.canvasCache.get(trackId);
+    }
+
+    // ... replace drawVisuals with this optimized version ...
     drawVisuals(timestamp, forceOnce = false) {
         // Stop if not visible
         if (!this.isVisible && !forceOnce) return;
@@ -109,15 +122,24 @@ export class Visualizer {
         const audioCtx = this.audioEngine.getContext();
         const now = audioCtx ? audioCtx.currentTime : 0;
         
+        // QUICK WIN: Optimized Queue Cleanup (No .filter() allocation)
         // 1. Clean up old events from queue
-        this.drawQueue = this.drawQueue.filter(d => d.time > now - 0.5);
+        let activeCount = 0;
+        for (let i = 0; i < this.drawQueue.length; i++) {
+            if (this.drawQueue[i].time > now - 0.5) {
+                // Move valid items to front
+                if (i !== activeCount) this.drawQueue[activeCount] = this.drawQueue[i];
+                activeCount++;
+            }
+        }
+        // Trim length without creating new array
+        this.drawQueue.length = activeCount;
 
         // 2. Fade out all track canvases (Only if there are any updates pending or recently happened)
         // Optimization: Avoid querying DOM if no tracks or queue empty? 
         // We need to clear trails regardless of new hits.
-        
         for(let i=0; i<this.tracks.length; i++) {
-            const canvas = document.getElementById(`vis-canvas-${i}`);
+            const canvas = this.getTrackCanvas(i); // Use Cache
             if(canvas) {
                 const ctx = canvas.getContext('2d', { alpha: true });
                 // Simple fade trail
@@ -132,7 +154,7 @@ export class Visualizer {
                 const age = (now - d.time) / 0.2; 
                 if(age > 1) continue;
                 
-                const canvas = document.getElementById(`vis-canvas-${d.trackId}`);
+                const canvas = this.getTrackCanvas(d.trackId); // Use Cache
                 if(canvas) {
                     const ctx = canvas.getContext('2d');
                     const w = canvas.width;
