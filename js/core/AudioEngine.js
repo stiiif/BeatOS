@@ -110,10 +110,27 @@ export class AudioEngine {
 
         // --- EFFECT DSP ---
         const fxInput = ctx.createGain();
+        const fxWet = ctx.createGain();
+        const dryGain = ctx.createGain();
+        const wetGain = ctx.createGain();
         const fxOutput = ctx.createGain();
         let fxNodes = {};
 
+        // Dry/Wet Routing
         input.connect(fxInput);
+        
+        // Dry Path
+        input.connect(dryGain);
+        dryGain.connect(fxOutput);
+        
+        // Wet Path
+        fxInput.connect(fxWet);
+        fxWet.connect(wetGain);
+        wetGain.connect(fxOutput);
+        
+        // Default Mix: 50%
+        dryGain.gain.value = 0.5;
+        wetGain.gain.value = 0.5;
 
         if (index === 0) {
             // EFFECT A: STEREO DELAY
@@ -128,9 +145,12 @@ export class AudioEngine {
 
             // Signal flow: Input -> Delay -> Filter -> Output
             // Feedback: Filter -> Feedback -> Delay
+            // Insert into Wet Chain
+            fxInput.disconnect(fxWet);
             fxInput.connect(delay);
             delay.connect(filter);
-            filter.connect(fxOutput);
+            filter.connect(fxWet); // Connect end of FX chain to Wet Gain
+            
             filter.connect(feedback);
             feedback.connect(delay);
 
@@ -146,12 +166,18 @@ export class AudioEngine {
             // Generate simple impulse response
             this.generateReverbIR(convolver, 2.0); 
 
+            // Insert into Wet Chain
+            fxInput.disconnect(fxWet);
             fxInput.connect(tone);
             tone.connect(convolver);
-            convolver.connect(fxOutput);
+            convolver.connect(fxWet); // Connect end of FX chain to Wet Gain
 
             fxNodes = { convolver, tone };
         }
+        
+        // Store Mix Gains in nodes for parameter control
+        fxNodes.dryGain = dryGain;
+        fxNodes.wetGain = wetGain;
 
         // --- STANDARD STRIP CHAIN ---
         // EQ
@@ -476,22 +502,22 @@ export class AudioEngine {
                 // LP 200Hz to 15000Hz
                 const freq = 200 + (v * 14800);
                 nodes.filter.frequency.setTargetAtTime(freq, this.audioCtx.currentTime, 0.05);
+            } else if (paramIndex === 3) { // Mix (Dry/Wet)
+                nodes.dryGain.gain.setTargetAtTime(1 - v, this.audioCtx.currentTime, 0.05);
+                nodes.wetGain.gain.setTargetAtTime(v, this.audioCtx.currentTime, 0.05);
             }
         } else { // REVERB
-            if (paramIndex === 0) { // Tone (High Shelf Freq/Gain combo?)
-                // Just map frequency for now
+            if (paramIndex === 0) { // Tone
                 const freq = 500 + (v * 10000);
                 nodes.tone.frequency.setTargetAtTime(freq, this.audioCtx.currentTime, 0.05);
-            } else if (paramIndex === 1) { // Size/Decay -> mapped to input drive?
-                // Hard to change IR length in real-time. 
-                // Let's map this to Tone Gain (+/- 15dB)
+            } else if (paramIndex === 1) { // Size/Decay -> Tone Gain
                 const gain = (v * 30) - 15;
                 nodes.tone.gain.setTargetAtTime(gain, this.audioCtx.currentTime, 0.05);
-            } else if (paramIndex === 2) { // Mix/Level (It's a send, so this is Output Level)
-                // This might be redundant with fader, but useful for LFO modulation
-                // We don't have a dedicated output gain in fxNodes structure above, 
-                // we assume return strip fader handles level. 
-                // Let's leave this as no-op or maybe map to Pre-Delay?
+            } else if (paramIndex === 2) { // Unused/Placeholder
+                // Maybe Pre-Delay?
+            } else if (paramIndex === 3) { // Mix (Dry/Wet)
+                nodes.dryGain.gain.setTargetAtTime(1 - v, this.audioCtx.currentTime, 0.05);
+                nodes.wetGain.gain.setTargetAtTime(v, this.audioCtx.currentTime, 0.05);
             }
         }
     }
@@ -588,7 +614,6 @@ export class AudioEngine {
         });
     }
 
-    // RESTORED METHODS
     generateBufferByType(type) {
         if(!this.audioCtx) return null;
         const makeBuffer = (lenSec) => this.audioCtx.createBuffer(1, this.audioCtx.sampleRate * lenSec, this.audioCtx.sampleRate);

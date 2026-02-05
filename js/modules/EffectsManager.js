@@ -12,63 +12,69 @@ export class EffectsManager {
     createEffectState(id) {
         return {
             id,
-            params: [0.5, 0.5, 0.5], // The 3 Macro Knobs (normalized 0-1)
+            // 4 Macro Knobs: P1, P2, P3, Mix
+            params: [0.5, 0.5, 0.5, 0.5], 
             lfos: [
                 new LFO(),
                 new LFO(),
                 new LFO()
             ],
-            // Matrix: 3 sources (rows) x 12 targets (cols)
-            // Targets: 0-2 (Params), 3-5 (LFO1 Params), 6-8 (LFO2), 9-11 (LFO3)
-            // Values: 0 (off) or 1 (on), or float amount if we want depth. Keeping boolean for "tiny matrix".
-            matrix: Array(3).fill(null).map(() => Array(12).fill(0))
+            // 4th Source: Random (Software based Sample & Hold)
+            randomSource: { value: 0, holdTime: 0, rate: 2.0 },
+            
+            // Matrix: 4 sources (rows) x 9 targets (cols)
+            // Sources: LFO1, LFO2, LFO3, RND
+            // Targets: P1, P2, P3, Mix, L1R, L1A, L2R, L2A, L3R
+            matrix: Array(4).fill(null).map(() => Array(9).fill(0))
         };
     }
 
     update(time) {
         this.effects.forEach(fx => {
-            // 1. Calculate LFO Values
+            // 1. Calculate Source Values
             const lfoValues = fx.lfos.map(lfo => lfo.getValue(time));
+            
+            // Calculate Random Source (S&H)
+            const rndStep = Math.floor(time * fx.randomSource.rate);
+            if (rndStep > fx.randomSource.holdTime) {
+                fx.randomSource.holdTime = rndStep;
+                fx.randomSource.value = (Math.random() * 2) - 1;
+            }
+            // Add Random to modulators array
+            const modulators = [...lfoValues, fx.randomSource.value];
 
             // 2. Resolve Targets (Accumulate modulation)
-            // Targets 0-2: Effect Params
-            // Targets 3-11: LFO Params (Modulating LFOs with LFOs!)
+            // Targets 0-3: Effect Params (P1, P2, P3, Mix)
+            // Targets 4-8: LFO Params
             
             let effectiveParams = [...fx.params];
-            let lfoModulations = Array(9).fill(0); // For LFO params
+            let lfoModulations = Array(5).fill(0); 
 
             // Apply Matrix Logic
-            fx.matrix.forEach((row, lfoIndex) => {
-                const modValue = lfoValues[lfoIndex];
+            fx.matrix.forEach((row, sourceIndex) => {
+                const modValue = modulators[sourceIndex];
                 
                 row.forEach((isActive, targetIndex) => {
                     if (isActive) {
-                        if (targetIndex < 3) {
+                        const amount = 0.2 * modValue; // Scale modulation depth
+                        if (targetIndex < 4) {
                             // Modulate Effect Param
-                            effectiveParams[targetIndex] += modValue;
+                            effectiveParams[targetIndex] += amount;
                         } else {
                             // Modulate LFO Param
-                            lfoModulations[targetIndex - 3] += modValue;
+                            lfoModulations[targetIndex - 4] += amount;
                         }
                     }
                 });
             });
 
             // 3. Apply Modulation to LFOs (Rate/Amount) for NEXT frame
-            // LFO Params indices: 0=Wave(skip), 1=Rate, 2=Amount
-            // Mapped indices: 0-2 (LFO1), 3-5 (LFO2), 6-8 (LFO3)
-            
-            fx.lfos.forEach((lfo, idx) => {
-                const baseIdx = idx * 3;
-                // Modulation of Rate
-                if (lfoModulations[baseIdx + 1] !== 0) {
-                    // Temporary modulation logic usually requires LFO to have a base value vs current value
-                    // Since LFO class is simple, we might need to extend it or just hack it here.
-                    // For simplicity in this "tiny" implementation, we won't strictly modulate LFO rates continuously 
-                    // unless LFO class supports "modulate(param, val)". 
-                    // Let's skip LFO-on-LFO modulation for V1 to ensure stability, or implement simple offsets.
-                }
-            });
+            // Target Map: 4=L1R, 5=L1A, 6=L2R, 7=L2A, 8=L3R
+            if (lfoModulations[0]) fx.lfos[0].rate += lfoModulations[0] * 10;
+            if (lfoModulations[1]) fx.lfos[0].amount += lfoModulations[1];
+            if (lfoModulations[2]) fx.lfos[1].rate += lfoModulations[2] * 10;
+            if (lfoModulations[3]) fx.lfos[1].amount += lfoModulations[3];
+            if (lfoModulations[4]) fx.lfos[2].rate += lfoModulations[4] * 10;
 
             // 4. Update Audio Engine
             effectiveParams.forEach((val, idx) => {
@@ -92,12 +98,12 @@ export class EffectsManager {
         }
     }
 
-    toggleMatrix(fxId, lfoIdx, targetIdx) {
+    toggleMatrix(fxId, sourceIdx, targetIdx) {
         const fx = this.effects[fxId];
         if (fx) {
-            fx.matrix[lfoIdx][targetIdx] = fx.matrix[lfoIdx][targetIdx] ? 0 : 1;
+            fx.matrix[sourceIdx][targetIdx] = fx.matrix[sourceIdx][targetIdx] ? 0 : 1;
         }
-        return fx.matrix[lfoIdx][targetIdx];
+        return fx.matrix[sourceIdx][targetIdx];
     }
     
     getEffectState(fxId) {
