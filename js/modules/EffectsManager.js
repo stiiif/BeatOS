@@ -7,6 +7,14 @@ export class EffectsManager {
             this.createEffectState(0), // FX 1
             this.createEffectState(1)  // FX 2
         ];
+        
+        // Store live modulated values for UI visualization
+        // Structure: [FX_ID][TARGET_INDEX]
+        // 13 targets: P1..Mix (4) + LFO1(3) + LFO2(3) + LFO3(3)
+        this.liveValues = [
+            new Float32Array(13),
+            new Float32Array(13)
+        ];
     }
 
     createEffectState(id) {
@@ -19,67 +27,66 @@ export class EffectsManager {
                 new LFO(),
                 new LFO()
             ],
-            // 4th Source: Random (Software based Sample & Hold)
-            randomSource: { value: 0, holdTime: 0, rate: 2.0 },
-            
-            // Matrix: 4 sources (rows) x 9 targets (cols)
-            // Sources: LFO1, LFO2, LFO3, RND
-            // Targets: P1, P2, P3, Mix, L1R, L1A, L2R, L2A, L3R
-            matrix: Array(4).fill(null).map(() => Array(9).fill(0))
+            // Matrix: 3 sources (rows) x 13 targets (cols)
+            matrix: Array(3).fill(null).map(() => Array(13).fill(0))
         };
     }
 
     update(time) {
-        this.effects.forEach(fx => {
+        this.effects.forEach((fx, fxIndex) => {
             // 1. Calculate Source Values
             const lfoValues = fx.lfos.map(lfo => lfo.getValue(time));
             
-            // Calculate Random Source (S&H)
-            const rndStep = Math.floor(time * fx.randomSource.rate);
-            if (rndStep > fx.randomSource.holdTime) {
-                fx.randomSource.holdTime = rndStep;
-                fx.randomSource.value = (Math.random() * 2) - 1;
-            }
-            // Add Random to modulators array
-            const modulators = [...lfoValues, fx.randomSource.value];
+            // 2. Initialize Modulators Accumulator (13 targets)
+            let modulations = new Float32Array(13);
 
-            // 2. Resolve Targets (Accumulate modulation)
-            // Targets 0-3: Effect Params (P1, P2, P3, Mix)
-            // Targets 4-8: LFO Params
-            
-            let effectiveParams = [...fx.params];
-            let lfoModulations = Array(5).fill(0); 
-
-            // Apply Matrix Logic
-            fx.matrix.forEach((row, sourceIndex) => {
-                const modValue = modulators[sourceIndex];
+            // 3. Apply Matrix Logic
+            fx.matrix.forEach((row, lfoIndex) => {
+                const sourceValue = lfoValues[lfoIndex]; 
                 
                 row.forEach((isActive, targetIndex) => {
                     if (isActive) {
-                        const amount = 0.2 * modValue; // Scale modulation depth
-                        if (targetIndex < 4) {
-                            // Modulate Effect Param
-                            effectiveParams[targetIndex] += amount;
-                        } else {
-                            // Modulate LFO Param
-                            lfoModulations[targetIndex - 4] += amount;
-                        }
+                        modulations[targetIndex] += sourceValue * 0.2; // 0.2 depth scaling
                     }
                 });
             });
 
-            // 3. Apply Modulation to LFOs (Rate/Amount) for NEXT frame
-            // Target Map: 4=L1R, 5=L1A, 6=L2R, 7=L2A, 8=L3R
-            if (lfoModulations[0]) fx.lfos[0].rate += lfoModulations[0] * 10;
-            if (lfoModulations[1]) fx.lfos[0].amount += lfoModulations[1];
-            if (lfoModulations[2]) fx.lfos[1].rate += lfoModulations[2] * 10;
-            if (lfoModulations[3]) fx.lfos[1].amount += lfoModulations[3];
-            if (lfoModulations[4]) fx.lfos[2].rate += lfoModulations[4] * 10;
+            // 4. Calculate Final Effective Values & Update Audio/LFOs
+            
+            // --- Effect Parameters (Targets 0-3) ---
+            for(let i=0; i<4; i++) {
+                let val = fx.params[i] + modulations[i];
+                val = Math.max(0, Math.min(1, val)); // Clamp 0-1
+                
+                // Store for UI
+                this.liveValues[fxIndex][i] = val;
+                
+                // Update Audio Engine
+                this.audioEngine.setEffectParam(fx.id, i, val);
+            }
 
-            // 4. Update Audio Engine
-            effectiveParams.forEach((val, idx) => {
-                this.audioEngine.setEffectParam(fx.id, idx, val);
-            });
+            // --- LFO Parameters (Targets 4-12) ---
+            // Groups of 3: Rate, Amt, Wave (Targets 4,5,6 / 7,8,9 / 10,11,12)
+            for(let lfoIdx=0; lfoIdx<3; lfoIdx++) {
+                const targetBase = 4 + (lfoIdx * 3);
+                const lfo = fx.lfos[lfoIdx];
+
+                // Rate Modulation
+                // Visual only for now as LFO.js doesn't support complex FM
+                let baseRate = lfo.rate; 
+                let effRate = baseRate + (modulations[targetBase] * 10); 
+                effRate = Math.max(0.1, Math.min(20, effRate));
+                this.liveValues[fxIndex][targetBase] = effRate;
+
+                // Amount Modulation
+                let baseAmt = lfo.amount;
+                let effAmt = baseAmt + modulations[targetBase+1];
+                effAmt = Math.max(0, Math.min(1, effAmt));
+                this.liveValues[fxIndex][targetBase+1] = effAmt;
+                
+                // Wave Modulation (Ignored for now)
+                this.liveValues[fxIndex][targetBase+2] = 0; 
+            }
         });
     }
 
@@ -108,5 +115,9 @@ export class EffectsManager {
     
     getEffectState(fxId) {
         return this.effects[fxId];
+    }
+    
+    getLiveValues(fxId) {
+        return this.liveValues[fxId];
     }
 }

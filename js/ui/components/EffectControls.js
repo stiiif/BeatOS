@@ -2,7 +2,12 @@ export class EffectControls {
     constructor(effectsManager) {
         this.manager = effectsManager;
         this.container = document.getElementById('effectsControlsContainer');
-        this.activeLfos = [0, 0]; // Track active LFO tab for each FX (0, 1, or 2)
+        this.activeLfos = [0, 0]; // Active LFO Tab for FX A and FX B
+        this.isDragging = false;
+        
+        // Bind animate loop
+        this.animate = this.animate.bind(this);
+        requestAnimationFrame(this.animate);
     }
 
     render() {
@@ -18,6 +23,7 @@ export class EffectControls {
             
             const section = document.createElement('div');
             section.className = `mb-4 bg-neutral-900/50 rounded border ${borderColor} p-2 flex flex-col gap-2`;
+            section.id = `fx-section-${fxId}`;
             
             // Header
             const header = document.createElement('div');
@@ -41,20 +47,23 @@ export class EffectControls {
                 wrap.className = 'flex flex-col items-center';
                 wrap.innerHTML = `
                     <label class="text-[8px] text-neutral-500 mb-0.5 w-full text-left truncate">${paramNames[idx]}</label>
-                    <input type="range" min="0" max="1" step="0.01" value="${val}" class="w-full h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer">
+                    <input type="range" min="0" max="1" step="0.01" value="${val}" class="w-full h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer fx-param-slider" data-fx="${fxId}" data-target="${idx}">
                 `;
-                wrap.querySelector('input').oninput = (e) => {
+                const input = wrap.querySelector('input');
+                input.addEventListener('mousedown', () => this.isDragging = true);
+                input.addEventListener('mouseup', () => this.isDragging = false);
+                input.oninput = (e) => {
                     this.manager.setParam(fxId, idx, parseFloat(e.target.value));
                 };
                 knobsDiv.appendChild(wrap);
             });
             content.appendChild(knobsDiv);
 
-            // 2. MIDDLE: LFO Controls (Switched)
+            // 2. MIDDLE: LFO Controls (Switched Tabs)
             const lfoDiv = document.createElement('div');
             lfoDiv.className = 'w-24 shrink-0 flex flex-col border-l border-neutral-800 pl-2';
             
-            // LFO Tabs
+            // Tabs
             const lfoTabs = document.createElement('div');
             lfoTabs.className = 'flex gap-1 mb-2 bg-neutral-800 rounded p-0.5';
             [0, 1, 2].forEach(i => {
@@ -63,44 +72,21 @@ export class EffectControls {
                 btn.innerText = `L${i+1}`;
                 btn.onclick = () => {
                     this.activeLfos[fxId] = i;
-                    this.render(); // Re-render to update inputs
+                    this.render(); 
                 };
                 lfoTabs.appendChild(btn);
             });
             lfoDiv.appendChild(lfoTabs);
 
-            // Active LFO Controls
             const activeLfoIdx = this.activeLfos[fxId];
             const lfo = state.lfos[activeLfoIdx];
             
-            lfoDiv.innerHTML += `
-                <div class="flex flex-col gap-2">
-                    <div class="flex justify-between items-center">
-                        <span class="text-[8px] text-neutral-500">Wave</span>
-                        <select class="lfo-wave bg-transparent text-[8px] text-neutral-400 outline-none w-10 text-right">
-                            <option value="sine" ${lfo.wave==='sine'?'selected':''}>SIN</option>
-                            <option value="square" ${lfo.wave==='square'?'selected':''}>SQR</option>
-                            <option value="sawtooth" ${lfo.wave==='sawtooth'?'selected':''}>SAW</option>
-                            <option value="random" ${lfo.wave==='random'?'selected':''}>RND</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="text-[8px] text-neutral-500 block">Rate</label>
-                        <input type="range" class="lfo-rate w-full h-1 bg-neutral-700 rounded" min="0.1" max="20" step="0.1" value="${lfo.rate}">
-                    </div>
-                    <div>
-                        <label class="text-[8px] text-neutral-500 block">Amt</label>
-                        <input type="range" class="lfo-amt w-full h-1 bg-neutral-700 rounded" min="0" max="1" step="0.01" value="${lfo.amount}">
-                    </div>
-                </div>
-            `;
-            
-            // Bind LFO inputs dynamically after HTML injection
-            // Note: lfoTabs are lost by innerHTML overwrite, need to append them again or structure differently.
-            // Better to structure properly.
-            lfoDiv.innerHTML = '';
-            lfoDiv.appendChild(lfoTabs);
-            
+            // Map LFO param indices for visualization
+            // Rate index = 4 + (lfoIdx * 3)
+            // Amt index = 5 + (lfoIdx * 3)
+            const rateTargetIdx = 4 + (activeLfoIdx * 3);
+            const amtTargetIdx = 5 + (activeLfoIdx * 3);
+
             const controlsWrap = document.createElement('div');
             controlsWrap.className = "flex flex-col gap-2";
             controlsWrap.innerHTML = `
@@ -115,53 +101,57 @@ export class EffectControls {
                 </div>
                 <div>
                     <label class="text-[8px] text-neutral-500 block">Rate</label>
-                    <input type="range" class="lfo-rate w-full h-1 bg-neutral-700 rounded" min="0.1" max="20" step="0.1" value="${lfo.rate}">
+                    <input type="range" class="lfo-rate w-full h-1 bg-neutral-700 rounded fx-param-slider" min="0.1" max="20" step="0.1" value="${lfo.rate}" data-fx="${fxId}" data-target="${rateTargetIdx}">
                 </div>
                 <div>
                     <label class="text-[8px] text-neutral-500 block">Amt</label>
-                    <input type="range" class="lfo-amt w-full h-1 bg-neutral-700 rounded" min="0" max="1" step="0.01" value="${lfo.amount}">
+                    <input type="range" class="lfo-amt w-full h-1 bg-neutral-700 rounded fx-param-slider" min="0" max="1" step="0.01" value="${lfo.amount}" data-fx="${fxId}" data-target="${amtTargetIdx}">
                 </div>
             `;
             
+            const lfoRateInput = controlsWrap.querySelector('.lfo-rate');
+            const lfoAmtInput = controlsWrap.querySelector('.lfo-amt');
+            
+            [lfoRateInput, lfoAmtInput].forEach(inp => {
+                inp.addEventListener('mousedown', () => this.isDragging = true);
+                inp.addEventListener('mouseup', () => this.isDragging = false);
+            });
+
             controlsWrap.querySelector('.lfo-wave').onchange = (e) => this.manager.setLfoParam(fxId, activeLfoIdx, 'wave', e.target.value);
-            controlsWrap.querySelector('.lfo-rate').oninput = (e) => this.manager.setLfoParam(fxId, activeLfoIdx, 'rate', parseFloat(e.target.value));
-            controlsWrap.querySelector('.lfo-amt').oninput = (e) => this.manager.setLfoParam(fxId, activeLfoIdx, 'amount', parseFloat(e.target.value));
+            lfoRateInput.oninput = (e) => this.manager.setLfoParam(fxId, activeLfoIdx, 'rate', parseFloat(e.target.value));
+            lfoAmtInput.oninput = (e) => this.manager.setLfoParam(fxId, activeLfoIdx, 'amount', parseFloat(e.target.value));
             
             lfoDiv.appendChild(controlsWrap);
             content.appendChild(lfoDiv);
 
-            // 3. RIGHT: 4x9 Matrix (Pin Matrix Style)
+            // 3. RIGHT: 3x13 Matrix (Synthi Style)
             const matrixDiv = document.createElement('div');
             matrixDiv.className = 'flex-1 border-l border-neutral-800 pl-2 overflow-x-auto';
             
             const grid = document.createElement('div');
-            grid.className = 'grid grid-cols-9 gap-1';
-            // Custom tiny grid gap
+            grid.style.display = 'grid';
+            grid.style.gridTemplateColumns = 'repeat(13, minmax(0, 1fr))';
             grid.style.gap = '2px';
 
-            // 4 Rows (Sources): L1, L2, L3, RND
-            const sourceLabels = ['L1', 'L2', 'L3', 'RND'];
-            // 9 Cols (Targets): P1, P2, P3, Mix, L1R, L1A, L2R, L2A, L3R
-            // Tooltips
-            const targetTooltips = ['P1', 'P2', 'P3', 'Mix', 'L1 Rate', 'L1 Amt', 'L2 Rate', 'L2 Amt', 'L3 Rate'];
+            const sourceLabels = ['L1', 'L2', 'L3'];
+            const targetTooltips = [
+                'P1', 'P2', 'P3', 'Mix',
+                'L1 Rate', 'L1 Amt', 'L1 Wav',
+                'L2 Rate', 'L2 Amt', 'L2 Wav',
+                'L3 Rate', 'L3 Amt', 'L3 Wav'
+            ];
 
-            for(let row=0; row<4; row++) {
-                // Source Label (Left of row? No, matrix usually just grid)
-                // Let's add row headers visually? Or just tooltips?
-                // Pin matrix usually has labels on axes.
-                // Space is tight. Tooltips for now.
-                
-                for(let col=0; col<9; col++) {
+            // 3 Rows (LFOs)
+            for(let row=0; row<3; row++) {
+                for(let col=0; col<13; col++) {
                     const pin = document.createElement('div');
                     const isActive = state.matrix[row][col];
-                    // Pin Matrix Style: Circle with hole
-                    pin.className = `w-3 h-3 rounded-full border border-neutral-700 flex items-center justify-center cursor-pointer hover:border-white transition-colors ${isActive ? 'bg-white' : 'bg-neutral-900'}`;
                     
-                    // Inner dot for "hole" look if inactive
+                    pin.className = `w-2 h-2 rounded-full border border-neutral-700 flex items-center justify-center cursor-pointer hover:border-white transition-colors ${isActive ? 'bg-white' : 'bg-neutral-900'}`;
+                    
                     if (!isActive) {
-                        pin.innerHTML = '<div class="w-1 h-1 bg-neutral-800 rounded-full"></div>';
+                        pin.innerHTML = '<div class="w-0.5 h-0.5 bg-neutral-800 rounded-full"></div>';
                     } else {
-                        // Active pin color based on FX
                         pin.style.backgroundColor = fxId === 0 ? '#34d399' : '#c084fc';
                         pin.style.boxShadow = `0 0 4px ${fxId === 0 ? '#34d399' : '#c084fc'}`;
                     }
@@ -173,18 +163,27 @@ export class EffectControls {
                         this.render();
                     };
                     
+                    // Visual separation
+                    if (col === 3 || col === 6 || col === 9) {
+                        pin.style.marginRight = '3px';
+                    }
+
                     grid.appendChild(pin);
                 }
             }
             matrixDiv.appendChild(grid);
             
-            // Matrix Axis Labels (Bottom)
+            // Labels
             const axisX = document.createElement('div');
-            axisX.className = 'grid grid-cols-9 gap-1 mt-1 text-[6px] text-neutral-500 font-mono text-center';
+            axisX.style.display = 'grid';
+            axisX.style.gridTemplateColumns = 'repeat(13, minmax(0, 1fr))';
             axisX.style.gap = '2px';
-            ['P1','P2','P3','Mix','R1','A1','R2','A2','R3'].forEach(l => {
+            axisX.className = 'mt-1 text-[5px] text-neutral-500 font-mono text-center';
+            
+            ['P1','P2','P3','Mx', 'R','A','W', 'R','A','W', 'R','A','W'].forEach((l, idx) => {
                 const sp = document.createElement('span');
                 sp.innerText = l;
+                if (idx === 3 || idx === 6 || idx === 9) sp.style.marginRight = '3px';
                 axisX.appendChild(sp);
             });
             matrixDiv.appendChild(axisX);
@@ -193,5 +192,31 @@ export class EffectControls {
             section.appendChild(content);
             this.container.appendChild(section);
         });
+    }
+
+    animate() {
+        if (!this.container || this.isDragging) {
+            requestAnimationFrame(this.animate);
+            return;
+        }
+
+        // Update all sliders with "data-fx" and "data-target"
+        const sliders = this.container.querySelectorAll('.fx-param-slider');
+        sliders.forEach(slider => {
+            const fxId = parseInt(slider.dataset.fx);
+            const targetIdx = parseInt(slider.dataset.target);
+            
+            if (!isNaN(fxId) && !isNaN(targetIdx)) {
+                const liveValues = this.manager.getLiveValues(fxId);
+                if (liveValues) {
+                    const val = liveValues[targetIdx];
+                    if (Math.abs(slider.value - val) > 0.005) {
+                        slider.value = val;
+                    }
+                }
+            }
+        });
+
+        requestAnimationFrame(this.animate);
     }
 }
