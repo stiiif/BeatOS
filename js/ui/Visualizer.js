@@ -6,7 +6,7 @@ export class Visualizer {
         // Main canvas ID ignored now if we move to per-track logic, but kept for compatibility
         this.bufCanvas = document.getElementById(bufferCanvasId);
         if(this.bufCanvas) {
-            this.bufCtx = this.bufCanvas.getContext('2d');
+            this.bufCtx = this.bufCanvas.getContext('2d', { alpha: false }); // Optimization: Disable alpha if not needed for background
         }
         this.audioEngine = audioEngine;
         this.drawQueue = [];
@@ -20,10 +20,20 @@ export class Visualizer {
         // NEW: State Flags for Optimization
         this.isRunning = false;
         this.needsRedraw = false;
+        this.lastDrawTime = 0;
+        this.isVisible = true;
 
         // NEW: Event Subscriptions
         globalBus.on('playback:start', () => this.startLoop());
         globalBus.on('playback:stop', () => this.stopLoop());
+
+        // Handle visibility change
+        document.addEventListener('visibilitychange', () => {
+            this.isVisible = !document.hidden;
+            if (this.isVisible && this.isRunning) {
+                this.drawVisuals();
+            }
+        });
     }
 
     setTracks(tracks) {
@@ -74,15 +84,25 @@ export class Visualizer {
 
     triggerRedraw() {
         this.needsRedraw = true;
-        if (!this.isRunning) {
+        if (!this.isRunning && this.isVisible) {
             // Trigger a single frame if not currently looping
-            requestAnimationFrame(() => this.drawVisuals(true));
+            requestAnimationFrame((t) => this.drawVisuals(t, true));
         }
     }
 
-    drawVisuals(forceOnce = false) {
+    drawVisuals(timestamp, forceOnce = false) {
+        // Stop if not visible
+        if (!this.isVisible && !forceOnce) return;
+
         // Stop if not running, not forced, and no redraw requested
         if (!this.isRunning && !this.needsRedraw && !forceOnce) return;
+
+        // Throttle: Limit to ~30fps (33ms)
+        if (timestamp && (timestamp - this.lastDrawTime < 33) && !forceOnce) {
+            if (this.isRunning) requestAnimationFrame((t) => this.drawVisuals(t));
+            return;
+        }
+        this.lastDrawTime = timestamp;
 
         const audioCtx = this.audioEngine.getContext();
         const now = audioCtx ? audioCtx.currentTime : 0;
@@ -90,12 +110,21 @@ export class Visualizer {
         // 1. Clean up old events from queue
         this.drawQueue = this.drawQueue.filter(d => d.time > now - 0.5);
 
-        // 2. Fade out all track canvases
+        // 2. Fade out all track canvases (Only if there are any updates pending or recently happened)
+        // Optimization: Checking specific canvases instead of iterating all might be faster if tracks list is huge,
+        // but iterating 16-32 elements is negligible. 
+        // However, accessing DOM elements every frame is slow. Caching them is better.
+        // For now, we keep the DOM access but it's a potential bottleneck.
+        
+        // Only update track visuals if queue has items or recently cleared
+        // Simplified: Just update active ones.
+        
         for(let i=0; i<this.tracks.length; i++) {
             const canvas = document.getElementById(`vis-canvas-${i}`);
             if(canvas) {
-                const ctx = canvas.getContext('2d');
-                ctx.fillStyle = 'rgba(0,0,0,0.2)'; // Fade trail
+                const ctx = canvas.getContext('2d', { alpha: true }); // Alpha needed for fade
+                // Simple fade
+                ctx.fillStyle = 'rgba(0,0,0,0.2)'; 
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
         }
@@ -128,7 +157,7 @@ export class Visualizer {
 
         // Continue loop ONLY if running
         if (this.isRunning) {
-            requestAnimationFrame(() => this.drawVisuals());
+            requestAnimationFrame((t) => this.drawVisuals(t));
         }
     }
 
@@ -142,7 +171,7 @@ export class Visualizer {
         const audioCtx = this.audioEngine.getContext();
 
         // Clear Background
-        ctx.fillStyle = '#0f0f0f'; // Very dark grey instead of pure black for softer look
+        ctx.fillStyle = '#0f0f0f'; 
         ctx.fillRect(0, 0, w, h);
 
         // --- SPECTRUM MODE ---
@@ -168,7 +197,6 @@ export class Visualizer {
         let sampleStart = t.params.sampleStart || 0;
         let sampleEnd = t.params.sampleEnd !== undefined ? t.params.sampleEnd : 1;
         
-        // Ensure start < end
         if (sampleStart > sampleEnd) {
             const temp = sampleStart; sampleStart = sampleEnd; sampleEnd = temp;
         }
@@ -176,7 +204,7 @@ export class Visualizer {
         // Calculate sample indices
         const startIdx = Math.floor(sampleStart * data.length);
         const endIdx = Math.floor(sampleEnd * data.length);
-        const windowLength = Math.max(1, endIdx - startIdx); // Prevent division by zero
+        const windowLength = Math.max(1, endIdx - startIdx); 
         
         switch(this.waveStyle) {
             case 'mirror': this.drawStyleMirror(ctx, data, w, h, startIdx, windowLength); break;
@@ -198,7 +226,7 @@ export class Visualizer {
         const amp = h / 2;
         const mid = h / 2;
 
-        // Create Gradient
+        // Optimization: Pre-calculate or cache gradient if possible, but creating here is ok for now.
         const grad = ctx.createLinearGradient(0, 0, 0, h);
         grad.addColorStop(0, '#10b981');   // Emerald top
         grad.addColorStop(0.5, '#34d399'); // Lighter middle
@@ -207,15 +235,20 @@ export class Visualizer {
         ctx.fillStyle = grad;
         ctx.beginPath();
 
+        // Optimization: Downsample drawing resolution if width is large
+        // Or simply iterate pixels
         for (let i = 0; i < w; i++) {
             let min = 1.0;
             let max = -1.0;
             
             const chunkStart = startIdx + (i * step);
-            // Safety check for bounds
             if (chunkStart >= data.length) break;
 
-            for (let j = 0; j < step; j++) {
+            // Sample optimization: Don't check every sample if step is huge
+            // Check every Nth sample if step > 100
+            const innerStep = step > 50 ? Math.floor(step / 10) : 1;
+
+            for (let j = 0; j < step; j += innerStep) {
                 const idx = chunkStart + j;
                 if (idx < data.length) {
                     const datum = data[idx];
@@ -223,11 +256,9 @@ export class Visualizer {
                     if (datum > max) max = datum;
                 }
             }
-            // Clamp to avoid drawing nothing on silence
             if (max < min) { max = 0.01; min = -0.01; }
             
-            // Draw vertical slice
-            const y1 = mid + (min * amp * 0.9); // 0.9 to leave some padding
+            const y1 = mid + (min * amp * 0.9);
             const y2 = mid + (max * amp * 0.9);
             ctx.rect(i, y1, 1, Math.max(1, y2 - y1));
         }
@@ -253,7 +284,9 @@ export class Visualizer {
             if (chunkStart >= data.length) break;
 
             let count = 0;
-            for (let j = 0; j < step; j++) {
+            const innerStep = step > 50 ? Math.floor(step / 10) : 1;
+
+            for (let j = 0; j < step; j += innerStep) {
                 const idx = chunkStart + j;
                 if (idx < data.length) {
                     val += data[idx];
@@ -267,7 +300,7 @@ export class Visualizer {
             else ctx.lineTo(i, y);
         }
         ctx.stroke();
-        ctx.shadowBlur = 0;
+        ctx.shadowBlur = 0; // Reset
     }
 
     // Style 3: Digital Bars
@@ -281,13 +314,18 @@ export class Visualizer {
 
         ctx.fillStyle = '#06b6d4'; // Cyan
 
+        // Batch drawing rectangles is harder with varying opacity, but we can group them
+        // For now, minimizing logic inside loop
+        
         for (let i = 0; i < totalBars; i++) {
             let rms = 0;
             const chunkStart = startIdx + (i * step);
             if (chunkStart >= data.length) break;
 
             let count = 0;
-            for (let j = 0; j < step; j++) {
+            const innerStep = step > 50 ? Math.floor(step / 10) : 1;
+
+            for (let j = 0; j < step; j += innerStep) {
                 const idx = chunkStart + j;
                 if (idx < data.length) {
                     const s = data[idx];
@@ -297,11 +335,10 @@ export class Visualizer {
             }
             if (count > 0) rms = Math.sqrt(rms / count);
             
-            const height = Math.max(2, rms * h * 1.5); // Boost gain slightly
+            const height = Math.max(2, rms * h * 1.5); 
             const x = i * (barWidth + gap);
             const y = mid - (height / 2);
             
-            // Opacity based on height for depth
             ctx.globalAlpha = Math.min(1, 0.4 + rms * 2);
             ctx.fillRect(x, y, barWidth, height);
         }
@@ -315,7 +352,7 @@ export class Visualizer {
         const mid = h / 2;
 
         ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-        ctx.lineWidth = 0.5; // Sub-pixel rendering feel
+        ctx.lineWidth = 0.5;
         ctx.beginPath();
 
         for (let i = 0; i < w; i++) {
@@ -341,9 +378,15 @@ export class Visualizer {
         const barWidth = (w / bufferLength) * 2.5; 
         let x = 0;
 
+        // Optimization: Use Path for single color fill if possible, but spectrum is multi-colored usually.
+        // For now, just reduce draw calls by skipping very low values?
+        
         for(let i = 0; i < bufferLength; i++) {
-            const barHeight = (dataArray[i] / 255) * h;
-            const hue = 200 + ((i / bufferLength) * 120); // Blue to Purple range
+            const val = dataArray[i];
+            if (val < 5) continue; // Skip silent bands
+
+            const barHeight = (val / 255) * h;
+            const hue = 200 + ((i / bufferLength) * 120); 
             ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
             ctx.fillRect(x, h - barHeight, barWidth, barHeight);
 
@@ -357,10 +400,10 @@ export class Visualizer {
         ctx.font = '10px monospace';
         
         if (t && t.type === 'simple-drum') {
-            ctx.fillStyle = '#f97316'; // orange
+            ctx.fillStyle = '#f97316'; 
             ctx.fillText("909 ENGINE ACTIVE", 10, 40);
         } else if (t && t.type === 'automation') {
-            ctx.fillStyle = '#818cf8'; // indigo
+            ctx.fillStyle = '#818cf8'; 
             ctx.fillText("AUTOMATION TRACK", 10, 40);
         } else {
             ctx.fillText("No Buffer Data", 10, 40);
@@ -374,22 +417,25 @@ export class Visualizer {
     }
 
     drawOverlays(ctx, t, w, h, time, start, end) {
-        // Calculate LFO Modulation for Visualization
+        // Calculate LFO Modulation
         let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0, sampleStart:0, sampleEnd:0 };
         
+        // Only calculate active LFOs
         t.lfos.forEach(lfo => {
-            const v = lfo.getValue(time);
-            if(mod[lfo.target] !== undefined) mod[lfo.target] += v;
+            if (lfo.amount > 0 && lfo.target !== 'none') {
+                const v = lfo.getValue(time);
+                if(mod[lfo.target] !== undefined) mod[lfo.target] += v;
+            }
         });
 
         const p = t.params;
         
-        // --- Calculate ACTIVE Window (Parameter + LFO) ---
+        // --- Active Window ---
         let actStart = Math.max(0, Math.min(1, (p.sampleStart || 0) + mod.sampleStart));
         let actEnd = Math.max(0, Math.min(1, (p.sampleEnd !== undefined ? p.sampleEnd : 1) + mod.sampleEnd));
         if (actStart > actEnd) { const temp = actStart; actStart = actEnd; actEnd = temp; }
         
-        // --- Calculate View Window (Zoom) ---
+        // --- View Window ---
         const viewStart = start;
         const viewEnd = end;
         const viewRange = Math.max(0.0001, viewEnd - viewStart);
@@ -398,9 +444,8 @@ export class Visualizer {
             return ((absPos - viewStart) / viewRange) * w;
         };
 
-        // --- Calculate Playhead Position ---
+        // --- Playhead ---
         const effectivePos = (p.scanSpeed !== 0) ? t.playhead : p.position;
-        
         let relativePos = effectivePos + mod.position;
         relativePos = Math.max(0, Math.min(1, relativePos));
         
@@ -411,13 +456,12 @@ export class Visualizer {
         const finalGrainSizeSec = Math.max(0.01, p.grainSize + mod.grainSize);
         const finalGrainSizeFrac = finalGrainSizeSec / bufDur;
         
-        // Map to Pixel Coords
         const posPx = mapToView(finalPos);
         const grainPx = Math.max(2, (finalGrainSizeFrac / viewRange) * w); 
         
         const finalSpray = Math.max(0, p.spray + mod.spray);
         
-        // 1. Draw Active Window LFO Movement
+        // 1. Active Window
         if (Math.abs(actStart - viewStart) > 0.001 || Math.abs(actEnd - viewEnd) > 0.001) {
             const lfoStartPx = mapToView(actStart);
             const lfoEndPx = mapToView(actEnd);
@@ -428,15 +472,16 @@ export class Visualizer {
             
             ctx.strokeStyle = 'rgba(100, 200, 255, 0.5)';
             ctx.lineWidth = 1;
-            if (lfoStartPx > 0 && lfoStartPx < w) { ctx.beginPath(); ctx.moveTo(lfoStartPx, 0); ctx.lineTo(lfoStartPx, h); ctx.stroke(); }
-            if (lfoEndPx > 0 && lfoEndPx < w) { ctx.beginPath(); ctx.moveTo(lfoEndPx, 0); ctx.lineTo(lfoEndPx, h); ctx.stroke(); }
+            ctx.beginPath();
+            if (lfoStartPx > 0 && lfoStartPx < w) { ctx.moveTo(lfoStartPx, 0); ctx.lineTo(lfoStartPx, h); }
+            if (lfoEndPx > 0 && lfoEndPx < w) { ctx.moveTo(lfoEndPx, 0); ctx.lineTo(lfoEndPx, h); }
+            ctx.stroke();
         }
 
-        // 2. Draw Spray Range
+        // 2. Spray Range
         if (finalSpray > 0) {
             const sprayLeftAbs = Math.max(0, finalPos - finalSpray);
             const sprayRightAbs = Math.min(1, finalPos + finalSpray);
-            
             const sprayLeftPx = mapToView(sprayLeftAbs);
             const sprayRightPx = mapToView(sprayRightAbs);
             
@@ -446,14 +491,13 @@ export class Visualizer {
             if (sW > 0) ctx.fillRect(sX, 0, sW, h);
         }
 
-        // 3. Draw Density/Overlap Indicator
+        // 3. Density/Overlap Indicator
         const rawOverlap = (p.overlap || 0) + mod.overlap;
         
         if (rawOverlap > 0.01) {
             const displayOverlap = Math.max(0.1, rawOverlap);
             const stackCount = Math.ceil(displayOverlap);
             const barHeight = 4;
-            const barSpacing = 1;
             const baseAlpha = 0.6;
 
             for(let i=0; i<stackCount; i++) {
@@ -463,8 +507,8 @@ export class Visualizer {
                     if (frac > 0.01) alpha = baseAlpha * frac;
                 }
                 
-                ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`; // Green
-                const y = h - 4 - (i * (barHeight + barSpacing));
+                ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`;
+                const y = h - 4 - (i * 5); // 4 height + 1 space
                 if (y > 0) {
                     ctx.fillRect(Math.max(0, posPx - grainPx/2), y, grainPx, barHeight);
                 }
@@ -472,6 +516,8 @@ export class Visualizer {
         } else {
             const finalDensity = Math.max(1, (p.density || 20) + mod.density);
             const densityHeight = Math.min(h, (finalDensity / 60) * h); 
+            
+            // Optimization: Single gradient create if not cached
             const glow = ctx.createLinearGradient(0, h - densityHeight, 0, h);
             glow.addColorStop(0, 'rgba(6, 182, 212, 0.9)'); 
             glow.addColorStop(1, 'rgba(6, 182, 212, 0.1)'); 
@@ -483,7 +529,7 @@ export class Visualizer {
             ctx.fillRect(Math.max(0, posPx - grainPx/2), h - densityHeight, grainPx, 2);
         }
 
-        // 4. Draw Position Head (White Line)
+        // 4. Position Head
         if (posPx >= 0 && posPx <= w) {
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
             ctx.lineWidth = 1;

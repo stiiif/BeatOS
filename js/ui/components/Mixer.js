@@ -1,9 +1,8 @@
-// ... (imports)
+// js/ui/components/Mixer.js
 import { TRACKS_PER_GROUP } from '../../utils/constants.js';
 import { globalBus } from '../../events/EventBus.js';
 
 export class Mixer {
-    // ... (constructor and other methods)
     constructor(containerSelector, trackManager, audioEngine) {
         this.container = document.querySelector(containerSelector);
         this.trackManager = trackManager;
@@ -40,18 +39,36 @@ export class Mixer {
 
         // State Flag
         this.isMetering = false;
+        this.isVisible = true; // Track visibility state
 
         // Event Subscriptions
         globalBus.on('playback:start', () => {
             if (!this.isMetering) {
                 this.isMetering = true;
-                this.animateMeters();
+                if (this.isVisible) this.animateMeters();
             }
         });
         
         globalBus.on('playback:stop', () => {
             this.isMetering = false;
-            // Loop will terminate naturally on next frame check
+            if (this.animationFrameId) {
+                cancelAnimationFrame(this.animationFrameId);
+                this.animationFrameId = null;
+            }
+            this.clearMeters();
+        });
+
+        // Handle Visibility Change to save resources
+        document.addEventListener('visibilitychange', () => {
+            this.isVisible = !document.hidden;
+            if (this.isVisible) {
+                if (this.isMetering) this.animateMeters();
+            } else {
+                if (this.animationFrameId) {
+                    cancelAnimationFrame(this.animationFrameId);
+                    this.animationFrameId = null;
+                }
+            }
         });
     }
 
@@ -169,7 +186,7 @@ export class Mixer {
         this.updateAllTrackStates();
         
         // Start Meter Loop if already playing and flagged
-        if (this.audioEngine.getContext() && this.audioEngine.getContext().state === 'running' && this.isMetering) {
+        if (this.audioEngine.getContext() && this.audioEngine.getContext().state === 'running' && this.isMetering && this.isVisible) {
              this.animateMeters();
         }
     }
@@ -194,7 +211,7 @@ export class Mixer {
 
     // --- ANIMATION LOOP FOR METERS (Single Canvas) ---
     animateMeters(timestamp) { // Accept timestamp
-        if (!this.isRendered || !this.meterCtx || !this.meterOverlay) return;
+        if (!this.isRendered || !this.meterCtx || !this.meterOverlay || !this.isVisible) return;
 
         // CHECK FLAG
         if (!this.isMetering) {
@@ -212,62 +229,93 @@ export class Mixer {
         // Clear the entire overlay
         this.meterCtx.clearRect(0, 0, this.meterOverlay.width, this.meterOverlay.height);
 
+        // Pre-define segment gap logic
+        const segHeight = 2;
+        const gap = 1;
+        const totalSegH = segHeight + gap;
+
         // Iterate Registry
         this.meterRegistry.forEach((meta, id) => {
             if (!meta.analyser) return;
             
             const el = meta.el;
-            
-            // Calculate absolute position relative to mixer-container
-            // Use getBoundingClientRect for reliability across scroll and flex contexts
             const elRect = el.getBoundingClientRect();
             const container = this.container.querySelector('.mixer-container');
             const containerRect = container.getBoundingClientRect();
             
-            // Calculate position relative to container, accounting for scroll
+            // Skip invisible elements (basic culling)
+            if (elRect.right < containerRect.left || elRect.left > containerRect.right) return;
+
             const x = (elRect.left - containerRect.left) + container.scrollLeft;
             const y = (elRect.top - containerRect.top) + container.scrollTop;
             
-            // Adjust for internal meter position (left: 2px, top: 2%, height: 96%)
             const meterX = x + 2; 
-            const meterH = el.offsetHeight * 0.96; // 96% height
-            const meterY = y + (el.offsetHeight * 0.02); // 2% top margin
-            const meterW = 4; // Width defined in CSS logic
+            const meterH = el.offsetHeight * 0.96; 
+            const meterY = y + (el.offsetHeight * 0.02); 
+            const meterW = 4; 
             
-            // Audio Processing
+            // Audio Processing (RMS)
             const bufferLength = meta.analyser.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
             meta.analyser.getByteTimeDomainData(dataArray);
 
-            // Calculate RMS
             let sum = 0;
-            for(let i = 0; i < bufferLength; i++) {
+            // Optimize loop? bufferLength is usually 1024/2048. 
+            // We can step by 4 or 8 to approx RMS for visual speed.
+            for(let i = 0; i < bufferLength; i += 4) { // Step optimization
                 const val = (dataArray[i] - 128) / 128.0;
                 sum += val * val;
             }
-            const rms = Math.sqrt(sum / bufferLength);
-            
-            // Scale RMS
+            const rms = Math.sqrt(sum / (bufferLength / 4));
             const value = Math.min(1, rms * 4); 
             
-            // Draw LED segments on the single context
-            const segHeight = 2;
-            const gap = 1;
-            const numSegs = Math.floor(meterH / (segHeight + gap));
-            const activeSegs = Math.floor(value * numSegs);
+            if (value < 0.01) return; // Skip drawing if silent
 
-            for (let i = 0; i < numSegs; i++) {
-                const segmentY = (meterY + meterH) - (i * (segHeight + gap));
-                if (i < activeSegs) {
-                    // Color Gradient
-                    if (i > numSegs * 0.9) this.meterCtx.fillStyle = '#ef4444'; // Red
-                    else if (i > numSegs * 0.7) this.meterCtx.fillStyle = '#eab308'; // Yellow
-                    else this.meterCtx.fillStyle = '#10b981'; // Green
-                } else {
-                    this.meterCtx.fillStyle = '#1a1a1a'; // Inactive
-                }
-                this.meterCtx.fillRect(meterX, segmentY, meterW, segHeight);
+            // OPTIMIZED DRAWING:
+            // 1. Draw Solid Colored Bar(s)
+            const activeH = value * meterH;
+            const topY = (meterY + meterH) - activeH;
+            
+            // Define Zones
+            const redThresh = 0.9;
+            const yelThresh = 0.7;
+            
+            // Green Base (always drawn if value > 0)
+            this.meterCtx.fillStyle = '#10b981';
+            let greenH = activeH;
+            if (value > yelThresh) greenH = yelThresh * meterH;
+            this.meterCtx.fillRect(meterX, (meterY + meterH) - greenH, meterW, greenH);
+
+            // Yellow Middle
+            if (value > yelThresh) {
+                this.meterCtx.fillStyle = '#eab308';
+                let yellowTop = value;
+                if (value > redThresh) yellowTop = redThresh;
+                const yellowH = (yellowTop - yelThresh) * meterH;
+                this.meterCtx.fillRect(meterX, (meterY + meterH) - (yellowTop * meterH), meterW, yellowH);
             }
+
+            // Red Top
+            if (value > redThresh) {
+                this.meterCtx.fillStyle = '#ef4444';
+                const redH = (value - redThresh) * meterH;
+                this.meterCtx.fillRect(meterX, topY, meterW, redH);
+            }
+
+            // 2. Draw "Grid" (Black lines to simulate segments) - BATCHED
+            this.meterCtx.fillStyle = '#1a1a1a'; // Gap color (same as background)
+            
+            const numSegs = Math.floor(meterH / totalSegH);
+            
+            // Optimization: create a path for all gaps
+            this.meterCtx.beginPath();
+            for (let i = 0; i < numSegs; i++) {
+                const gapY = (meterY + meterH) - (i * totalSegH) - gap; // Position of gap
+                if (gapY >= topY) { 
+                     this.meterCtx.rect(meterX, gapY, meterW, gap);
+                }
+            }
+            this.meterCtx.fill();
         });
 
         this.animationFrameId = requestAnimationFrame(this.animateMeters);
