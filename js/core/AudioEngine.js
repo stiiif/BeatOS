@@ -7,7 +7,14 @@ export class AudioEngine {
         this.onBpmChange = null;
         this.masterBus = null;
         this.groupBuses = [];
+        this.returnBuses = []; // New Return Buses
         this.driveCurves = {};
+        
+        // Effect State needed for parameter mapping
+        this.effectsState = [
+            { params: [0.5, 0.5, 0.5] }, // FX 1 (Delay)
+            { params: [0.5, 0.5, 0.5] }  // FX 2 (Reverb)
+        ];
     }
 
     async initialize() {
@@ -20,6 +27,11 @@ export class AudioEngine {
         
         this.generateDriveCurves();
         this.initMasterBus();
+        
+        // Initialize Return Buses (Before Tracks/Groups usually, but parallel is fine)
+        this.initReturnBus(0); // Return A (Delay)
+        this.initReturnBus(1); // Return B (Reverb)
+
         // Initialize 4 Group Buses
         for(let i=0; i<4; i++) {
             this.initGroupBus(i);
@@ -90,6 +102,171 @@ export class AudioEngine {
         this.masterBus = { input, volume, limiter, analyser };
     }
 
+    // New Return Bus Initialization
+    initReturnBus(index) {
+        if(!this.audioCtx) return;
+        const ctx = this.audioCtx;
+        const input = ctx.createGain();
+
+        // --- EFFECT DSP ---
+        const fxInput = ctx.createGain();
+        const fxOutput = ctx.createGain();
+        let fxNodes = {};
+
+        input.connect(fxInput);
+
+        if (index === 0) {
+            // EFFECT A: STEREO DELAY
+            const delay = ctx.createDelay(5.0);
+            const feedback = ctx.createGain();
+            const filter = ctx.createBiquadFilter();
+            
+            filter.type = 'lowpass';
+            filter.frequency.value = 2000;
+            delay.delayTime.value = 0.3;
+            feedback.gain.value = 0.4;
+
+            // Signal flow: Input -> Delay -> Filter -> Output
+            // Feedback: Filter -> Feedback -> Delay
+            fxInput.connect(delay);
+            delay.connect(filter);
+            filter.connect(fxOutput);
+            filter.connect(feedback);
+            feedback.connect(delay);
+
+            fxNodes = { delay, feedback, filter };
+        } else {
+            // EFFECT B: REVERB (Convolution)
+            const convolver = ctx.createConvolver();
+            const tone = ctx.createBiquadFilter();
+            tone.type = 'highshelf';
+            tone.frequency.value = 4000;
+            tone.gain.value = -5; // Darker reverb by default
+
+            // Generate simple impulse response
+            this.generateReverbIR(convolver, 2.0); 
+
+            fxInput.connect(tone);
+            tone.connect(convolver);
+            convolver.connect(fxOutput);
+
+            fxNodes = { convolver, tone };
+        }
+
+        // --- STANDARD STRIP CHAIN ---
+        // EQ
+        const eqLow = ctx.createBiquadFilter(); eqLow.type = 'lowshelf'; eqLow.frequency.value = 250;
+        const eqMid = ctx.createBiquadFilter(); eqMid.type = 'peaking'; eqMid.frequency.value = 1000; eqMid.Q.value = 1;
+        const eqHigh = ctx.createBiquadFilter(); eqHigh.type = 'highshelf'; eqHigh.frequency.value = 4000;
+        
+        // Drive
+        const preDrive = ctx.createGain(); 
+        const shaper = ctx.createWaveShaper();
+        shaper.curve = this.driveCurves['Soft Clipping']; 
+        const postDrive = ctx.createGain(); 
+        
+        // Compressor
+        const comp = ctx.createDynamicsCompressor();
+        
+        // Volume/Pan
+        const vol = ctx.createGain();
+        const pan = ctx.createStereoPanner();
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048;
+
+        // Chain Connections
+        fxOutput.connect(eqLow);
+        eqLow.connect(eqMid);
+        eqMid.connect(eqHigh);
+        eqHigh.connect(preDrive);
+        preDrive.connect(shaper);
+        shaper.connect(postDrive);
+        postDrive.connect(comp);
+        comp.connect(vol);
+        vol.connect(pan);
+        pan.connect(analyser); // Metering tap
+
+        // Route to Master
+        if (this.masterBus) {
+            pan.connect(this.masterBus.input);
+        }
+
+        // Store Bus Object
+        this.returnBuses[index] = {
+            id: `return_${index}`,
+            input,
+            fxNodes,
+            eq: { low: eqLow, mid: eqMid, high: eqHigh },
+            drive: { input: preDrive, shaper, output: postDrive },
+            comp,
+            volume: vol,
+            pan,
+            analyser,
+            // Allow returns to send to each other (Cross-feedback)
+            // Note: Must be careful with feedback loops. 
+            // Return 0 sends to Return 1, Return 1 sends to Return 0.
+            sendA: null, // Self send (usually disabled)
+            sendB: null,
+            params: { // Default dummy params for Mixer UI to read
+                volume: 0.8, pan: 0, 
+                gain: 1.0, eqLow: 0, eqMid: 0, eqHigh: 0, eqMidFreq: 1000,
+                drive: 0, comp: 0, sendA: 0, sendB: 0
+            }
+        };
+
+        // Initialize Cross-Sends for Returns
+        this.initReturnCrossSends(index);
+    }
+
+    initReturnCrossSends(index) {
+        // Create Send Gains for this Return Track
+        const ctx = this.audioCtx;
+        const bus = this.returnBuses[index];
+        
+        // Send A Gain
+        const sendA = ctx.createGain();
+        sendA.gain.value = 0;
+        bus.sendA = sendA;
+        
+        // Send B Gain
+        const sendB = ctx.createGain();
+        sendB.gain.value = 0;
+        bus.sendB = sendB;
+
+        // Connect from Pre-Fader (post-comp) or Post-Fader? 
+        // Standard is Post-Fader.
+        bus.volume.connect(sendA);
+        bus.volume.connect(sendB);
+
+        // Note: We connect destinations lazily or check if other return exists
+        // Since we init 0 then 1, connection logic should happen after both exist.
+        // We will call `connectReturnBuses` at the end of initialize.
+    }
+
+    connectReturnBuses() {
+        // Connect Return 0 Send B -> Return 1 Input
+        if (this.returnBuses[0] && this.returnBuses[1]) {
+            this.returnBuses[0].sendB.connect(this.returnBuses[1].input);
+            this.returnBuses[1].sendA.connect(this.returnBuses[0].input);
+        }
+    }
+
+    generateReverbIR(convolver, duration) {
+        const ctx = this.audioCtx;
+        const sampleRate = ctx.sampleRate;
+        const length = sampleRate * duration;
+        const impulse = ctx.createBuffer(2, length, sampleRate);
+        
+        for (let channel = 0; channel < 2; channel++) {
+            const channelData = impulse.getChannelData(channel);
+            for (let i = 0; i < length; i++) {
+                const decay = Math.pow(1 - i / length, 2); // Quadratic decay
+                channelData[i] = (Math.random() * 2 - 1) * decay;
+            }
+        }
+        convolver.buffer = impulse;
+    }
+
     initGroupBus(index) {
         if(!this.audioCtx) return;
         const ctx = this.audioCtx;
@@ -136,13 +313,26 @@ export class AudioEngine {
             volume.connect(this.masterBus.input);
         }
         
+        // Groups also need Sends! (Often Groups send to FX)
+        // Let's add Sends to Groups too for completeness
+        const sendA = ctx.createGain(); sendA.gain.value = 0;
+        const sendB = ctx.createGain(); sendB.gain.value = 0;
+        volume.connect(sendA);
+        volume.connect(sendB);
+        
+        // Connect to Returns if they exist
+        if (this.returnBuses[0]) sendA.connect(this.returnBuses[0].input);
+        if (this.returnBuses[1]) sendB.connect(this.returnBuses[1].input);
+
         this.groupBuses[index] = {
             input,
             eq: { low: eqLow, mid: eqMid, high: eqHigh },
             drive: { input: preDriveGain, shaper: shaper, output: postDriveGain },
             comp: compressor,
             volume,
-            analyser
+            analyser,
+            sendA, sendB,
+            params: { sendA: 0, sendB: 0 } // For Group Mixer UI
         };
     }
 
@@ -175,6 +365,10 @@ export class AudioEngine {
         const vol = ctx.createGain();
         const pan = ctx.createStereoPanner();
         
+        // Sends
+        const sendA = ctx.createGain();
+        const sendB = ctx.createGain();
+        
         // Analyser for visualizer
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 2048;
@@ -193,40 +387,48 @@ export class AudioEngine {
         comp.connect(vol);
         vol.connect(pan);
         
-        // Route to appropriate Group (Critical Logic)
+        // Connect Sends (Post-Fader, Pre-Pan typically, but Post-Pan preserves panning in FX)
+        // Let's do Post-Vol (Pre-Pan) for now as StereoPanner is end of chain
+        vol.connect(sendA);
+        vol.connect(sendB);
+        
+        // Connect to Returns
+        if (this.returnBuses[0]) sendA.connect(this.returnBuses[0].input);
+        if (this.returnBuses[1]) sendB.connect(this.returnBuses[1].input);
+        
+        // Route to appropriate Group
         const groupIndex = Math.floor(track.id / TRACKS_PER_GROUP);
         
         if (this.groupBuses[groupIndex]) {
             pan.connect(this.groupBuses[groupIndex].input);
         } else if (this.masterBus) {
-            // Fallback to master if group unavailable
             pan.connect(this.masterBus.input);
         } else {
-            // Fallback to hardware output (only if init order is wrong)
             pan.connect(ctx.destination);
         }
         
-        // Connect Analyser (Side-chain / Tap)
-        // This is correct: Analyser receives post-pan signal for specific track
+        // Connect Analyser
         pan.connect(analyser);
 
-        // Apply Defaults / Stored Values
+        // Apply Defaults
         hp.frequency.value = this.getMappedFrequency(track.params.hpFilter || 20, 'hp');
         lp.frequency.value = this.getMappedFrequency(track.params.filter || 20000, 'lp');
         vol.gain.value = track.params.volume || 0.8;
         pan.pan.value = track.params.pan || 0;
+        sendA.gain.value = track.params.sendA || 0;
+        sendB.gain.value = track.params.sendB || 0;
 
-        // Store references for automation/UI
+        // Store references
         track.bus = { 
             input, trim, hp, lp, 
             eq: { low: eqLow, mid: eqMid, high: eqHigh },
             drive: { input: preDrive, shaper },
-            comp, vol, pan, analyser 
+            comp, vol, pan, analyser,
+            sendA, sendB
         };
     }
 
     setDriveAmount(node, amount) {
-        // Simple 0 to +20dB boost into shaper
         const gain = 1 + (amount * 20); 
         node.gain.value = gain;
     }
@@ -236,7 +438,6 @@ export class AudioEngine {
             node.ratio.value = 1;
             node.threshold.value = 0;
         } else {
-            // One-knob compression logic
             node.ratio.value = 1 + (amount * 12);
             node.threshold.value = 0 - (amount * 40);
         }
@@ -252,6 +453,47 @@ export class AudioEngine {
         norm = Math.max(0, Math.min(1, norm));
         if (type === 'lp') return min + (max - min) * Math.pow(norm, 3);
         else return min + (max - min) * (1 - Math.pow(1 - norm, 3));
+    }
+
+    // New: Method to set Effect Parameters dynamically from EffectsManager
+    setEffectParam(fxIndex, paramIndex, value) {
+        if (!this.returnBuses[fxIndex]) return;
+        const nodes = this.returnBuses[fxIndex].fxNodes;
+        
+        // Clamp value 0-1
+        const v = Math.max(0, Math.min(1, value));
+
+        if (fxIndex === 0) { // DELAY
+            if (paramIndex === 0) { // Time
+                // 0 to 1.0s logarithmic
+                const time = 0.01 + (v * 0.99);
+                nodes.delay.delayTime.setTargetAtTime(time, this.audioCtx.currentTime, 0.05);
+            } else if (paramIndex === 1) { // Feedback
+                // 0 to 0.95 (don't explode)
+                const fb = v * 0.95;
+                nodes.feedback.gain.setTargetAtTime(fb, this.audioCtx.currentTime, 0.05);
+            } else if (paramIndex === 2) { // Filter (Color)
+                // LP 200Hz to 15000Hz
+                const freq = 200 + (v * 14800);
+                nodes.filter.frequency.setTargetAtTime(freq, this.audioCtx.currentTime, 0.05);
+            }
+        } else { // REVERB
+            if (paramIndex === 0) { // Tone (High Shelf Freq/Gain combo?)
+                // Just map frequency for now
+                const freq = 500 + (v * 10000);
+                nodes.tone.frequency.setTargetAtTime(freq, this.audioCtx.currentTime, 0.05);
+            } else if (paramIndex === 1) { // Size/Decay -> mapped to input drive?
+                // Hard to change IR length in real-time. 
+                // Let's map this to Tone Gain (+/- 15dB)
+                const gain = (v * 30) - 15;
+                nodes.tone.gain.setTargetAtTime(gain, this.audioCtx.currentTime, 0.05);
+            } else if (paramIndex === 2) { // Mix/Level (It's a send, so this is Output Level)
+                // This might be redundant with fader, but useful for LFO modulation
+                // We don't have a dedicated output gain in fxNodes structure above, 
+                // we assume return strip fader handles level. 
+                // Let's leave this as no-op or maybe map to Pre-Delay?
+            }
+        }
     }
 
     // --- UTILS ---
@@ -305,7 +547,6 @@ export class AudioEngine {
                 newData[i] = oldData[i + startIndex];
             }
         }
-        console.log(`[AudioEngine] Smart Trim: Removed ${(startIndex / buffer.sampleRate).toFixed(4)}s`);
         return newBuffer;
     }
 
@@ -401,11 +642,6 @@ export class AudioEngine {
             }
         }
         return buf;
-    }
-
-    generateBufferForTrack(trkIdx) {
-        const type = trkIdx === 0 ? 'kick' : trkIdx === 1 ? 'snare' : trkIdx === 2 ? 'hihat' : 'texture';
-        return this.generateBufferByType(type);
     }
 
     triggerDrum(track, time, velocityLevel = 2) {

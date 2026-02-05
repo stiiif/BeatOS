@@ -9,7 +9,11 @@ import { UIManager } from './ui/UIManager.js';
 import { Visualizer } from './ui/Visualizer.js';
 import { LayoutManager } from './ui/LayoutManager.js';
 import { NUM_LFOS, TRACKS_PER_GROUP } from './utils/constants.js';
-import { globalBus } from './events/EventBus.js'; // Ensure EventBus is available
+import { globalBus } from './events/EventBus.js'; 
+
+// NEW IMPORTS
+import { EffectsManager } from './modules/EffectsManager.js';
+import { EffectControls } from './ui/components/EffectControls.js';
 
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
@@ -20,6 +24,10 @@ const presetManager = new PresetManager();
 const trackLibrary = new TrackLibrary();
 const uiManager = new UIManager();
 const visualizer = new Visualizer('visualizer', 'bufferDisplay', audioEngine);
+
+// New Effect Managers
+const effectsManager = new EffectsManager(audioEngine);
+const effectControls = new EffectControls(effectsManager);
 
 const layoutManager = new LayoutManager();
 
@@ -76,6 +84,17 @@ function addGroup() {
     }
 }
 
+// Start Effects Modulation Loop
+function startEffectsLoop() {
+    const loop = () => {
+        if (audioEngine.getContext() && audioEngine.getContext().state === 'running') {
+            effectsManager.update(audioEngine.getContext().currentTime);
+        }
+        requestAnimationFrame(loop);
+    };
+    loop();
+}
+
 document.getElementById('initAudioBtn').addEventListener('click', async () => {
     console.log("[Main] Init audio clicked.");
     await audioEngine.initialize();
@@ -86,13 +105,17 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
 
     trackManager.createBuffersForAllTracks();
     document.getElementById('startOverlay').classList.add('hidden');
-    visualizer.drawVisuals(true); // Force initial draw
+    visualizer.drawVisuals(true); 
     
     // Refresh Mixer to ensure it binds to the newly created Audio Buses
     if (uiManager.mixer) {
         console.log("[Main] Refreshing Mixer...");
         uiManager.mixer.render();
     }
+
+    // Render Effects UI
+    effectControls.render();
+    startEffectsLoop();
 
     uiManager.selectTrack(0, () => {
         visualizer.setSelectedTrackIndex(0);
@@ -118,25 +141,19 @@ document.getElementById('stopBtn').addEventListener('click', () => {
     uiManager.clearPlayheadForStop();
 });
 
-// ... rest of event listeners same as before ...
-// Kept concise for brevity, assume remaining event listeners follow standard pattern
+// ... rest of event listeners ...
 document.getElementById('bpmInput').addEventListener('change', e => { scheduler.setBPM(e.target.value); });
 const applyGrooveBtn = document.getElementById('applyGrooveBtn');
 if (applyGrooveBtn) applyGrooveBtn.addEventListener('click', () => uiManager.applyGroove());
 
+// ... (Rest of existing main.js logic follows unmodified) ...
 // Update scope button listener to cycle styles
 document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
     visualizer.setScopeMode('wave');
-    
-    // Cycle style
     const newStyle = visualizer.cycleWaveStyle();
-    
-    // Update button text to show current style (optional but nice)
     const btn = e.target;
-    // Map style names to short codes
     const codes = { 'mirror': 'WAVE', 'neon': 'NEON', 'bars': 'BARS', 'precision': 'FINE' };
     btn.innerText = codes[newStyle] || 'WAVE';
-
     const btnSpec = document.getElementById('scopeBtnSpec');
     btn.classList.replace('text-neutral-400', 'bg-neutral-600');
     btn.classList.replace('hover:text-white', 'text-white');
@@ -144,14 +161,11 @@ document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
     btnSpec.classList.replace('bg-neutral-600', 'text-neutral-400');
     btnSpec.classList.replace('text-white', 'hover:text-white');
     btnSpec.classList.remove('rounded-sm');
-    
     visualizer.triggerRedraw();
 });
 
 document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
     visualizer.setScopeMode('spectrum');
-    // Reset Wave button text if we want, or keep it as memory
-    
     const btnSpec = e.target;
     const btnWave = document.getElementById('scopeBtnWave');
     btnSpec.classList.replace('text-neutral-400', 'bg-neutral-600');
@@ -160,7 +174,6 @@ document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
     btnWave.classList.replace('bg-neutral-600', 'text-neutral-400');
     btnWave.classList.replace('text-white', 'hover:text-white');
     btnWave.classList.remove('rounded-sm');
-    
     visualizer.triggerRedraw();
 });
 
