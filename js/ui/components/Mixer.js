@@ -36,6 +36,7 @@ export class Mixer {
         // Animation Loop Binding
         this.animateMeters = this.animateMeters.bind(this);
         this.animationFrameId = null;
+        this.lastMeterTime = 0; // Add this for throttling
 
         // State Flag
         this.isMetering = false;
@@ -192,7 +193,7 @@ export class Mixer {
     }
 
     // --- ANIMATION LOOP FOR METERS (Single Canvas) ---
-    animateMeters() {
+    animateMeters(timestamp) { // Accept timestamp
         if (!this.isRendered || !this.meterCtx || !this.meterOverlay) return;
 
         // CHECK FLAG
@@ -200,6 +201,13 @@ export class Mixer {
             this.clearMeters();
             return; 
         }
+
+        // Throttle to ~30fps (approx every 33ms)
+        if (timestamp - this.lastMeterTime < 33) {
+            this.animationFrameId = requestAnimationFrame(this.animateMeters);
+            return;
+        }
+        this.lastMeterTime = timestamp;
 
         // Clear the entire overlay
         this.meterCtx.clearRect(0, 0, this.meterOverlay.width, this.meterOverlay.height);
