@@ -146,7 +146,6 @@ document.getElementById('bpmInput').addEventListener('change', e => { scheduler.
 const applyGrooveBtn = document.getElementById('applyGrooveBtn');
 if (applyGrooveBtn) applyGrooveBtn.addEventListener('click', () => uiManager.applyGroove());
 
-// ... (Rest of existing main.js logic follows unmodified) ...
 // Update scope button listener to cycle styles
 document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
     visualizer.setScopeMode('wave');

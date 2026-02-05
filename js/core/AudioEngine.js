@@ -588,6 +588,7 @@ export class AudioEngine {
         });
     }
 
+    // RESTORED METHODS
     generateBufferByType(type) {
         if(!this.audioCtx) return null;
         const makeBuffer = (lenSec) => this.audioCtx.createBuffer(1, this.audioCtx.sampleRate * lenSec, this.audioCtx.sampleRate);
@@ -642,6 +643,11 @@ export class AudioEngine {
             }
         }
         return buf;
+    }
+
+    generateBufferForTrack(trkIdx) {
+        const type = trkIdx === 0 ? 'kick' : trkIdx === 1 ? 'snare' : trkIdx === 2 ? 'hihat' : 'texture';
+        return this.generateBufferByType(type);
     }
 
     triggerDrum(track, time, velocityLevel = 2) {
