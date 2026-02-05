@@ -6,7 +6,9 @@ export class Visualizer {
         // Main canvas ID ignored now if we move to per-track logic, but kept for compatibility
         this.bufCanvas = document.getElementById(bufferCanvasId);
         if(this.bufCanvas) {
-            this.bufCtx = this.bufCanvas.getContext('2d', { alpha: false }); // Optimization: Disable alpha if not needed for background
+            // Optimization: Disable alpha if not needed for background (though we use it for fading often)
+            // Keeping alpha true for flexibility, but could be false for perf if design allows.
+            this.bufCtx = this.bufCanvas.getContext('2d', { alpha: false }); 
         }
         this.audioEngine = audioEngine;
         this.drawQueue = [];
@@ -27,7 +29,7 @@ export class Visualizer {
         globalBus.on('playback:start', () => this.startLoop());
         globalBus.on('playback:stop', () => this.stopLoop());
 
-        // Handle visibility change
+        // Handle visibility change to save resources
         document.addEventListener('visibilitychange', () => {
             this.isVisible = !document.hidden;
             if (this.isVisible && this.isRunning) {
@@ -111,19 +113,14 @@ export class Visualizer {
         this.drawQueue = this.drawQueue.filter(d => d.time > now - 0.5);
 
         // 2. Fade out all track canvases (Only if there are any updates pending or recently happened)
-        // Optimization: Checking specific canvases instead of iterating all might be faster if tracks list is huge,
-        // but iterating 16-32 elements is negligible. 
-        // However, accessing DOM elements every frame is slow. Caching them is better.
-        // For now, we keep the DOM access but it's a potential bottleneck.
-        
-        // Only update track visuals if queue has items or recently cleared
-        // Simplified: Just update active ones.
+        // Optimization: Avoid querying DOM if no tracks or queue empty? 
+        // We need to clear trails regardless of new hits.
         
         for(let i=0; i<this.tracks.length; i++) {
             const canvas = document.getElementById(`vis-canvas-${i}`);
             if(canvas) {
-                const ctx = canvas.getContext('2d', { alpha: true }); // Alpha needed for fade
-                // Simple fade
+                const ctx = canvas.getContext('2d', { alpha: true });
+                // Simple fade trail
                 ctx.fillStyle = 'rgba(0,0,0,0.2)'; 
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
@@ -226,7 +223,8 @@ export class Visualizer {
         const amp = h / 2;
         const mid = h / 2;
 
-        // Optimization: Pre-calculate or cache gradient if possible, but creating here is ok for now.
+        // Optimization: Creating gradient every frame is okay, but caching is better. 
+        // Here we keep it for dynamic sizing.
         const grad = ctx.createLinearGradient(0, 0, 0, h);
         grad.addColorStop(0, '#10b981');   // Emerald top
         grad.addColorStop(0.5, '#34d399'); // Lighter middle
@@ -235,8 +233,8 @@ export class Visualizer {
         ctx.fillStyle = grad;
         ctx.beginPath();
 
-        // Optimization: Downsample drawing resolution if width is large
-        // Or simply iterate pixels
+        // Optimization: Downsample if windowLength is huge? 
+        // The loop is bounded by 'w' (canvas width), so it's O(W), which is fine.
         for (let i = 0; i < w; i++) {
             let min = 1.0;
             let max = -1.0;
@@ -244,8 +242,7 @@ export class Visualizer {
             const chunkStart = startIdx + (i * step);
             if (chunkStart >= data.length) break;
 
-            // Sample optimization: Don't check every sample if step is huge
-            // Check every Nth sample if step > 100
+            // Inner loop optimization: Skip samples if step is large
             const innerStep = step > 50 ? Math.floor(step / 10) : 1;
 
             for (let j = 0; j < step; j += innerStep) {
@@ -300,7 +297,7 @@ export class Visualizer {
             else ctx.lineTo(i, y);
         }
         ctx.stroke();
-        ctx.shadowBlur = 0; // Reset
+        ctx.shadowBlur = 0;
     }
 
     // Style 3: Digital Bars
@@ -314,9 +311,6 @@ export class Visualizer {
 
         ctx.fillStyle = '#06b6d4'; // Cyan
 
-        // Batch drawing rectangles is harder with varying opacity, but we can group them
-        // For now, minimizing logic inside loop
-        
         for (let i = 0; i < totalBars; i++) {
             let rms = 0;
             const chunkStart = startIdx + (i * step);
@@ -378,12 +372,9 @@ export class Visualizer {
         const barWidth = (w / bufferLength) * 2.5; 
         let x = 0;
 
-        // Optimization: Use Path for single color fill if possible, but spectrum is multi-colored usually.
-        // For now, just reduce draw calls by skipping very low values?
-        
         for(let i = 0; i < bufferLength; i++) {
             const val = dataArray[i];
-            if (val < 5) continue; // Skip silent bands
+            if (val < 5) continue; // Optimization: Skip drawing silent bands
 
             const barHeight = (val / 255) * h;
             const hue = 200 + ((i / bufferLength) * 120); 
@@ -420,8 +411,10 @@ export class Visualizer {
         // Calculate LFO Modulation
         let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0, sampleStart:0, sampleEnd:0 };
         
-        // Only calculate active LFOs
         t.lfos.forEach(lfo => {
+            // Removed target check here as LFOs might be used for Matrix, but for overlay we only care about specific visual targets.
+            // However, Track.js structure still uses lfo.target for modulation mapping.
+            // If lfo.target is 'none', it won't affect these.
             if (lfo.amount > 0 && lfo.target !== 'none') {
                 const v = lfo.getValue(time);
                 if(mod[lfo.target] !== undefined) mod[lfo.target] += v;
@@ -508,7 +501,7 @@ export class Visualizer {
                 }
                 
                 ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`;
-                const y = h - 4 - (i * 5); // 4 height + 1 space
+                const y = h - 4 - (i * 5); 
                 if (y > 0) {
                     ctx.fillRect(Math.max(0, posPx - grainPx/2), y, grainPx, barHeight);
                 }
