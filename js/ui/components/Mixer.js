@@ -230,7 +230,7 @@ export class Mixer {
         }
 
         // Throttle to ~30 FPS (33ms)
-        if (timestamp - this.lastMeterTime < 66) {
+        if (timestamp - this.lastMeterTime < 33) {
             this.animationFrameId = requestAnimationFrame(this.animateMeters);
             return;
         }
@@ -246,7 +246,7 @@ export class Mixer {
         this.meterCtx.clearRect(0, 0, this.meterOverlay.width, this.meterOverlay.height);
 
         // Meter Dimensions
-        const meterW = 4; // Width of the LED strip
+        const meterW = 2; // Width of the LED strip
         
         // 9 LEDs total
         const numLeds = 9; 
@@ -272,7 +272,7 @@ export class Mixer {
 
             let sum = 0;
             // Step optimization: Read every 4th sample
-            const step = 4;
+            const step = 8;
             const len = dataArray.length;
             for(let i = 0; i < len; i += step) { 
                 const val = (dataArray[i] - 128) / 128.0;
