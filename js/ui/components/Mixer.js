@@ -19,6 +19,7 @@ export class Mixer {
         this.groupStripElements = new Map();
         
         // Optimization: Single Overlay Canvas for Meters
+        // Instead of 32+ individual canvases, we paint one layer over the whole mixer
         this.meterOverlay = null;
         this.meterCtx = null;
         this.meterRegistry = new Map(); 
@@ -123,12 +124,13 @@ export class Mixer {
         mixerContainer.className = 'mixer-container custom-scrollbar';
         mixerContainer.style.position = 'relative';
         
+        // --- SINGLE CANVAS OVERLAY SETUP ---
         this.meterOverlay = document.createElement('canvas');
         this.meterOverlay.id = 'meterOverlay';
         this.meterOverlay.style.position = 'absolute';
         this.meterOverlay.style.top = '0';
         this.meterOverlay.style.left = '0';
-        this.meterOverlay.style.pointerEvents = 'none'; 
+        this.meterOverlay.style.pointerEvents = 'none'; // Allow clicks to pass through to knobs
         this.meterOverlay.style.zIndex = '5'; 
         
         this.meterCtx = this.meterOverlay.getContext('2d');
@@ -186,13 +188,19 @@ export class Mixer {
                 this.meterOverlay.height = container.scrollHeight;
             }
 
-            // Update Cached Positions
-            // We store offsetLeft/Top relative to the scrolling container
+            // Calculations must be relative to the container, not offsetParent (which is the strip)
+            const containerRect = container.getBoundingClientRect();
+            const scrollLeft = container.scrollLeft;
+            const scrollTop = container.scrollTop;
+
             this.meterRegistry.forEach((meta) => {
                 const el = meta.el;
-                // Get position relative to the container
-                meta.cachedX = el.offsetLeft;
-                meta.cachedY = el.offsetTop;
+                const rect = el.getBoundingClientRect();
+                
+                // Calculate position relative to the CANVAS (which matches scrollWidth)
+                // We add scrollLeft back because the canvas scrolls with the content
+                meta.cachedX = (rect.left - containerRect.left) + scrollLeft;
+                meta.cachedY = (rect.top - containerRect.top) + scrollTop;
                 meta.cachedH = el.offsetHeight;
             });
         }
@@ -226,9 +234,10 @@ export class Mixer {
 
         this.meterCtx.clearRect(0, 0, this.meterOverlay.width, this.meterOverlay.height);
 
-        const meterW = 4; 
-        const segHeight = 2;
-        const gap = 1;
+        // Meter Dimensions
+        const meterW = 4; // Width of the LED strip
+        const segHeight = 2; // Height of one LED segment
+        const gap = 1; // Gap between segments
         const totalSegH = segHeight + gap;
 
         // Iterate Registry
@@ -244,7 +253,7 @@ export class Mixer {
 
             const meterH = meta.cachedH * 0.96; 
             const meterY = meta.cachedY + (meta.cachedH * 0.02); 
-            const meterX = meta.cachedX + 2; // Draw at absolute coordinate on canvas (canvas scrolls with content size)
+            const meterX = meta.cachedX + 2; // Draw at absolute coordinate on canvas
 
             // Use pre-allocated buffer
             const dataArray = meta.dataArray;
@@ -259,22 +268,22 @@ export class Mixer {
                 sum += val * val;
             }
             const rms = Math.sqrt(sum / (len / step));
-            const value = Math.min(1, rms * 4); 
+            const value = Math.min(1, rms * 4); // Gain boost for visual range
             
-            if (value < 0.01) return; 
+            if (value < 0.01) return; // Skip silent tracks
 
             const activeH = value * meterH;
             const topY = (meterY + meterH) - activeH;
             const redThresh = 0.9;
             const yelThresh = 0.7;
             
-            // Green Base
+            // 1. Draw Green Base
             this.meterCtx.fillStyle = '#10b981';
             let greenH = activeH;
             if (value > yelThresh) greenH = yelThresh * meterH;
             this.meterCtx.fillRect(meterX, (meterY + meterH) - greenH, meterW, greenH);
 
-            // Yellow Middle
+            // 2. Draw Yellow Middle (Warning)
             if (value > yelThresh) {
                 this.meterCtx.fillStyle = '#eab308';
                 let yellowTop = value;
@@ -283,14 +292,15 @@ export class Mixer {
                 this.meterCtx.fillRect(meterX, (meterY + meterH) - (yellowTop * meterH), meterW, yellowH);
             }
 
-            // Red Top
+            // 3. Draw Red Top (Clip)
             if (value > redThresh) {
                 this.meterCtx.fillStyle = '#ef4444';
                 const redH = (value - redThresh) * meterH;
                 this.meterCtx.fillRect(meterX, topY, meterW, redH);
             }
 
-            // Grid Gaps
+            // 4. Draw Grid Gaps (The "LED" Look)
+            // Masks the solid bar with horizontal black lines
             this.meterCtx.fillStyle = '#1a1a1a'; 
             const numSegs = Math.floor(meterH / totalSegH);
             this.meterCtx.beginPath();
