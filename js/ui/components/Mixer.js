@@ -42,6 +42,11 @@ export class Mixer {
         this.isMetering = false;
         this.isVisible = true;
 
+        // LED Meter Configuration
+        // 9 distinct levels: -20, -15, -10, -6, -3, 0, +3, +6, +10 (Clipping)
+        // Normalized thresholds (approximate based on rms * 4 boosting logic)
+        this.ledThresholds = [0.1, 0.2, 0.3, 0.45, 0.6, 0.75, 0.85, 0.95, 1.0];
+
         // Event Subscriptions
         globalBus.on('playback:start', () => {
             if (!this.isMetering) {
@@ -219,6 +224,7 @@ export class Mixer {
             return; 
         }
 
+        // Throttle to ~30 FPS (33ms)
         if (timestamp - this.lastMeterTime < 33) {
             this.animationFrameId = requestAnimationFrame(this.animateMeters);
             return;
@@ -236,10 +242,11 @@ export class Mixer {
 
         // Meter Dimensions
         const meterW = 4; // Width of the LED strip
-        const segHeight = 2; // Height of one LED segment
-        const gap = 1; // Gap between segments
-        const totalSegH = segHeight + gap;
-
+        
+        // 9 LEDs total
+        const numLeds = 9; 
+        // Calculate gap/height based on total height later, or assume relative
+        
         // Iterate Registry
         this.meterRegistry.forEach((meta, id) => {
             if (!meta.analyser) return;
@@ -272,45 +279,32 @@ export class Mixer {
             
             if (value < 0.01) return; // Skip silent tracks
 
-            const activeH = value * meterH;
-            const topY = (meterY + meterH) - activeH;
-            const redThresh = 0.9;
-            const yelThresh = 0.7;
-            
-            // 1. Draw Green Base
-            this.meterCtx.fillStyle = '#10b981';
-            let greenH = activeH;
-            if (value > yelThresh) greenH = yelThresh * meterH;
-            this.meterCtx.fillRect(meterX, (meterY + meterH) - greenH, meterW, greenH);
-
-            // 2. Draw Yellow Middle (Warning)
-            if (value > yelThresh) {
-                this.meterCtx.fillStyle = '#eab308';
-                let yellowTop = value;
-                if (value > redThresh) yellowTop = redThresh;
-                const yellowH = (yellowTop - yelThresh) * meterH;
-                this.meterCtx.fillRect(meterX, (meterY + meterH) - (yellowTop * meterH), meterW, yellowH);
-            }
-
-            // 3. Draw Red Top (Clip)
-            if (value > redThresh) {
-                this.meterCtx.fillStyle = '#ef4444';
-                const redH = (value - redThresh) * meterH;
-                this.meterCtx.fillRect(meterX, topY, meterW, redH);
-            }
-
-            // 4. Draw Grid Gaps (The "LED" Look)
-            // Masks the solid bar with horizontal black lines
-            this.meterCtx.fillStyle = '#1a1a1a'; 
-            const numSegs = Math.floor(meterH / totalSegH);
-            this.meterCtx.beginPath();
-            for (let i = 0; i < numSegs; i++) {
-                const gapY = (meterY + meterH) - (i * totalSegH) - gap; 
-                if (gapY >= topY) { 
-                     this.meterCtx.rect(meterX, gapY, meterW, gap);
+            // Quantize level to 9 steps based on thresholds
+            let activeLeds = 0;
+            for(let i=0; i<numLeds; i++) {
+                if(value >= this.ledThresholds[i]) {
+                    activeLeds = i + 1;
+                } else {
+                    break;
                 }
             }
-            this.meterCtx.fill();
+
+            if (activeLeds === 0) return;
+
+            // Draw discrete LEDs
+            const ledHeight = (meterH / numLeds) - 1; // 1px gap
+            
+            for(let i=0; i<activeLeds; i++) {
+                // Color Logic based on index
+                // 0-4 (Green), 5-6 (Yellow), 7-8 (Red)
+                if(i < 5) this.meterCtx.fillStyle = '#10b981';      // -20 to -3 dB
+                else if(i < 7) this.meterCtx.fillStyle = '#eab308'; // 0 to +3 dB
+                else this.meterCtx.fillStyle = '#ef4444';           // +6 to +10 dB
+
+                // Draw from bottom up
+                const y = (meterY + meterH) - ((i + 1) * (ledHeight + 1));
+                this.meterCtx.fillRect(meterX, y, meterW, ledHeight);
+            }
         });
 
         this.animationFrameId = requestAnimationFrame(this.animateMeters);
