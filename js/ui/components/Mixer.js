@@ -47,10 +47,9 @@ export class Mixer {
         // Normalized thresholds (approximate based on rms * 4 boosting logic)
         this.ledThresholds = [0.1, 0.2, 0.3, 0.45, 0.6, 0.75, 0.85, 0.95, 1.0];
         
-        // Meter Decay Factor (0.0 - 1.0)
-        // Lower = faster decay, Higher = slower smooth decay
-        // Per 30fps frame: 0.15 drop is reasonable for "snappy but smooth"
-        this.decayRate = 0.30;
+        // Meter Physics Constants
+        this.decayRate = 0.05; // Slower decay for smoother falloff
+        this.smoothingFactor = 0.3; // Interpolation factor (lower = smoother/slower response)
 
         // Event Subscriptions
         globalBus.on('playback:start', () => {
@@ -229,13 +228,6 @@ export class Mixer {
             return; 
         }
 
-        // Throttle to ~30 FPS (33ms)
-        if (timestamp - this.lastMeterTime < 33) {
-            this.animationFrameId = requestAnimationFrame(this.animateMeters);
-            return;
-        }
-        this.lastMeterTime = timestamp;
-
         const container = this.container.querySelector('.mixer-container');
         if (!container) return;
 
@@ -246,9 +238,7 @@ export class Mixer {
         this.meterCtx.clearRect(0, 0, this.meterOverlay.width, this.meterOverlay.height);
 
         // Meter Dimensions
-        const meterW = 2; // Width of the LED strip
-        
-        // 9 LEDs total
+        const meterW = 4; // Width of the LED strip
         const numLeds = 9; 
         
         // Iterate Registry
@@ -272,7 +262,7 @@ export class Mixer {
 
             let sum = 0;
             // Step optimization: Read every 4th sample
-            const step = 8;
+            const step = 4;
             const len = dataArray.length;
             for(let i = 0; i < len; i += step) { 
                 const val = (dataArray[i] - 128) / 128.0;
@@ -281,20 +271,26 @@ export class Mixer {
             const rms = Math.sqrt(sum / (len / step));
             let rawValue = Math.min(1, rms * 4); // Gain boost for visual range
             
-            // SMOOTHING LOGIC (Attack/Release)
-            // If raw > current, snap instantly (Attack)
-            // If raw < current, decay slowly (Release)
-            if (rawValue >= meta.currentValue) {
-                meta.currentValue = rawValue;
+            // --- ENHANCED SMOOTHING LOGIC ---
+            // 1. Target Value (Peak Hold / Decay)
+            // If new signal is higher, jump up immediately (Attack)
+            // If new signal is lower, decay the target slowly (Release)
+            if (rawValue >= meta.targetValue) {
+                meta.targetValue = rawValue;
             } else {
-                meta.currentValue -= this.decayRate;
-                if (meta.currentValue < 0) meta.currentValue = 0;
+                meta.targetValue -= this.decayRate;
+                if (meta.targetValue < 0) meta.targetValue = 0;
             }
-            
-            // If input is basically silent, allow full decay
-            if (rawValue < 0.01 && meta.currentValue < 0.01) {
+
+            // 2. Display Value Interpolation (Lerp)
+            // Instead of jumping to target, move towards it smoothly
+            // This removes visual jitter/flicker
+            meta.currentValue += (meta.targetValue - meta.currentValue) * this.smoothingFactor;
+
+            // Small threshold to snap to zero
+            if (meta.currentValue < 0.01) {
                 meta.currentValue = 0;
-                return; 
+                if(rawValue < 0.01) meta.targetValue = 0; // Reset target too if silent
             }
 
             // Quantize SMOOTHED value to 9 steps
@@ -466,7 +462,8 @@ export class Mixer {
                 el: wrapper,
                 analyser: analyserNode,
                 dataArray: new Uint8Array(bufferLength), // Pre-allocate buffer
-                currentValue: 0 // Store for smoothing
+                currentValue: 0, // Current DISPLAYED value (for smoothing)
+                targetValue: 0   // Current TARGET value (peak hold/decay)
             });
         }
 
