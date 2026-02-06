@@ -42,6 +42,108 @@ input[type=range]::-moz-range-track {
     border-radius: 2px;
 }
 
+/* --- NEW 3-COLUMN PARAMETER GRID (Clean & Minimalist) --- */
+.param-grid {
+    display: grid;
+    grid-template-columns: 70px 1fr 45px; /* Label | Slider | Value */
+    gap: 8px 12px;
+    align-items: center;
+    background-color: #171717; /* Neutral-900 */
+    border-radius: 8px;
+    padding: 16px;
+    font-family: 'Inter', sans-serif;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 1px solid #262626;
+}
+
+.param-grid .section-header {
+    grid-column: 1 / -1;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 12px;
+    margin-bottom: 4px;
+    padding-bottom: 2px;
+    color: #34d399; /* Emerald-400 */
+    border-bottom: 1px solid rgba(52, 211, 153, 0.2);
+    opacity: 0.9;
+}
+.param-grid .section-header:first-child { margin-top: 0; }
+
+.param-grid label {
+    font-size: 0.65rem;
+    color: #a3a3a3;
+    font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
+}
+
+/* Value Display (Replaces previous span usage) */
+.param-grid .value-display {
+    font-size: 0.65rem;
+    color: #fff;
+    font-weight: 600;
+    text-align: left;
+    padding-left: 4px;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* --- CUSTOM RANGE SLIDER (Minimalist) --- */
+.param-grid input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    background: transparent;
+    cursor: pointer;
+    margin: 0; /* Reset margins */
+}
+
+/* Track */
+.param-grid input[type=range]::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 4px;
+    background: #404040;
+    border-radius: 2px;
+    border: none; /* Remove existing borders */
+}
+.param-grid input[type=range]::-moz-range-track {
+    width: 100%;
+    height: 4px;
+    background: #404040;
+    border-radius: 2px;
+}
+
+/* Thumb */
+.param-grid input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    height: 12px;
+    width: 12px;
+    border-radius: 50%;
+    background: #34d399; /* Emerald-400 */
+    margin-top: -4px; /* Center on track */
+    box-shadow: 0 0 8px rgba(52, 211, 153, 0.4);
+    transition: transform 0.1s;
+    border: none;
+}
+.param-grid input[type=range]::-moz-range-thumb {
+    height: 12px;
+    width: 12px;
+    border-radius: 50%;
+    background: #34d399;
+    border: none;
+    box-shadow: 0 0 8px rgba(52, 211, 153, 0.4);
+}
+
+.param-grid input[type=range]:hover::-webkit-slider-thumb {
+    transform: scale(1.2);
+    background: #6ee7b7; /* Emerald-300 on hover */
+}
+.param-grid input[type=range]:hover::-moz-range-thumb {
+    transform: scale(1.2);
+    background: #6ee7b7;
+}
+
+/* Existing Knob Container Legacy Support (Keep if needed elsewhere, but param-grid replaces it for granular) */
 .knob-container {
     display: flex;
     flex-direction: column;
