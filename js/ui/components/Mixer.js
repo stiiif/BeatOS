@@ -230,7 +230,7 @@ export class Mixer {
         }
 
         // Throttle to ~30 FPS (33ms)
-        if (timestamp - this.lastMeterTime < 33) {
+        if (timestamp - this.lastMeterTime < 66) {
             this.animationFrameId = requestAnimationFrame(this.animateMeters);
             return;
         }
