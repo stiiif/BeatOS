@@ -46,6 +46,11 @@ export class Mixer {
         // 9 distinct levels: -20, -15, -10, -6, -3, 0, +3, +6, +10 (Clipping)
         // Normalized thresholds (approximate based on rms * 4 boosting logic)
         this.ledThresholds = [0.1, 0.2, 0.3, 0.45, 0.6, 0.75, 0.85, 0.95, 1.0];
+        
+        // Meter Decay Factor (0.0 - 1.0)
+        // Lower = faster decay, Higher = slower smooth decay
+        // Per 30fps frame: 0.15 drop is reasonable for "snappy but smooth"
+        this.decayRate = 0.15;
 
         // Event Subscriptions
         globalBus.on('playback:start', () => {
@@ -245,7 +250,6 @@ export class Mixer {
         
         // 9 LEDs total
         const numLeds = 9; 
-        // Calculate gap/height based on total height later, or assume relative
         
         // Iterate Registry
         this.meterRegistry.forEach((meta, id) => {
@@ -275,14 +279,28 @@ export class Mixer {
                 sum += val * val;
             }
             const rms = Math.sqrt(sum / (len / step));
-            const value = Math.min(1, rms * 4); // Gain boost for visual range
+            let rawValue = Math.min(1, rms * 4); // Gain boost for visual range
             
-            if (value < 0.01) return; // Skip silent tracks
+            // SMOOTHING LOGIC (Attack/Release)
+            // If raw > current, snap instantly (Attack)
+            // If raw < current, decay slowly (Release)
+            if (rawValue >= meta.currentValue) {
+                meta.currentValue = rawValue;
+            } else {
+                meta.currentValue -= this.decayRate;
+                if (meta.currentValue < 0) meta.currentValue = 0;
+            }
+            
+            // If input is basically silent, allow full decay
+            if (rawValue < 0.01 && meta.currentValue < 0.01) {
+                meta.currentValue = 0;
+                return; 
+            }
 
-            // Quantize level to 9 steps based on thresholds
+            // Quantize SMOOTHED value to 9 steps
             let activeLeds = 0;
             for(let i=0; i<numLeds; i++) {
-                if(value >= this.ledThresholds[i]) {
+                if(meta.currentValue >= this.ledThresholds[i]) {
                     activeLeds = i + 1;
                 } else {
                     break;
@@ -447,7 +465,8 @@ export class Mixer {
             this.meterRegistry.set(idForMeter, {
                 el: wrapper,
                 analyser: analyserNode,
-                dataArray: new Uint8Array(bufferLength) // Pre-allocate buffer
+                dataArray: new Uint8Array(bufferLength), // Pre-allocate buffer
+                currentValue: 0 // Store for smoothing
             });
         }
 
