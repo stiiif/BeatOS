@@ -1,300 +1,233 @@
-/**
- * BeatOS Granular Processor (Optimized)
- * - Linear Interpolation (Fast)
- * - Pre-calculated math
- * - Multi-channel routing support
- * - "Swap and Pop" array management
- */
-
 class BeatOSGranularProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        
-        this.MAX_VOICES = 64;
-        
-        // Pre-allocate voices
-        this.voices = Array(this.MAX_VOICES).fill(null).map((_, id) => ({
-            id,
-            active: false,
-            buffer: null,
-            bufferLength: 0,
-            position: 0,
-            phase: 0,
-            grainLength: 0,
-            pitch: 1.0,
-            velocity: 1.0,
-            startFrame: 0,
-            trackId: 0,
-            releasing: false,
-            releaseAmp: 1.0,
-            // Pre-calc values to avoid division in loop
-            invGrainLength: 0 
-        }));
-        
-        // Track active indices to avoid scanning all 64 voices
-        this.activeVoiceIndices = [];
-        this.activeNotes = [];
-        this.trackBuffers = new Map(); 
-        
-        this.currentFrame = 0;
-
-        // Hanning Window LUT
-        this.LUT_SIZE = 4096;
-        this.windowLUT = new Float32Array(this.LUT_SIZE);
-        for(let i=0; i<this.LUT_SIZE; i++) {
-            const phase = i / (this.LUT_SIZE - 1);
-            this.windowLUT[i] = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * phase));
-        }
-        
-        this.port.onmessage = (e) => {
-            const { type, data } = e.data;
-            switch(type) {
-                case 'noteOn': this.handleNoteOn(data); break;
-                case 'setBuffer': this.setBuffer(data.trackId, data.buffer); break;
-                case 'stopAll': this.stopAllVoices(); this.activeNotes = []; break;
-                case 'stopTrack': this.stopTrack(data.trackId); break;
-            }
-        };
+        this.buffer = null; // Float32Array containing the audio sample
+        this.grains = [];   // Array of active grain objects
+        this.sampleRate = 44100; // Will be updated by the global scope
+        this.maxGrains = 64; // Polyphony limit to prevent CPU overload
     }
 
-    handleNoteOn(data) {
-        const { trackId, time, duration, params } = data;
-        this.activeNotes.push({
-            trackId,
-            startTime: time,
-            duration: duration,
-            params: params,
-            nextGrainTime: time
-        });
+    static get parameterDescriptors() {
+        return [
+            /**
+             * Offset: Sets the playback start position within the sample (0% to 100%).
+             * Determines which part of the audio file is used as the source.
+             */
+            { name: 'offset', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+
+            /**
+             * Duration: The length of time a single grain plays (in seconds).
+             * Short = percussive/glitchy; Long = smooth/atmospheric.
+             */
+            { name: 'duration', defaultValue: 0.1, minValue: 0.01, maxValue: 1, automationRate: 'k-rate' },
+
+            /**
+             * Density: Controls the frequency at which new grains are spawned (Hz).
+             * Low values = distinct pulses; High values = continuous textures.
+             */
+            { name: 'density', defaultValue: 10, minValue: 0.1, maxValue: 100, automationRate: 'k-rate' },
+
+            /**
+             * Spray: Adds randomness to the Offset position for each new grain.
+             * Creates a "cloud" texture by grabbing audio from a wider area.
+             */
+            { name: 'spray', defaultValue: 0, minValue: 0, maxValue: 0.5, automationRate: 'k-rate' },
+
+            /**
+             * Pitch: Adjusts the playback speed of the sample within the grain (1.0 = normal).
+             * Changes pitch without affecting grain duration.
+             */
+            { name: 'pitch', defaultValue: 1, minValue: 0.1, maxValue: 4, automationRate: 'k-rate' },
+
+            /**
+             * Amp: The master gain (volume) for the track.
+             */
+            { name: 'amp', defaultValue: 1, minValue: 0, maxValue: 1, automationRate: 'a-rate' },
+
+            /**
+             * Attack: The fade-in time for each individual grain.
+             * Softens the transient/click at the start of the grain.
+             */
+            { name: 'attack', defaultValue: 0.01, minValue: 0.001, maxValue: 0.5, automationRate: 'k-rate' },
+
+            /**
+             * Release: The fade-out time for each individual grain.
+             * Allows grains to ring out and mix smoothly.
+             */
+            { name: 'release', defaultValue: 0.01, minValue: 0.001, maxValue: 0.5, automationRate: 'k-rate' },
+
+            /**
+             * Pan: The stereo placement of the grains (-1 Left to +1 Right).
+             */
+            { name: 'pan', defaultValue: 0, minValue: -1, maxValue: 1, automationRate: 'a-rate' },
+
+            /**
+             * Reverb Send: The amount of signal sent to the global Convolution Reverb.
+             */
+            { name: 'reverbSend', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' }
+        ];
     }
 
     process(inputs, outputs, parameters) {
-        // outputs is [track0_stereo, track1_stereo, ...]
-        const frameCount = outputs[0][0].length;
-        const now = currentTime;
+        // 1. Setup Inputs/Outputs
+        const output = outputs[0];
+        const channelCount = output.length; // Usually 2 (Stereo)
         
-        // --- 1. SCHEDULER (Runs once per block) ---
-        for (let i = this.activeNotes.length - 1; i >= 0; i--) {
-            const note = this.activeNotes[i];
-            
-            if (now > note.startTime + note.duration) {
-                this.activeNotes.splice(i, 1);
-                continue;
+        // Handle message port (buffer loading)
+        this.port.onmessage = (event) => {
+            if (event.data.type === 'load-buffer') {
+                this.buffer = event.data.buffer;
             }
-            
-            if (now >= note.startTime) {
-                // Calculate intervals
-                let density = note.params.density || 20;
-                if (density < 1) density = 1;
-                
-                let interval = 1 / density;
-                
-                if (note.params.overlap > 0) {
-                    const grainDur = note.params.grainSize || 0.1;
-                    interval = grainDur / Math.max(0.1, note.params.overlap);
-                }
+        };
 
-                // Spawn grains needed for this time slice
-                let spawnLimit = 5; // Limit spawns per block to prevent explosion
-                while (note.nextGrainTime < now + (frameCount * 0.0000226) && spawnLimit > 0) { // approx 1/44100
-                    if (note.nextGrainTime >= now) {
-                        this.spawnGrainFromNote(note);
-                    }
-                    note.nextGrainTime += interval;
-                    spawnLimit--;
-                }
+        if (!this.buffer) return true;
+
+        // 2. Fetch Parameters (k-rate unless noted)
+        const offset = parameters.offset[0];
+        const duration = parameters.duration[0];
+        const density = parameters.density[0];
+        const spray = parameters.spray[0];
+        const pitch = parameters.pitch[0];
+        const attack = parameters.attack[0];
+        const release = parameters.release[0];
+        const reverbSend = parameters.reverbSend[0];
+        
+        // Audio Params (Arrays)
+        const ampData = parameters.amp; 
+        const panData = parameters.pan;
+
+        // 3. Spawn New Grains
+        // Probability of spawning per sample = density / sampleRate
+        // For a block of 128 samples, we check if we should spawn.
+        // Simplified: Check once per block or distribute? 
+        // Better: Use a counter to ensure exact density timing, but random is more "granular".
+        // Current: Stochastic approach (Random Cloud)
+        const spawnProbability = (density / this.sampleRate) * 128;
+        if (Math.random() < spawnProbability) {
+             this.spawnGrain(offset, duration, spray, pitch, attack, release);
+        }
+
+        // 4. Render & Mix Grains
+        // We mix all grains into a temporary mono buffer first
+        const mixBuffer = new Float32Array(128);
+
+        for (let i = this.grains.length - 1; i >= 0; i--) {
+            const grain = this.grains[i];
+            
+            // Render the grain's contribution for this block
+            this.renderGrainToBuffer(grain, mixBuffer, 128);
+
+            // Check if grain is dead
+            if (grain.age >= grain.totalSamples) {
+                this.grains.splice(i, 1);
             }
         }
 
-        // Fast exit if no voices active
-        if (this.activeVoiceIndices.length === 0) {
-            this.currentFrame += frameCount;
-            return true;
-        }
-        
-        // --- 2. DSP LOOP ---
-        // Iterate backwards for safe removal
-        for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
-            const voiceIdx = this.activeVoiceIndices[i];
-            const voice = this.voices[voiceIdx];
+        // 5. Apply Effects & Write to Output
+        for (let i = 0; i < 128; i++) {
+            const monoSample = mixBuffer[i];
             
-            // Get output buffer for this voice's track
-            const trackOutput = outputs[voice.trackId];
-            if (!trackOutput) {
-                // Invalid routing, kill voice
-                this.deactivateVoice(i);
-                continue;
-            }
+            // Get a-rate or k-rate values
+            const currentAmp = ampData.length > 1 ? ampData[i] : ampData[0];
+            const currentPan = panData.length > 1 ? panData[i] : panData[0];
 
-            const leftChannel = trackOutput[0];
-            const rightChannel = trackOutput[1]; // Assumes stereo
-            const buffer = voice.buffer;
-            const bufferLen = voice.bufferLength;
-            
-            // Localize variables for speed
-            const pitch = voice.pitch;
-            const grainLen = voice.grainLength;
-            const velocity = voice.velocity;
-            const invGrainLen = voice.invGrainLength;
-            const startPos = voice.position * bufferLen;
-            
-            let phase = voice.phase;
-            let releasing = voice.releasing;
-            let relAmp = voice.releaseAmp;
-            
-            // Per-sample loop
-            for (let j = 0; j < frameCount; j++) {
-                // Release envelope logic
-                if (releasing) {
-                    relAmp -= 0.015; // Fast fade out
-                    if (relAmp <= 0) {
-                        this.deactivateVoice(i);
-                        break; // Stop processing this voice
-                    }
-                }
+            // Apply Amp
+            const gainedSample = monoSample * currentAmp;
 
-                if (phase >= grainLen) {
-                    this.deactivateVoice(i);
-                    break;
-                }
-                
-                // Calculate Read Head
-                const readPos = startPos + (phase * pitch);
-                
-                // Fast integer floor
-                let idx = readPos | 0; 
-                
-                // Wrap logic (Manual modulo is faster than %)
-                while (idx >= bufferLen) idx -= bufferLen;
-                
-                // Linear Interpolation
-                // frac = readPos - idx
-                const frac = readPos - idx;
-                let idx2 = idx + 1;
-                if (idx2 >= bufferLen) idx2 = 0;
-                
-                const s1 = buffer[idx];
-                const s2 = buffer[idx2];
-                const sample = s1 + frac * (s2 - s1);
-                
-                // LUT Windowing (Optimization: pre-calced 4095/grainLen)
-                const lutIdx = (phase * invGrainLen) | 0;
-                const window = this.windowLUT[lutIdx] || 0; // Safety fallback
-                
-                const out = sample * window * velocity * relAmp;
-                
-                // Sum to output
-                leftChannel[j] += out;
-                if (rightChannel) rightChannel[j] += out;
-                
-                phase++;
-            }
+            // Apply Pan (Equal Power)
+            // Pan range: -1 (Left) to 1 (Right)
+            // Normalize to 0..1 for math: (pan + 1) / 2
+            const normPan = (currentPan + 1) / 2;
             
-            // Save state
-            voice.phase = phase;
-            voice.releasing = releasing;
-            voice.releaseAmp = relAmp;
+            // Left: cos(p * PI/2), Right: sin(p * PI/2) standard constant power
+            // Simplified Linear for speed: L = (1-p), R = p (approx 3dB dip in center)
+            // Let's use SQRT for better power curve:
+            // const gainL = Math.sqrt(1 - normPan);
+            // const gainR = Math.sqrt(normPan);
+            // Even Faster: Cos/Sin Lookups or just standard Linear (it's granular, absolute precision isn't key)
+            const gainL = Math.cos(normPan * 0.5 * Math.PI);
+            const gainR = Math.sin(normPan * 0.5 * Math.PI);
+
+            if (channelCount > 0) output[0][i] = gainedSample * gainL;
+            if (channelCount > 1) output[1][i] = gainedSample * gainR;
         }
-        
-        this.currentFrame += frameCount;
+
         return true;
     }
-    
-    // Fast remove from active array (Swap & Pop)
-    deactivateVoice(activeArrayIndex) {
-        const voiceIdx = this.activeVoiceIndices[activeArrayIndex];
-        this.voices[voiceIdx].active = false;
+
+    spawnGrain(offset, duration, spray, pitch, attack, release) {
+        if (this.grains.length >= this.maxGrains) return;
+
+        // Calculate start position with spray (randomization)
+        // spray is 0..1. We map it to a +/- range relative to buffer length
+        const randomSpray = (Math.random() * 2 - 1) * spray; 
         
-        const last = this.activeVoiceIndices.pop();
-        if (activeArrayIndex < this.activeVoiceIndices.length) {
-            this.activeVoiceIndices[activeArrayIndex] = last;
-        }
-    }
-
-    spawnGrainFromNote(note) {
-        const trackData = this.trackBuffers.get(note.trackId);
-        if (!trackData) return;
-
-        // Find free voice
-        let voice = null;
+        // Final position (0..1)
+        let startPos = offset + randomSpray;
         
-        // 1. Try to find an inactive voice
-        for (let i = 0; i < this.MAX_VOICES; i++) {
-            if (!this.voices[i].active) {
-                voice = this.voices[i];
-                // Add to active list
-                this.activeVoiceIndices.push(i);
-                break;
-            }
-        }
+        // Clamp 0..1
+        if (startPos < 0) startPos = 0;
+        if (startPos > 1) startPos = 1;
 
-        // 2. Steal voice if full (Oldest)
-        if (!voice) {
-            let oldestTime = Infinity;
-            let oldestIdx = -1;
+        // Convert to samples
+        const startSample = Math.floor(startPos * (this.buffer.length - 1));
+        
+        const totalSamples = Math.floor(duration * this.sampleRate);
+        const attackSamples = Math.floor(attack * this.sampleRate);
+        const releaseSamples = Math.floor(release * this.sampleRate);
+
+        this.grains.push({
+            startSample: startSample,
+            totalSamples: totalSamples,
+            age: 0,
+            pitch: pitch,
+            attackSamples: attackSamples,
+            releaseSamples: releaseSamples
+        });
+    }
+
+    renderGrainToBuffer(grain, mixBuffer, blockSize) {
+        const buffer = this.buffer;
+        
+        for (let i = 0; i < blockSize; i++) {
+            // Stop if grain is finished
+            if (grain.age >= grain.totalSamples) break;
+
+            // 1. Calculate Envelope (Amplitude)
+            let env = 1.0;
+            if (grain.age < grain.attackSamples) {
+                // Fade In
+                env = grain.age / grain.attackSamples;
+            } else if (grain.age > (grain.totalSamples - grain.releaseSamples)) {
+                // Fade Out
+                const samplesRemaining = grain.totalSamples - grain.age;
+                env = samplesRemaining / grain.releaseSamples;
+            }
+
+            // 2. Calculate Pitch (Playback Position)
+            // Position = Start + (Age * Pitch)
+            const playPos = grain.startSample + (grain.age * grain.pitch);
             
-            // Only scan active indices
-            for(let i=0; i<this.activeVoiceIndices.length; i++) {
-                const v = this.voices[this.activeVoiceIndices[i]];
-                if (!v.releasing && v.startFrame < oldestTime) {
-                    oldestTime = v.startFrame;
-                    oldestIdx = i;
-                }
+            // Loop or Clamp? Granular usually clamps or zeros if out of bounds.
+            if (playPos >= buffer.length - 1) {
+                grain.age++; 
+                continue; 
             }
+
+            // 3. Linear Interpolation
+            const index = Math.floor(playPos);
+            const frac = playPos - index;
             
-            if (oldestIdx !== -1) {
-                const vIdx = this.activeVoiceIndices[oldestIdx];
-                // Force release the old one
-                this.voices[vIdx].releasing = true;
-                // We failed to spawn a NEW one, but we cleared space for next cycle
-                // or we could force overwrite. Let's just return to avoid clicks.
-                return; 
-            }
-        }
+            const s1 = buffer[index];
+            const s2 = buffer[index + 1]; // Safe due to boundary check above
+            
+            const sample = s1 + (s2 - s1) * frac;
 
-        // Initialize Voice
-        let pos = note.params.position;
-        if (note.params.spray > 0) {
-            pos += (Math.random() * 2 - 1) * note.params.spray;
-            // Clamp 0-1
-            if(pos < 0) pos = 0; 
-            if(pos > 1) pos = 1;
-        }
+            // 4. Mix into buffer
+            mixBuffer[i] += sample * env;
 
-        const sampleRate = 44100; // Standard, or pass in
-        const gLen = Math.floor((note.params.grainSize || 0.1) * sampleRate);
-
-        voice.active = true;
-        voice.trackId = note.trackId;
-        voice.buffer = trackData;
-        voice.bufferLength = trackData.length;
-        voice.position = pos;
-        voice.phase = 0;
-        voice.grainLength = Math.max(128, gLen);
-        voice.invGrainLength = 4095 / voice.grainLength; // Pre-calc for LUT
-        voice.pitch = note.params.pitch || 1.0;
-        voice.velocity = note.params.velocity || 1.0;
-        voice.startFrame = this.currentFrame;
-        voice.releasing = false;
-        voice.releaseAmp = 1.0;
-    }
-
-    setBuffer(id, buf) {
-        this.trackBuffers.set(id, buf);
-    }
-
-    stopAllVoices() {
-        for (let i = 0; i < this.activeVoiceIndices.length; i++) {
-            const v = this.voices[this.activeVoiceIndices[i]];
-            v.releasing = true;
-        }
-    }
-
-    stopTrack(id) {
-        this.activeNotes = this.activeNotes.filter(n => n.trackId !== id);
-        for (let i = 0; i < this.activeVoiceIndices.length; i++) {
-            const v = this.voices[this.activeVoiceIndices[i]];
-            if (v.trackId === id) v.releasing = true;
+            // Increment Age
+            grain.age++;
         }
     }
 }
