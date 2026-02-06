@@ -401,6 +401,31 @@ document.querySelectorAll('.param-slider').forEach(el => {
     });
 });
 
+// --- Scan Speed Controls ---
+const getScanTrack = () => tracks[uiManager.getSelectedTrackIndex()];
+
+document.getElementById('btnScanSync')?.addEventListener('click', (e) => {
+    const t = getScanTrack();
+    // Toggle Sync State
+    t.params.scanSpeedSync = !t.params.scanSpeedSync;
+    uiManager.updateKnobs(); // Triggers UI update in TrackControls
+});
+
+document.getElementById('btnScanMul')?.addEventListener('click', () => {
+    const t = getScanTrack();
+    let newVal = t.params.scanSpeed * 2;
+    // Clamp to slider range (assumed -4 to 4 from new HTML)
+    t.params.scanSpeed = Math.max(-4, Math.min(4, newVal));
+    uiManager.updateKnobs();
+});
+
+document.getElementById('btnScanDiv')?.addEventListener('click', () => {
+    const t = getScanTrack();
+    let newVal = t.params.scanSpeed / 2;
+    t.params.scanSpeed = Math.max(-4, Math.min(4, newVal));
+    uiManager.updateKnobs();
+});
+
 document.querySelectorAll('.lfo-tab').forEach(b => {
     b.addEventListener('click', e => { uiManager.setSelectedLfoIndex(parseInt(e.target.dataset.lfo)); uiManager.updateLfoUI(); });
 });

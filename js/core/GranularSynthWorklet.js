@@ -1,3 +1,4 @@
+// js/core/GranularSynthWorklet.js
 // Granular SynthWorklet - Optimized with Linear Interpolation Processor
 import { MAX_TRACKS } from '../utils/constants.js';
 
@@ -91,7 +92,7 @@ export class GranularSynthWorklet {
         this.trackBufferCache.set(track, track.buffer);
     }
 
-    async scheduleNote(track, time, scheduleVisualDrawCallback, velocityLevel = 2) {
+    async scheduleNote(track, time, scheduleVisualDrawCallback, velocityLevel = 2, totalSteps = 0) {
         if (track.type === 'simple-drum') {
             this.audioEngine.triggerDrum(track, time, velocityLevel);
             scheduleVisualDrawCallback(time, track.id);
@@ -136,19 +137,41 @@ export class GranularSynthWorklet {
         if(track.bus.vol) track.bus.vol.gain.setValueAtTime(p.volume, time);
         if(track.bus.pan) track.bus.pan.pan.setValueAtTime(p.pan, time);
 
-        // Granular Params
+        // Granular Params & Playhead Logic
         let winStart = Math.max(0, Math.min(1, (p.sampleStart || 0) + mod.sampleStart));
         let winEnd = Math.max(0, Math.min(1, (p.sampleEnd !== undefined ? p.sampleEnd : 1) + mod.sampleEnd));
         if (winStart > winEnd) [winStart, winEnd] = [winEnd, winStart];
         
-        if (p.scanSpeed !== 0 || mod.scanSpeed !== 0) {
-            track.playhead = (track.playhead + ((p.scanSpeed + mod.scanSpeed) * 0.1)) % 1.0;
-            if (track.playhead < 0) track.playhead += 1.0;
+        // --- SYNC LOGIC START ---
+        if (track.params.scanSpeedSync) {
+            // Speed 1.0 = 32 steps (1 full cycle)
+            // Steps required to complete one full read (0..1)
+            const speed = Math.abs(track.params.scanSpeed) || 0.01; // Avoid div/0
+            const stepsPerCycle = 32.0 / speed; 
+            
+            // Calculate phase (0.0 to 1.0) based on TOTAL SEQUENCER STEPS
+            let cyclePhase = (totalSteps % stepsPerCycle) / stepsPerCycle;
+            
+            // Handle reverse playback
+            if (track.params.scanSpeed < 0) {
+                cyclePhase = 1.0 - cyclePhase;
+            }
+            
+            track.playhead = cyclePhase;
+            
         } else {
-            track.playhead = p.position;
+            // Free Run Mode (Accumulator)
+            if (p.scanSpeed !== 0 || mod.scanSpeed !== 0) {
+                track.playhead = (track.playhead + ((p.scanSpeed + mod.scanSpeed) * 0.05)) % 1.0;
+                if (track.playhead < 0) track.playhead += 1.0;
+            } else {
+                track.playhead = p.position;
+            }
         }
+        // --- SYNC LOGIC END ---
 
-        let baseRelPos = (Math.abs(p.scanSpeed) > 0.01) ? track.playhead : p.position;
+        // Map Playhead (0..1) to Window (Start..End)
+        let baseRelPos = track.playhead;
         let finalPos = winStart + (Math.max(0, Math.min(1, baseRelPos + mod.position)) * (winEnd - winStart));
 
         const density = Math.max(1, (p.density || 20) + mod.density);

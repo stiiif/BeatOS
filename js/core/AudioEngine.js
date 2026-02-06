@@ -166,17 +166,22 @@ export class AudioEngine {
             tone.type = 'highshelf';
             tone.frequency.value = 4000;
             tone.gain.value = -5; // Darker reverb by default
+            
+            // ADDED: Pre-Delay
+            const preDelay = ctx.createDelay(1.0);
+            preDelay.delayTime.value = 0;
 
             // Generate simple impulse response
             this.generateReverbIR(convolver, 2.0); 
 
             // Insert into Wet Chain
             fxInput.disconnect(fxWet);
-            fxInput.connect(tone);
-            tone.connect(convolver);
-            convolver.connect(fxWet); // Connect end of FX chain to Wet Gain
+            fxInput.connect(preDelay); // Input -> PreDelay
+            preDelay.connect(tone);    // PreDelay -> Tone
+            tone.connect(convolver);   // Tone -> Convolver
+            convolver.connect(fxWet);  // Connect end of FX chain to Wet Gain
 
-            fxNodes = { convolver, tone };
+            fxNodes = { convolver, tone, preDelay };
         }
         
         // Store Mix Gains in nodes for parameter control
@@ -526,8 +531,10 @@ export class AudioEngine {
             } else if (paramIndex === 1) { // Size/Decay -> Tone Gain
                 const gain = (v * 30) - 15;
                 nodes.tone.gain.setTargetAtTime(gain, this.audioCtx.currentTime, 0.05);
-            } else if (paramIndex === 2) { // Unused/Placeholder
-                // Maybe Pre-Delay?
+            } else if (paramIndex === 2) { // Pre-Delay (Was Unused)
+                // Map 0-1 to 0-200ms
+                const delay = v * 0.2; 
+                nodes.preDelay.delayTime.setTargetAtTime(delay, this.audioCtx.currentTime, 0.05);
             } else if (paramIndex === 3) { // Mix (Dry/Wet)
                 nodes.dryGain.gain.setTargetAtTime(1 - v, this.audioCtx.currentTime, 0.05);
                 nodes.wetGain.gain.setTargetAtTime(v, this.audioCtx.currentTime, 0.05);

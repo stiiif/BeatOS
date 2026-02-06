@@ -1,3 +1,4 @@
+// js/core/Scheduler.js
 // Scheduler Module - Optimized with EventBus
 import { LOOKAHEAD, SCHEDULE_AHEAD_TIME, NUM_STEPS } from '../utils/constants.js';
 import { globalBus } from '../events/EventBus.js';
@@ -140,7 +141,7 @@ export class Scheduler {
                 if (trackIds.length > 0) {
                     const winnerIdx = Math.floor(Math.random() * trackIds.length);
                     const winnerId = trackIds[winnerIdx];
-                    this.triggerTrack(this.tracks[winnerId], time, scheduleVisualDrawCallback, step);
+                    this.triggerTrack(this.tracks[winnerId], time, scheduleVisualDrawCallback, step, currentTotal);
                 }
             });
         } else {
@@ -153,15 +154,15 @@ export class Scheduler {
                 if (t.steps[step] === 0) continue;
                 
                 if (isAnySolo) {
-                    if (t.soloed) this.triggerTrack(t, time, scheduleVisualDrawCallback, step);
+                    if (t.soloed) this.triggerTrack(t, time, scheduleVisualDrawCallback, step, currentTotal);
                 } else {
-                    if (!t.muted) this.triggerTrack(t, time, scheduleVisualDrawCallback, step);
+                    if (!t.muted) this.triggerTrack(t, time, scheduleVisualDrawCallback, step, currentTotal);
                 }
             }
         }
     }
 
-    triggerTrack(track, time, scheduleVisualDrawCallback, stepIndex) {
+    triggerTrack(track, time, scheduleVisualDrawCallback, stepIndex, totalSteps) {
         if (track.chokeGroup > 0) {
             this.tracks.forEach(other => {
                 if (other.id !== track.id && other.chokeGroup === track.chokeGroup) {
@@ -185,7 +186,7 @@ export class Scheduler {
             actualTime = audioCtx.currentTime;
         }
 
-        this.granularSynth.scheduleNote(track, actualTime, scheduleVisualDrawCallback, velocity);
+        this.granularSynth.scheduleNote(track, actualTime, scheduleVisualDrawCallback, velocity, totalSteps);
     }
 
     processAutomationTrack(track, totalSteps, time) {
