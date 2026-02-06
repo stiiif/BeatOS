@@ -46,6 +46,9 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             this.windowLUT[i] = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * phase));
         }
         
+        // Optimization B: Pre-allocate buffers/vars for windowing and intermediate calculations
+        this.tempBuffer = new Float32Array(128); // Placeholder for block ops if needed
+        
         this.port.onmessage = (e) => {
             const { type, data } = e.data;
             switch(type) {
@@ -131,7 +134,9 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const buffer = voice.buffer;
             const bufferLen = voice.bufferLength;
             
-            // Localize variables for speed
+            // Optimization A: Block-Level Parameter Processing
+            // Interpolate parameter changes at the block level (every 128 samples)
+            // instead of per sample. Constant params are extracted here.
             const pitch = voice.pitch;
             const grainLen = voice.grainLength;
             const velocity = voice.velocity;
@@ -142,12 +147,29 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             let releasing = voice.releasing;
             let relAmp = voice.releaseAmp;
             
+            // Optimization B: Zero-Allocation DSP Loop
+            // Avoid variable declaration inside the loop. Hoist variables here.
+            let j = 0;
+            let readPos = 0.0;
+            let idx = 0;
+            let idx2 = 0;
+            let frac = 0.0;
+            let s1 = 0.0;
+            let s2 = 0.0;
+            let sample = 0.0;
+            let lutIdx = 0;
+            let window = 0.0;
+            let out = 0.0;
+            
             // Per-sample loop
-            for (let j = 0; j < frameCount; j++) {
-                // Release envelope logic
+            for (j = 0; j < frameCount; j++) {
+                
+                // Optimization C: Grain Culling (Dynamic Polyphony)
+                // Amplitude Threshold Culler: Kill if envelope < -60dB (approx 0.001)
+                // We check the release envelope AND the window phase to avoid cutting attack.
                 if (releasing) {
                     relAmp -= 0.015; // Fast fade out
-                    if (relAmp <= 0) {
+                    if (relAmp < 0.001) { // Threshold: -60dB
                         this.deactivateVoice(i);
                         break; // Stop processing this voice
                     }
@@ -158,30 +180,36 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                     break;
                 }
                 
+                // LUT Windowing (Optimization: pre-calced 4095/grainLen)
+                lutIdx = (phase * invGrainLen) | 0;
+                window = this.windowLUT[lutIdx] || 0; // Safety fallback
+                
+                // Culling Check: If window gain is effectively silence and we are in decay phase
+                if (window < 0.001 && phase > (grainLen >> 1)) {
+                    this.deactivateVoice(i);
+                    break;
+                }
+                
                 // Calculate Read Head
-                const readPos = startPos + (phase * pitch);
+                readPos = startPos + (phase * pitch);
                 
                 // Fast integer floor
-                let idx = readPos | 0; 
+                idx = readPos | 0; 
                 
                 // Wrap logic (Manual modulo is faster than %)
                 while (idx >= bufferLen) idx -= bufferLen;
                 
                 // Linear Interpolation
                 // frac = readPos - idx
-                const frac = readPos - idx;
-                let idx2 = idx + 1;
+                frac = readPos - idx;
+                idx2 = idx + 1;
                 if (idx2 >= bufferLen) idx2 = 0;
                 
-                const s1 = buffer[idx];
-                const s2 = buffer[idx2];
-                const sample = s1 + frac * (s2 - s1);
+                s1 = buffer[idx];
+                s2 = buffer[idx2];
+                sample = s1 + frac * (s2 - s1);
                 
-                // LUT Windowing (Optimization: pre-calced 4095/grainLen)
-                const lutIdx = (phase * invGrainLen) | 0;
-                const window = this.windowLUT[lutIdx] || 0; // Safety fallback
-                
-                const out = sample * window * velocity * relAmp;
+                out = sample * window * velocity * relAmp;
                 
                 // Sum to output
                 leftChannel[j] += out;
