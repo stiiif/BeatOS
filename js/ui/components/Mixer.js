@@ -50,7 +50,7 @@ export class Mixer {
         // Meter Decay Factor (0.0 - 1.0)
         // Lower = faster decay, Higher = slower smooth decay
         // Per 30fps frame: 0.15 drop is reasonable for "snappy but smooth"
-        this.decayRate = 0.15;
+        this.decayRate = 0.30;
 
         // Event Subscriptions
         globalBus.on('playback:start', () => {
