@@ -37,10 +37,6 @@ export class TrackControls {
         this.searchModal = modal;
     }
 
-    // ============================================================================
-    // TRACK SELECTION
-    // ============================================================================
-
     selectTrack(idx, visualizerCallback = null) {
         if(this.trackLabelElements[this.selectedTrackIndex])
             this.trackLabelElements[this.selectedTrackIndex].classList.remove('selected');
@@ -83,10 +79,6 @@ export class TrackControls {
         if (visualizerCallback) visualizerCallback();
     }
 
-    // ============================================================================
-    // CUSTOM TRACK HEADER
-    // ============================================================================
-
     updateCustomTrackHeader(idx, groupIdx, groupColor) {
         let container = document.querySelector('.right-pane .p-3.bg-neutral-800');
         if (!container) return;
@@ -113,7 +105,6 @@ export class TrackControls {
             trackType = 'Synth';
         }
 
-        // Row 1: Track info and search
         const row1 = document.createElement('div');
         row1.className = 'flex items-center gap-2 w-full';
         
@@ -162,7 +153,6 @@ export class TrackControls {
 
         container.appendChild(row1);
 
-        // Row 2: Type buttons
         const row2 = document.createElement('div');
         row2.className = 'flex gap-1 w-full justify-between';
         
@@ -178,7 +168,7 @@ export class TrackControls {
                  t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
                  t.params.sampleStart = 0.000; t.params.sampleEnd = 1.000;
              } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
-             t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
+             t.params.filter = 20000.00; t.params.volume = 0.80; // HP Removed
              t.lfos.forEach(lfo => { lfo.target = 'none'; });
              this.updateKnobs();
              this.updateLfoUI();
@@ -238,7 +228,6 @@ export class TrackControls {
 
         container.appendChild(row2);
 
-        // Row 3: Choke groups
         const row3 = document.createElement('div');
         row3.className = 'flex gap-0.5 w-full';
         
@@ -274,10 +263,6 @@ export class TrackControls {
         container.appendChild(row3);
     }
 
-    // ============================================================================
-    // CONTROL VISIBILITY
-    // ============================================================================
-
     updateTrackControlsVisibility() {
         const t = this.tracks[this.selectedTrackIndex];
         if (!t) return;
@@ -286,9 +271,7 @@ export class TrackControls {
         const granularControls = document.getElementById('granularControls');
         const drumControls = document.getElementById('simpleDrumControls');
         const lfoSection = document.getElementById('lfoSection');
-        const typeLabel = document.getElementById('trackTypeLabel');
         const speedSel = document.getElementById('autoSpeedSelect');
-        const chokeSel = document.getElementById('chokeGroupSelect'); 
 
         if(granularControls) granularControls.classList.add('hidden');
         if(drumControls) drumControls.classList.add('hidden');
@@ -323,10 +306,6 @@ export class TrackControls {
         }
     }
 
-    // ============================================================================
-    // KNOBS UPDATE
-    // ============================================================================
-
     updateKnobs() {
         const t = this.tracks[this.selectedTrackIndex];
         if(!t) return;
@@ -336,18 +315,16 @@ export class TrackControls {
                 el.value = t.params[param];
                 
                 let suffix = '';
-                // UPDATED: Default to 3 decimals
                 let displayValue = t.params[param].toFixed(3); 
 
                 if(param === 'density') {
                     suffix = 'hz';
-                    displayValue = t.params[param].toFixed(0); // Integer for Density
+                    displayValue = t.params[param].toFixed(0); 
                 }
                 if(param === 'grainSize') suffix = 's';
                 if(param === 'pitch') suffix = 'x';
-                if(param === 'overlap') suffix = 'x';
+                // Overlap removed
                 if(param === 'scanSpeed') suffix = '';
-                // Position, Sample Start/End default to 3 decimals
 
                 if(el.nextElementSibling) {
                     el.nextElementSibling.innerText = displayValue + suffix;
@@ -355,10 +332,6 @@ export class TrackControls {
             }
         });
     }
-
-    // ============================================================================
-    // LFO UI
-    // ============================================================================
 
     updateLfoUI() {
         if(!this.tracks[this.selectedTrackIndex]) return;
@@ -390,10 +363,6 @@ export class TrackControls {
         document.getElementById('lfoAmt').value = lfo.amount;
         if(amtVal) amtVal.innerText = lfo.amount.toFixed(2);
     }
-
-    // ============================================================================
-    // GETTERS / SETTERS
-    // ============================================================================
 
     getSelectedTrackIndex() { return this.selectedTrackIndex; }
     getSelectedLfoIndex() { return this.selectedLfoIndex; }

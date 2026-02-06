@@ -25,7 +25,6 @@ export class TrackManager {
         const t = new Track(newId);
         this.tracks.push(t);
         
-        // Generate buffer
         const audioCtx = this.audioEngine.getContext();
         if (audioCtx) {
             t.buffer = this.audioEngine.generateBufferForTrack(newId);
@@ -37,9 +36,10 @@ export class TrackManager {
     }
 
     applyDefaultPresets() {
-        if(this.tracks[0]) this.tracks[0].params = { ...this.tracks[0].params, density: 1, grainSize: 0.3, pitch: 1.0, relGrain: 0.3, filter: 200, hpFilter: 20 };
-        if(this.tracks[1]) this.tracks[1].params = { ...this.tracks[1].params, density: 4, position: 0.5, filter: 4000, hpFilter: 100 };
-        if(this.tracks[2]) this.tracks[2].params = { ...this.tracks[2].params, density: 40, grainSize: 0.02, pitch: 2.0, filter: 9000, hpFilter: 1000 };
+        // Defaults adapted for no overlap
+        if(this.tracks[0]) this.tracks[0].params = { ...this.tracks[0].params, density: 1, grainSize: 0.3, pitch: 1.0, relGrain: 0.3, filter: 200 };
+        if(this.tracks[1]) this.tracks[1].params = { ...this.tracks[1].params, density: 4, position: 0.5, filter: 4000 };
+        if(this.tracks[2]) this.tracks[2].params = { ...this.tracks[2].params, density: 40, grainSize: 0.02, pitch: 2.0, filter: 9000 };
         
         for(let i=3; i<this.tracks.length; i++) {
              this.tracks[i].params.position = Math.random();
@@ -62,7 +62,7 @@ export class TrackManager {
         t.params.spray = Math.random() * 0.1;
         t.params.grainSize = 0.05 + Math.random() * 0.25;
         t.params.filter = 2000 + Math.random() * 10000;
-        t.params.hpFilter = 20 + Math.random() * 500;
+        // HP Filter random removed
         t.params.pitch = 0.5 + Math.random() * 1.5;
         
         if (releaseMin !== null && releaseMax !== null) {
@@ -73,8 +73,8 @@ export class TrackManager {
     }
 
     randomizeTrackModulators(t) {
-        // Updated with new targets
-        const targets = ['none', 'position', 'spray', 'density', 'grainSize', 'pitch', 'filter', 'hpFilter', 'sampleStart', 'sampleEnd'];
+        // Targets updated (overlap removed, hpFilter removed)
+        const targets = ['none', 'position', 'spray', 'density', 'grainSize', 'pitch', 'filter', 'sampleStart', 'sampleEnd'];
         const waves = ['sine', 'square', 'sawtooth', 'random'];
         t.lfos.forEach(lfo => {
             if(Math.random() < 0.7) {
@@ -85,8 +85,6 @@ export class TrackManager {
             lfo.rate = parseFloat((0.1 + Math.random() * 19.9).toFixed(1));
         });
     }
-
-    // --- AUTOMATION FEATURES ---
 
     saveGlobalSnapshot() {
         return this.tracks.map(t => ({
@@ -100,14 +98,12 @@ export class TrackManager {
         snapshotData.forEach((data, i) => {
             if (this.tracks[i]) {
                 const t = this.tracks[i];
-                // Check if track is excluded from randomization
                 if (t.ignoreRandom) return;
 
                 t.params.position = data.params.position;
                 t.params.spray = data.params.spray;
                 t.params.grainSize = data.params.grainSize;
                 t.params.filter = data.params.filter;
-                t.params.hpFilter = data.params.hpFilter;
                 t.params.pitch = data.params.pitch;
                 t.params.relGrain = data.params.relGrain;
                 t.params.drumTune = data.params.drumTune;
@@ -131,8 +127,6 @@ export class TrackManager {
 
         this.tracks.forEach(t => {
             if (t.type === 'automation') return; 
-            
-            // Protect track if "Exclude Random" is enabled
             if (t.ignoreRandom) return;
 
             if (t.type === 'granular') {
@@ -145,106 +139,74 @@ export class TrackManager {
         });
     }
 
-    // --- INSTRUMENT AUTO-CONFIGURATION (GROOVE GEN) ---
     autoConfigureTrack(track, instrumentName) {
-        if (track.stepLock || track.type === 'automation') return; // Safety check
+        if (track.stepLock || track.type === 'automation') return;
 
         const name = instrumentName.toLowerCase();
         let targetType = 'granular';
         let params = { ...track.params };
         let bufferType = 'texture';
 
-        // Heuristic Mapping - ORDER MATTERS!
-        // Specific checks first, generic checks last.
-
-        if (name.includes('kick') || name.includes('surdo') || name.includes('bombo') || 
-            name.includes('tambora') || name.includes('manman') || name.includes('boula') || 
-            name.includes('barril') || name.includes('atumpan') || name === 'bass_drum') {
-            
+        if (name.includes('kick') || name.includes('surdo') || name === 'bass_drum') {
             targetType = 'simple-drum';
             params.drumType = 'kick';
-            params.drumTune = 0.3; // Lower pitch
-            params.drumDecay = 0.6; // Longer decay
+            params.drumTune = 0.3; 
+            params.drumDecay = 0.6; 
             params.filter = 5000;
-            params.hpFilter = 20;
 
-        } else if (name.includes('snare') || name.includes('caixa') || name.includes('repinique') || 
-                   name.includes('kidi') || name.includes('sabar') || name.includes('djembe') || 
-                   name.includes('conga') || name.includes('bongo') || name.includes('kaganu') || name === 'snare_drum') {
-            
+        } else if (name.includes('snare') || name.includes('caixa') || name === 'snare_drum') {
             targetType = 'simple-drum';
             params.drumType = 'snare';
             params.drumTune = 0.6;
             params.drumDecay = 0.4;
             params.filter = 12000;
-            params.hpFilter = 100;
 
-        } else if (name.includes('hat') || name.includes('shaker') || name.includes('maraca') || 
-                   name.includes('ganza') || name.includes('cascabeles') || name.includes('kata') || 
-                   name.includes('guiro') || name.includes('shekere') || name.includes('hi_hat')) {
-            
+        } else if (name.includes('hat') || name.includes('shaker')) {
             targetType = 'simple-drum';
-            // Differentiate open vs closed
             if (name.includes('open')) params.drumType = 'open-hat';
             else params.drumType = 'closed-hat';
-            
             params.drumTune = 0.7;
             params.drumDecay = 0.3; 
             params.filter = 20000;
-            params.hpFilter = 2000;
 
-        } else if (name.includes('bell') || name.includes('agogo') || name.includes('ogan') || 
-                   name.includes('clave') || name.includes('wood') || name.includes('triangle') || 
-                   name.includes('gong') || name.includes('chico') || name.includes('cowbell')) {
-            
-            // Use Granular engine with FM texture buffer
+        } else if (name.includes('bell') || name.includes('agogo')) {
             targetType = 'granular';
             bufferType = 'texture'; 
-            params.position = Math.random(); // Random FM spot
+            params.position = Math.random(); 
             params.spray = 0;
-            params.grainSize = 0.05; // Perussive
+            params.grainSize = 0.05; 
             params.density = 20;
-            params.pitch = 2.0; // Higher pitch
+            params.pitch = 2.0; 
             params.relGrain = 0.3;
             params.ampAttack = 0.001;
             params.ampDecay = 0.15;
             params.ampRelease = 0.1;
             params.filter = 15000;
-            params.hpFilter = 500;
 
-        } else if (name.includes('guitar') || name.includes('cuatro') || name.includes('charango') || 
-                   name.includes('harp') || name.includes('piano') || name.includes('kora') || 
-                   name.includes('ngoma') || name.includes('synth') || name.includes('bass')) {
-            
-            // Melodic texture
+        } else if (name.includes('guitar') || name.includes('piano') || name.includes('synth')) {
             targetType = 'granular';
             bufferType = 'texture';
             params.position = Math.random();
             params.spray = 0.02;
-            params.grainSize = 0.15; // Longer grains
+            params.grainSize = 0.15; 
             params.density = 10;
             params.pitch = 1.0;
             params.relGrain = 0.8;
             params.filter = 10000;
-            params.hpFilter = 100;
         } else {
-            // Default Fallback (Percussion/Misc)
             targetType = 'simple-drum';
-            params.drumType = 'cymbal'; // Generic metallic/noise
+            params.drumType = 'cymbal'; 
             params.drumTune = 0.5;
             params.drumDecay = 0.4;
         }
 
-        // Apply Configuration
         track.type = targetType;
         track.params = params;
         
-        // Update Name/Label (handled by UI, but we can store it for reference)
         if (!track.customSample) { 
             track.autoName = instrumentName; 
         }
 
-        // Regenerate Buffer if switching back to Granular
         if (targetType === 'granular' && this.audioEngine) {
             track.buffer = this.audioEngine.generateBufferByType(bufferType);
             track.rmsMap = this.audioEngine.analyzeBuffer(track.buffer);
