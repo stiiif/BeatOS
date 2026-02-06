@@ -69,11 +69,12 @@
                 </div>
 
                 <!-- Groove Generator Controls -->
-                <div>
-                    <div class="flex justify-between items-end mb-2">
-                        <label class="text-[10px] text-neutral-500 uppercase font-bold"><i class="fas fa-music mr-1"></i> Groove Generator</label>
+                <div class="collapsible-section">
+                    <div class="flex justify-between items-center mb-2 cursor-pointer select-none group" onclick="toggleSection('grooveContent', this)">
+                        <label class="text-[10px] text-neutral-500 uppercase font-bold group-hover:text-neutral-300 transition-colors pointer-events-none"><i class="fas fa-music mr-1"></i> Groove Generator</label>
+                        <i class="fas fa-chevron-down text-[10px] text-neutral-600 transition-transform duration-200"></i>
                     </div>
-                    <div class="bg-neutral-800/50 p-3 rounded border border-neutral-800 space-y-3">
+                    <div id="grooveContent" class="bg-neutral-800/50 p-3 rounded border border-neutral-800 space-y-3 transition-all duration-300 origin-top">
                         <div class="space-y-2">
                              <select id="patternSelect" class="w-full bg-neutral-900 text-neutral-300 text-[10px] rounded border border-neutral-700 p-2 outline-none hover:border-neutral-600 transition">
                                 <option value="">Select Pattern...</option>
@@ -94,13 +95,16 @@
                     </div>
                 </div>
 
-                <!-- NEW: Effect Controls Container -->
-                <div>
-                    <div class="flex justify-between items-end mb-2">
-                        <label class="text-[10px] text-neutral-500 uppercase font-bold"><i class="fas fa-magic mr-1"></i> FX Engines</label>
+                <!-- Effect Controls Container -->
+                <div class="collapsible-section">
+                    <div class="flex justify-between items-center mb-2 cursor-pointer select-none group" onclick="toggleSection('fxContent', this)">
+                        <label class="text-[10px] text-neutral-500 uppercase font-bold group-hover:text-neutral-300 transition-colors pointer-events-none"><i class="fas fa-magic mr-1"></i> FX Engines</label>
+                        <i class="fas fa-chevron-down text-[10px] text-neutral-600 transition-transform duration-200"></i>
                     </div>
-                    <div id="effectsControlsContainer" class="bg-neutral-900 border border-neutral-800 rounded p-2">
-                        <!-- Injected by EffectControls.js -->
+                    <div id="fxContent" class="transition-all duration-300 origin-top">
+                        <div id="effectsControlsContainer" class="bg-neutral-900 border border-neutral-800 rounded p-2">
+                            <!-- Injected by EffectControls.js -->
+                        </div>
                     </div>
                 </div>
 
@@ -457,5 +461,21 @@
     </div>
 
     <script type="module" src="js/main.js"></script>
+    <script>
+        function toggleSection(id, header) {
+            const content = document.getElementById(id);
+            const icon = header.querySelector('i.fa-chevron-down');
+            
+            if (content.classList.contains('max-h-0') || content.style.display === 'none') {
+                content.style.display = 'block';
+                content.classList.remove('max-h-0', 'overflow-hidden', 'opacity-0');
+                icon.style.transform = 'rotate(0deg)';
+            } else {
+                content.style.display = 'none';
+                content.classList.add('max-h-0', 'overflow-hidden', 'opacity-0');
+                icon.style.transform = 'rotate(-90deg)';
+            }
+        }
+    </script>
 </body>
 </html>
