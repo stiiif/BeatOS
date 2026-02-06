@@ -205,98 +205,84 @@
                             </div>
                         </div>
 
-                        <!-- NEW 2x2 LAYOUT STRUCTURE -->
-                        <div class="space-y-2">
+                        <!-- NEW 3-COLUMN PARAMETER GRID -->
+                        <div class="param-grid">
                             
-                            <!-- ROW 1: CORE & GRAIN -->
-                            <div class="flex gap-2">
-                                <!-- COL 1: CORE -->
-                                <div class="param-grid flex-1">
-                                    <div class="section-header">CORE</div>
-                                    
-                                    <label>Position</label>
-                                    <input type="range" min="0" max="1" step="0.001" data-param="position" class="param-slider">
-                                    <div class="value-display">0.000</div>
+                            <!-- CORE SECTION -->
+                            <div class="section-header">CORE</div>
+                            
+                            <label>Position</label>
+                            <input type="range" min="0" max="1" step="0.001" data-param="position" class="param-slider">
+                            <div class="value-display">0.000</div>
 
-                                    <label>Spray</label>
-                                    <input type="range" min="0" max="0.5" step="0.01" data-param="spray" class="param-slider">
-                                    <div class="value-display">0.00</div>
+                            <label>Spray</label>
+                            <input type="range" min="0" max="0.5" step="0.01" data-param="spray" class="param-slider">
+                            <div class="value-display">0.00</div>
 
-                                    <label>Start</label>
-                                    <input type="range" min="0" max="1" step="0.001" data-param="sampleStart" class="param-slider">
-                                    <div class="value-display">0.000</div>
+                            <label>Start</label>
+                            <input type="range" min="0" max="1" step="0.001" data-param="sampleStart" class="param-slider">
+                            <div class="value-display">0.000</div>
 
-                                    <label>End</label>
-                                    <input type="range" min="0" max="1" step="0.001" data-param="sampleEnd" class="param-slider" value="1">
-                                    <div class="value-display">1.000</div>
-                                </div>
+                            <label>End</label>
+                            <input type="range" min="0" max="1" step="0.001" data-param="sampleEnd" class="param-slider" value="1">
+                            <div class="value-display">1.000</div>
 
-                                <!-- COL 2: GRAIN -->
-                                <div class="param-grid flex-1">
-                                    <div class="section-header">GRAIN</div>
+                            <!-- GRAIN SECTION -->
+                            <div class="section-header">GRAIN</div>
 
-                                    <label>Overlap</label>
-                                    <input type="range" min="0" max="8" step="0.1" data-param="overlap" class="param-slider">
-                                    <div class="value-display">2.0x</div>
+                            <label>Overlap</label>
+                            <input type="range" min="0" max="8" step="0.1" data-param="overlap" class="param-slider">
+                            <div class="value-display">2.0x</div>
 
-                                    <label>Scan Spd</label>
-                                    <input type="range" min="-2" max="2" step="0.01" data-param="scanSpeed" class="param-slider">
-                                    <div class="value-display">1.00</div>
+                            <label>Scan Spd</label>
+                            <input type="range" min="-2" max="2" step="0.01" data-param="scanSpeed" class="param-slider">
+                            <div class="value-display">1.00</div>
 
-                                    <label>Size</label>
-                                    <input type="range" min="0.01" max="1.0" step="0.01" data-param="grainSize" class="param-slider">
-                                    <div class="value-display">0.10s</div>
+                            <label>Size</label>
+                            <input type="range" min="0.01" max="1.0" step="0.01" data-param="grainSize" class="param-slider">
+                            <div class="value-display">0.10s</div>
 
-                                    <label>Density</label>
-                                    <input type="range" min="1" max="100" step="1" data-param="density" class="param-slider">
-                                    <div class="value-display">20hz</div>
+                            <label>Density</label>
+                            <input type="range" min="1" max="100" step="1" data-param="density" class="param-slider">
+                            <div class="value-display">20hz</div>
 
-                                    <label>Pitch</label>
-                                    <input type="range" min="0.05" max="8.0" step="0.01" data-param="pitch" class="param-slider">
-                                    <div class="value-display">1.00x</div>
+                            <label>Pitch</label>
+                            <input type="range" min="0.05" max="8.0" step="0.01" data-param="pitch" class="param-slider">
+                            <div class="value-display">1.00x</div>
 
-                                    <label>Rel Dur</label>
-                                    <input type="range" min="0.01" max="5.0" step="0.01" data-param="relGrain" class="param-slider">
-                                    <div class="value-display">2.00s</div>
-                                </div>
-                            </div>
+                            <label>Rel Dur</label>
+                            <input type="range" min="0.01" max="5.0" step="0.01" data-param="relGrain" class="param-slider">
+                            <div class="value-display">2.00s</div>
 
-                            <!-- ROW 2: ENV & FX -->
-                            <div class="flex gap-2">
-                                <!-- COL 1: ENV -->
-                                <div class="param-grid flex-1">
-                                    <div class="section-header">ENV (ADR)</div>
+                            <!-- ENVELOPE SECTION -->
+                            <div class="section-header">ENV (ADR)</div>
 
-                                    <label>Attack</label>
-                                    <input type="range" min="0.001" max="1" step="0.01" data-param="ampAttack" class="param-slider">
-                                    <div class="value-display">0.01</div>
+                            <label>Attack</label>
+                            <input type="range" min="0.001" max="1" step="0.01" data-param="ampAttack" class="param-slider">
+                            <div class="value-display">0.01</div>
 
-                                    <label>Decay</label>
-                                    <input type="range" min="0.01" max="1" step="0.01" data-param="ampDecay" class="param-slider">
-                                    <div class="value-display">0.10</div>
+                            <label>Decay</label>
+                            <input type="range" min="0.01" max="1" step="0.01" data-param="ampDecay" class="param-slider">
+                            <div class="value-display">0.10</div>
 
-                                    <label>Release</label>
-                                    <input type="range" min="0.01" max="2" step="0.01" data-param="ampRelease" class="param-slider">
-                                    <div class="value-display">0.30</div>
-                                </div>
+                            <label>Release</label>
+                            <input type="range" min="0.01" max="2" step="0.01" data-param="ampRelease" class="param-slider">
+                            <div class="value-display">0.30</div>
 
-                                <!-- COL 2: FX -->
-                                <div class="param-grid flex-1">
-                                    <div class="section-header">FX (GLOBAL)</div>
+                            <!-- FX SECTION -->
+                            <div class="section-header">FX (GLOBAL)</div>
 
-                                    <label>HPF</label>
-                                    <input type="range" min="20" max="5000" step="10" data-param="hpFilter" class="param-slider">
-                                    <div class="value-display">20</div>
+                            <label>HPF</label>
+                            <input type="range" min="20" max="5000" step="10" data-param="hpFilter" class="param-slider">
+                            <div class="value-display">20</div>
 
-                                    <label>LPF</label>
-                                    <input type="range" min="100" max="10000" step="100" data-param="filter" class="param-slider">
-                                    <div class="value-display">8000</div>
+                            <label>LPF</label>
+                            <input type="range" min="100" max="10000" step="100" data-param="filter" class="param-slider">
+                            <div class="value-display">8000</div>
 
-                                    <label>Vol</label>
-                                    <input type="range" min="0" max="1.5" step="0.01" data-param="volume" class="param-slider">
-                                    <div class="value-display">0.80</div>
-                                </div>
-                            </div>
+                            <label>Vol</label>
+                            <input type="range" min="0" max="1.5" step="0.01" data-param="volume" class="param-slider">
+                            <div class="value-display">0.80</div>
 
                         </div>
                     </div>
