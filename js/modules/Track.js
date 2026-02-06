@@ -26,11 +26,11 @@ export class Track {
         this.bus = {
             input: null,
             trim: null, 
-            // hp removed
+            hp: null,
             lp: null,
             eq: { low: null, mid: null, high: null }, 
             drive: { input: null, shaper: null }, 
-            // comp removed
+            comp: null, 
             vol: null,
             pan: null
         };
@@ -41,11 +41,12 @@ export class Track {
             spray: 0.00, 
             scanSpeed: 0.00, 
             density: 20,     
-            // Overlap removed
+            overlap: 2.0,    
             grainSize: 0.10, 
             pitch: 1.0, 
             relGrain: 2.00,  
             
+            // --- NEW PARAMETERS (Sample Window) ---
             sampleStart: 0.000,
             sampleEnd: 1.000,
             
@@ -60,7 +61,7 @@ export class Track {
             ampRelease: 0.01,
             
             // --- Track Bus (Mixer) ---
-            // hpFilter removed
+            hpFilter: 20,
             filter: 10000, 
             volume: 0.8, 
             pan: 0,
@@ -72,7 +73,7 @@ export class Track {
             eqHigh: 0, 
             eqMidFreq: 1000,
             drive: 0, 
-            // comp removed
+            comp: 0,  
             sendA: 0,
             sendB: 0
         };

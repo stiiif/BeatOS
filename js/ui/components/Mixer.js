@@ -14,30 +14,44 @@ export class Mixer {
             'Asymmetric', 'Foldback'
         ];
         
+        // DOM Caches
         this.trackStripElements = new Map();
         this.groupStripElements = new Map();
         
+        // Optimization: Single Overlay Canvas for Meters
+        // Instead of 32+ individual canvases, we paint one layer over the whole mixer
         this.meterOverlay = null;
         this.meterCtx = null;
         this.meterRegistry = new Map(); 
         
+        // Resize Observer
         this.resizeObserver = null;
+
+        // Callbacks
         this.onMute = null;
         this.onSolo = null;
         this.onMuteGroup = null; 
         this.onSoloGroup = null;
 
+        // Animation Loop Binding
         this.animateMeters = this.animateMeters.bind(this);
         this.animationFrameId = null;
         this.lastMeterTime = 0; 
 
+        // State Flag
         this.isMetering = false;
         this.isVisible = true;
 
+        // LED Meter Configuration
+        // 9 distinct levels: -20, -15, -10, -6, -3, 0, +3, +6, +10 (Clipping)
+        // Normalized thresholds (approximate based on rms * 4 boosting logic)
         this.ledThresholds = [0.1, 0.2, 0.3, 0.45, 0.6, 0.75, 0.85, 0.95, 1.0];
-        this.decayRate = 0.05;
-        this.smoothingFactor = 0.3;
+        
+        // Meter Physics Constants
+        this.decayRate = 0.05; // Slower decay for smoother falloff
+        this.smoothingFactor = 0.3; // Interpolation factor (lower = smoother/slower response)
 
+        // Event Subscriptions
         globalBus.on('playback:start', () => {
             if (!this.isMetering) {
                 this.isMetering = true;
@@ -102,7 +116,9 @@ export class Mixer {
 
     render() {
         if (!this.container) return;
+        
         if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+        
         if (this.resizeObserver) {
             this.resizeObserver.disconnect();
             this.resizeObserver = null;
@@ -117,12 +133,13 @@ export class Mixer {
         mixerContainer.className = 'mixer-container custom-scrollbar';
         mixerContainer.style.position = 'relative';
         
+        // --- SINGLE CANVAS OVERLAY SETUP ---
         this.meterOverlay = document.createElement('canvas');
         this.meterOverlay.id = 'meterOverlay';
         this.meterOverlay.style.position = 'absolute';
         this.meterOverlay.style.top = '0';
         this.meterOverlay.style.left = '0';
-        this.meterOverlay.style.pointerEvents = 'none';
+        this.meterOverlay.style.pointerEvents = 'none'; // Allow clicks to pass through to knobs
         this.meterOverlay.style.zIndex = '5'; 
         
         this.meterCtx = this.meterOverlay.getContext('2d');
@@ -151,6 +168,7 @@ export class Mixer {
         this.container.appendChild(mixerContainer);
         this.isRendered = true;
         
+        // Initialize ResizeObserver
         this.resizeObserver = new ResizeObserver(() => {
             this.resizeOverlay();
         });
@@ -169,6 +187,7 @@ export class Mixer {
         }
     }
     
+    // OPTIMIZATION: Cache Layout Geometry to avoid 'Forced Reflow'
     resizeOverlay() {
         const container = this.container.querySelector('.mixer-container');
         if (container && this.meterOverlay) {
@@ -178,6 +197,7 @@ export class Mixer {
                 this.meterOverlay.height = container.scrollHeight;
             }
 
+            // Calculations must be relative to the container, not offsetParent (which is the strip)
             const containerRect = container.getBoundingClientRect();
             const scrollLeft = container.scrollLeft;
             const scrollTop = container.scrollTop;
@@ -185,6 +205,9 @@ export class Mixer {
             this.meterRegistry.forEach((meta) => {
                 const el = meta.el;
                 const rect = el.getBoundingClientRect();
+                
+                // Calculate position relative to the CANVAS (which matches scrollWidth)
+                // We add scrollLeft back because the canvas scrolls with the content
                 meta.cachedX = (rect.left - containerRect.left) + scrollLeft;
                 meta.cachedY = (rect.top - containerRect.top) + scrollTop;
                 meta.cachedH = el.offsetHeight;
@@ -205,38 +228,40 @@ export class Mixer {
             return; 
         }
 
-        // Throttle to 24 FPS (~41ms)
-        if (timestamp - this.lastMeterTime < 41) {
-            this.animationFrameId = requestAnimationFrame(this.animateMeters);
-            return;
-        }
-        this.lastMeterTime = timestamp;
-
         const container = this.container.querySelector('.mixer-container');
         if (!container) return;
 
+        // READ SCROLL ONCE PER FRAME (Fast)
         const scrollLeft = container.scrollLeft;
         const containerW = container.clientWidth;
 
         this.meterCtx.clearRect(0, 0, this.meterOverlay.width, this.meterOverlay.height);
 
-        const meterW = 4;
+        // Meter Dimensions
+        const meterW = 4; // Width of the LED strip
         const numLeds = 9; 
         
+        // Iterate Registry
         this.meterRegistry.forEach((meta, id) => {
             if (!meta.analyser) return;
             
+            // OPTIMIZATION: Use Cached Positions - NO DOM READS HERE
+            // Calculate screen X based on cached offset minus scroll
             const x = meta.cachedX - scrollLeft;
+            
+            // Culling: Skip if outside visible viewport
             if (x < -20 || x > containerW + 20) return;
 
             const meterH = meta.cachedH * 0.96; 
             const meterY = meta.cachedY + (meta.cachedH * 0.02); 
-            const meterX = meta.cachedX + 2;
+            const meterX = meta.cachedX + 2; // Draw at absolute coordinate on canvas
 
+            // Use pre-allocated buffer
             const dataArray = meta.dataArray;
             meta.analyser.getByteTimeDomainData(dataArray);
 
             let sum = 0;
+            // Step optimization: Read every 4th sample
             const step = 4;
             const len = dataArray.length;
             for(let i = 0; i < len; i += step) { 
@@ -244,8 +269,12 @@ export class Mixer {
                 sum += val * val;
             }
             const rms = Math.sqrt(sum / (len / step));
-            let rawValue = Math.min(1, rms * 4); 
+            let rawValue = Math.min(1, rms * 4); // Gain boost for visual range
             
+            // --- ENHANCED SMOOTHING LOGIC ---
+            // 1. Target Value (Peak Hold / Decay)
+            // If new signal is higher, jump up immediately (Attack)
+            // If new signal is lower, decay the target slowly (Release)
             if (rawValue >= meta.targetValue) {
                 meta.targetValue = rawValue;
             } else {
@@ -253,13 +282,18 @@ export class Mixer {
                 if (meta.targetValue < 0) meta.targetValue = 0;
             }
 
+            // 2. Display Value Interpolation (Lerp)
+            // Instead of jumping to target, move towards it smoothly
+            // This removes visual jitter/flicker
             meta.currentValue += (meta.targetValue - meta.currentValue) * this.smoothingFactor;
 
+            // Small threshold to snap to zero
             if (meta.currentValue < 0.01) {
                 meta.currentValue = 0;
-                if(rawValue < 0.01) meta.targetValue = 0;
+                if(rawValue < 0.01) meta.targetValue = 0; // Reset target too if silent
             }
 
+            // Quantize SMOOTHED value to 9 steps
             let activeLeds = 0;
             for(let i=0; i<numLeds; i++) {
                 if(meta.currentValue >= this.ledThresholds[i]) {
@@ -271,13 +305,17 @@ export class Mixer {
 
             if (activeLeds === 0) return;
 
-            const ledHeight = (meterH / numLeds) - 1; 
+            // Draw discrete LEDs
+            const ledHeight = (meterH / numLeds) - 1; // 1px gap
             
             for(let i=0; i<activeLeds; i++) {
-                if(i < 5) this.meterCtx.fillStyle = '#10b981';
-                else if(i < 7) this.meterCtx.fillStyle = '#eab308';
-                else this.meterCtx.fillStyle = '#ef4444';
+                // Color Logic based on index
+                // 0-4 (Green), 5-6 (Yellow), 7-8 (Red)
+                if(i < 5) this.meterCtx.fillStyle = '#10b981';      // -20 to -3 dB
+                else if(i < 7) this.meterCtx.fillStyle = '#eab308'; // 0 to +3 dB
+                else this.meterCtx.fillStyle = '#ef4444';           // +6 to +10 dB
 
+                // Draw from bottom up
                 const y = (meterY + meterH) - ((i + 1) * (ledHeight + 1));
                 this.meterCtx.fillRect(meterX, y, meterW, ledHeight);
             }
@@ -423,9 +461,9 @@ export class Mixer {
             this.meterRegistry.set(idForMeter, {
                 el: wrapper,
                 analyser: analyserNode,
-                dataArray: new Uint8Array(bufferLength),
-                currentValue: 0, 
-                targetValue: 0   
+                dataArray: new Uint8Array(bufferLength), // Pre-allocate buffer
+                currentValue: 0, // Current DISPLAYED value (for smoothing)
+                targetValue: 0   // Current TARGET value (peak hold/decay)
             });
         }
 
@@ -483,8 +521,7 @@ export class Mixer {
         controls.appendChild(createLabel('Snd A'));
         controls.appendChild(createLabel('Snd B'));
         controls.appendChild(createLabel('Drive'));
-        // Comp removed from track
-        // controls.appendChild(createLabel('Comp'));
+        controls.appendChild(createLabel('Comp'));
         controls.appendChild(createLabel('Pan'));
 
         strip.appendChild(controls);
@@ -519,7 +556,7 @@ export class Mixer {
         controls.appendChild(this.createKnob('A', track.params.sendA || 0, 0, 1, 0.01, (v) => { track.params.sendA = v; if(track.bus && track.bus.sendA) track.bus.sendA.gain.value = v; }, 'knob-color-yellow'));
         controls.appendChild(this.createKnob('B', track.params.sendB || 0, 0, 1, 0.01, (v) => { track.params.sendB = v; if(track.bus && track.bus.sendB) track.bus.sendB.gain.value = v; }, 'knob-color-yellow'));
         controls.appendChild(this.createKnob('Drive', track.params.drive || 0, 0, 1, 0.01, (v) => { track.params.drive = v; const bus = getBus(); if(bus && bus.drive && bus.drive.input) this.audioEngine.setDriveAmount(bus.drive.input, v); }, 'knob-color-red'));
-        // Comp knob removed
+        controls.appendChild(this.createKnob('Comp', track.params.comp || 0, 0, 1, 0.01, (v) => { track.params.comp = v; const bus = getBus(); if(bus && bus.comp) this.audioEngine.setCompAmount(bus.comp, v); }, 'knob-color-purple'));
         controls.appendChild(this.createKnob('Pan', track.params.pan, -1, 1, 0.01, (v) => { track.params.pan = v; const bus = getBus(); if(bus && bus.pan) bus.pan.pan.value = v; }, 'knob-color-blue'));
 
         strip.appendChild(controls);
@@ -555,7 +592,6 @@ export class Mixer {
         const controls = document.createElement('div');
         controls.className = 'strip-controls'; 
 
-        // Comp Kept on Groups
         controls.appendChild(this.createKnob('Comp', 0, 0, 1, 0.01, (v) => {
             const bus = getBus(); if(bus && bus.comp) this.audioEngine.setCompAmount(bus.comp, v);
         }, 'knob-color-purple', true));
@@ -651,7 +687,8 @@ export class Mixer {
         controls.appendChild(this.createKnob('B', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus.sendB) bus.sendB.gain.value = v; }, 'knob-color-yellow', true));
         
         controls.appendChild(this.createKnob('Drive', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus.drive) this.audioEngine.setDriveAmount(bus.drive.input, v); }, 'knob-color-red', true));
-        // Comp removed from Return
+        controls.appendChild(this.createKnob('Comp', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus.comp) this.audioEngine.setCompAmount(bus.comp, v); }, 'knob-color-purple', true));
+        
         controls.appendChild(this.createKnob('Pan', 0, -1, 1, 0.01, (v) => { const bus = getBus(); if(bus.pan) bus.pan.pan.value = v; }, 'knob-color-blue', true));
 
         strip.appendChild(controls);

@@ -258,7 +258,7 @@ document.getElementById('resetParamBtn').addEventListener('click', () => {
         t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
         t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
     } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
-    t.params.filter = 20000.00; t.params.volume = 0.80; // HPFilter removed
+    t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
     t.lfos.forEach(lfo => { lfo.target = 'none'; });
     uiManager.updateKnobs();
     uiManager.updateLfoUI();
@@ -409,11 +409,6 @@ document.getElementById('lfoTarget').addEventListener('change', e => { tracks[ui
 document.getElementById('lfoWave').addEventListener('change', e => { tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].wave = e.target.value; });
 document.getElementById('lfoRate').addEventListener('input', e => { const v = parseFloat(e.target.value); tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].rate = v; document.getElementById('lfoRateVal').innerText = v.toFixed(1); });
 document.getElementById('lfoAmt').addEventListener('input', e => { const v = parseFloat(e.target.value); tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].amount = v; document.getElementById('lfoAmtVal').innerText = v.toFixed(2); });
-
-// Listen for global voice setting event from UI
-window.addEventListener('setGlobalVoices', (e) => {
-    granularSynth.setMaxVoices(e.detail);
-});
 
 uiManager.initUI(addTrack, addGroup, () => { visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex()); visualizer.triggerRedraw(); updateTrackControlsVisibility(); });
 window.addEventListener('resize', () => visualizer.resizeCanvas());

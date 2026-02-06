@@ -91,15 +91,6 @@ export class GranularSynthWorklet {
         this.trackBufferCache.set(track, track.buffer);
     }
 
-    setMaxVoices(count) {
-        if (this.workletNode) {
-            this.workletNode.port.postMessage({
-                type: 'setMaxVoices',
-                data: count
-            });
-        }
-    }
-
     async scheduleNote(track, time, scheduleVisualDrawCallback, velocityLevel = 2) {
         if (track.type === 'simple-drum') {
             this.audioEngine.triggerDrum(track, time, velocityLevel);
@@ -120,11 +111,12 @@ export class GranularSynthWorklet {
         }
 
         // Calculate Params
-        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, filter:0, sampleStart:0, sampleEnd:0, scanSpeed:0 };
+        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, filter:0, hpFilter:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0 };
         track.lfos.forEach(lfo => {
             const v = lfo.getValue(time);
             if(mod[lfo.target] !== undefined) mod[lfo.target] += v;
             else if (lfo.target === 'filter') mod.filter += v * 5000;
+            else if (lfo.target === 'hpFilter') mod.hpFilter += v * 2000;
         });
 
         const p = track.params;
@@ -139,6 +131,7 @@ export class GranularSynthWorklet {
         }
 
         // Bus Automation (Filters/Pan)
+        if(track.bus.hp) track.bus.hp.frequency.setValueAtTime(Math.max(20, Math.min(20000, p.hpFilter + mod.hpFilter)), time);
         if(track.bus.lp) track.bus.lp.frequency.setValueAtTime(Math.max(100, Math.min(22000, p.filter + mod.filter)), time);
         if(track.bus.vol) track.bus.vol.gain.setValueAtTime(p.volume, time);
         if(track.bus.pan) track.bus.pan.pan.setValueAtTime(p.pan, time);
@@ -160,7 +153,7 @@ export class GranularSynthWorklet {
 
         const density = Math.max(1, (p.density || 20) + mod.density);
         const grainSize = Math.max(0.01, (p.grainSize || 0.1) + mod.grainSize);
-        // Overlap Removed
+        const overlap = Math.max(0, (p.overlap || 0) + mod.overlap);
         const duration = (p.relGrain !== undefined ? p.relGrain : 0.4) + (mod.relGrain || 0);
         const pitch = Math.max(0.1, (p.pitch || 1.0) + mod.pitch);
         const spray = Math.max(0, (p.spray || 0) + mod.spray + sprayMod);
@@ -175,6 +168,7 @@ export class GranularSynthWorklet {
                     position: finalPos,
                     density: density,
                     grainSize: grainSize,
+                    overlap: overlap,
                     pitch: pitch,
                     velocity: gainMult,
                     spray: spray
@@ -199,8 +193,8 @@ export class GranularSynthWorklet {
 class BeatOSGranularProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        this.MAX_VOICES = 64; // Default max voices
-        this.voices = Array(64).fill(null).map((_, id) => ({
+        this.MAX_VOICES = 64;
+        this.voices = Array(this.MAX_VOICES).fill(null).map((_, id) => ({
             id, active: false, buffer: null, bufferLength: 0,
             position: 0, phase: 0, grainLength: 0, pitch: 1.0, velocity: 1.0,
             trackId: 0, releasing: false, releaseAmp: 1.0, invGrainLength: 0
@@ -222,20 +216,9 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 case 'setBuffer': this.trackBuffers.set(data.trackId, data.buffer); break;
                 case 'stopAll': this.stopAllVoices(); this.activeNotes = []; break;
                 case 'stopTrack': this.stopTrack(data.trackId); break;
-                case 'setMaxVoices': this.setMaxVoices(data); break;
             }
         };
     }
-    
-    setMaxVoices(count) {
-        // Clamp between 1 and 64
-        this.MAX_VOICES = Math.max(1, Math.min(64, count));
-        // If we reduced voices, kill extras
-        while (this.activeVoiceIndices.length > this.MAX_VOICES) {
-            this.killVoice(this.activeVoiceIndices.length - 1);
-        }
-    }
-
     handleNoteOn(data) {
         this.activeNotes.push({
             trackId: data.trackId, startTime: data.time, duration: data.duration,
@@ -252,9 +235,8 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             if (now > note.startTime + note.duration) { this.activeNotes.splice(i, 1); continue; }
             if (now >= note.startTime) {
                 let interval = 1 / Math.max(1, note.params.density || 20);
-                // Overlap logic removed, purely density based
-                
-                let spawnLimit = 3; 
+                if (note.params.overlap > 0) interval = (note.params.grainSize||0.1) / Math.max(0.1, note.params.overlap);
+                let spawnLimit = 3; // Reduced from 5 to prevent bursts
                 while (note.nextGrainTime < now + (frameCount * 0.000023) && spawnLimit > 0) {
                     if (note.nextGrainTime >= now) this.spawnGrain(note);
                     note.nextGrainTime += interval;
@@ -334,25 +316,10 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         return true;
     }
     spawnGrain(note) {
-        if (this.activeVoiceIndices.length >= this.MAX_VOICES) {
-            // Simple voice stealing: kill oldest
-            // Since we push new indices, index 0 is likely oldest
-            this.killVoice(0);
-        }
-
         const buf = this.trackBuffers.get(note.trackId);
         if(!buf) return;
         let v = null;
-        
-        // Find free voice slot
-        for(let i=0; i<64; i++) {
-             if(!this.voices[i].active) { 
-                 v = this.voices[i]; 
-                 this.activeVoiceIndices.push(i); 
-                 break; 
-             }
-        }
-        
+        for(let i=0; i<64; i++) if(!this.voices[i].active) { v = this.voices[i]; this.activeVoiceIndices.push(i); break; }
         if(!v) return; 
         
         let pos = note.params.position;
@@ -372,11 +339,8 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     killVoice(idx) {
         const vIdx = this.activeVoiceIndices[idx];
         this.voices[vIdx].active = false;
-        // Swap with last
         const last = this.activeVoiceIndices.pop();
-        if (idx < this.activeVoiceIndices.length) {
-            this.activeVoiceIndices[idx] = last;
-        }
+        if (idx < this.activeVoiceIndices.length) this.activeVoiceIndices[idx] = last;
     }
     stopAllVoices() { for(let i=0; i<this.activeVoiceIndices.length; i++) this.voices[this.activeVoiceIndices[i]].releasing = true; }
     stopTrack(id) { 
