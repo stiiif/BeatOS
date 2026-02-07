@@ -73,28 +73,22 @@ export class GranularSynthWorklet {
         this.trackBufferCache.set(track, track.buffer);
     }
 
-    /**
-     * Updates the global track bus nodes (Filter, Volume, Pan) in real-time.
-     * This handles mapping slider values to audio-rate parameters.
-     */
     syncTrackBusParams(track, time = null) {
         if (!track.bus || !this.audioEngine.getContext()) return;
         const ctx = this.audioEngine.getContext();
         const now = time !== null ? time : ctx.currentTime;
         const p = track.params;
 
-        // Calculate LFO modulations for bus parameters
         let mod = { filter: 0, hpFilter: 0, volume: 0, pan: 0 };
         track.lfos.forEach(lfo => {
             if (lfo.amount === 0) return;
             const v = lfo.getValue(now);
-            if (lfo.target === 'filter') mod.filter += v * 5000; // Shift LPF by up to 5kHz
-            if (lfo.target === 'hpFilter') mod.hpFilter += v * 2000; // Shift HPF by up to 2kHz
+            if (lfo.target === 'filter') mod.filter += v * 5000; 
+            if (lfo.target === 'hpFilter') mod.hpFilter += v * 2000; 
             if (lfo.target === 'volume') mod.volume += v * 0.5;
             if (lfo.target === 'pan') mod.pan += v;
         });
 
-        // Apply Mapped Frequencies (Logarithmic curve)
         if (track.bus.hp) {
             const freq = this.audioEngine.getMappedFrequency(Math.max(20, p.hpFilter + mod.hpFilter), 'hp');
             track.bus.hp.frequency.setTargetAtTime(freq, now, 0.05);
@@ -126,15 +120,12 @@ export class GranularSynthWorklet {
         await this.ensureBufferLoaded(track);
 
         if (!this.workletNode.connectedTracks.has(track.id)) {
-            // outputIndex = track.id
             this.workletNode.connect(track.bus.input, track.id, 0);
             this.workletNode.connectedTracks.add(track.id);
         }
 
-        // Sync bus parameters at trig time
         this.syncTrackBusParams(track, time);
 
-        // Calculate granular engine specific modulations
         let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0, relGrain:0 };
         track.lfos.forEach(lfo => {
             const v = lfo.getValue(time);
@@ -167,7 +158,8 @@ export class GranularSynthWorklet {
                     velocity: gainMult,
                     spray: Math.max(0, (p.spray || 0) + mod.spray),
                     resetOnBar: track.resetOnBar,
-                    resetOnTrig: track.resetOnTrig
+                    resetOnTrig: track.resetOnTrig,
+                    cleanMode: track.cleanMode // PASS FLAG
                 }
             }
         });
@@ -192,7 +184,8 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         this.voices = Array(this.MAX_VOICES).fill(null).map((_, id) => ({
             id, active: false, buffer: null, bufferLength: 0,
             position: 0, phase: 0, grainLength: 0, pitch: 1.0, velocity: 1.0,
-            trackId: 0, releasing: false, releaseAmp: 1.0, invGrainLength: 0
+            trackId: 0, releasing: false, releaseAmp: 1.0, invGrainLength: 0,
+            cleanMode: false // LOCAL STORE
         }));
         this.activeVoiceIndices = [];
         this.activeNotes = [];
@@ -239,13 +232,11 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const frameCount = outputs[0][0].length;
         const now = currentTime;
         
-        // Zero out outputs to prevent accumulation
         for (let o = 0; o < outputs.length; o++) {
             if (outputs[o][0]) outputs[o][0].fill(0);
             if (outputs[o][1]) outputs[o][1].fill(0);
         }
 
-        // 1. Scheduler
         for (let i = this.activeNotes.length - 1; i >= 0; i--) {
             const note = this.activeNotes[i];
             if (now > note.startTime + note.duration) { this.activeNotes.splice(i, 1); continue; }
@@ -266,9 +257,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        // --- AGC: Linear Voice Scaling ---
-        const globalScale = 1.0 / (1.0 + (this.activeVoiceIndices.length * 0.15));
-
         // 2. DSP - Accumulation Stage
         for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
             const vIdx = this.activeVoiceIndices[i];
@@ -282,6 +270,13 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const start = voice.position * bufLen;
             const baseAmp = voice.velocity;
             
+            // SWITCHABLE GAIN SCALING
+            // Hard Clean: Sum of grains is exactly 1.0 (Safe but quieter)
+            // Soft Saturate: Original linear scaling (Loud and gritty)
+            const trackScale = voice.cleanMode 
+                ? (1.0 / Math.max(1, this.activeVoiceIndices.length)) 
+                : (1.0 / (1.0 + (this.activeVoiceIndices.length * 0.15)));
+
             let ph = voice.phase, amp = voice.releaseAmp, rel = voice.releasing;
 
             for (let j = 0; j < frameCount; j++) {
@@ -302,7 +297,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 const winIdx = (ph * invGL) | 0;
                 const win = this.windowLUT[winIdx] || 0;
                 
-                const val = sample * win * baseAmp * amp * globalScale;
+                const val = sample * win * baseAmp * amp * trackScale;
                 
                 L[j] += val; R[j] += val;
                 ph++;
@@ -310,7 +305,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
         }
 
-        // --- LIMITER: Soft Knee Clipping ---
         for (let o = 0; o < outputs.length; o++) {
             const outL = outputs[o][0];
             const outR = outputs[o][1];
@@ -359,6 +353,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         v.invGrainLength = 4095 / v.grainLength;
         v.pitch = note.params.pitch||1; v.velocity = note.params.velocity||1;
         v.releasing = false; v.releaseAmp = 1.0;
+        v.cleanMode = note.params.cleanMode; // SET LOCAL FLAG
     }
     killVoice(idx) {
         const vIdx = this.activeVoiceIndices[idx];

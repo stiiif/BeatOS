@@ -26,6 +26,9 @@ export class Track {
         // New Playhead Reset Flags
         this.resetOnBar = false;
         this.resetOnTrig = false;
+        
+        // NEW: Clean Mode State (Hard AGC)
+        this.cleanMode = false;
 
         this.bus = {
             input: null,

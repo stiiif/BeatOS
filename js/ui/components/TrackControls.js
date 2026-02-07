@@ -38,13 +38,7 @@ export class TrackControls {
         this.searchModal = modal;
     }
 
-    // ============================================================================
-    // TRACK SELECTION
-    // ============================================================================
-
     selectTrack(idx, visualizerCallback = null) {
-        console.log(`[TrackControls] Selecting Track index: ${idx} (Track ${idx + 1})`);
-        
         if(this.trackLabelElements[this.selectedTrackIndex])
             this.trackLabelElements[this.selectedTrackIndex].classList.remove('selected');
         this.selectedTrackIndex = idx;
@@ -86,10 +80,6 @@ export class TrackControls {
         if (visualizerCallback) visualizerCallback();
     }
 
-    // ============================================================================
-    // CUSTOM TRACK HEADER
-    // ============================================================================
-
     updateCustomTrackHeader(idx, groupIdx, groupColor) {
         let container = document.querySelector('.right-pane .p-3.bg-neutral-800');
         if (!container) return;
@@ -116,7 +106,6 @@ export class TrackControls {
             trackType = 'Synth';
         }
 
-        // Row 1: Track info and search
         const row1 = document.createElement('div');
         row1.className = 'flex items-center gap-2 w-full';
         
@@ -138,6 +127,18 @@ export class TrackControls {
         nameSpan.title = trackName;
         row1.appendChild(nameSpan);
 
+        // NEW: CLEAN MODE TOGGLE BUTTON
+        const cleanBtn = document.createElement('button');
+        cleanBtn.id = 'cleanModeBtn';
+        cleanBtn.innerText = 'CLEAN';
+        cleanBtn.title = "Hard AGC: Prevent all distortion";
+        cleanBtn.className = `text-[9px] font-bold px-2 py-0.5 rounded transition border shrink-0 ${t.cleanMode ? 'bg-sky-600 text-white border-sky-400' : 'bg-neutral-700 text-neutral-500 border-neutral-600 hover:bg-neutral-600'}`;
+        cleanBtn.onclick = () => {
+            t.cleanMode = !t.cleanMode;
+            this.updateCustomTrackHeader(idx, groupIdx, groupColor);
+        };
+        row1.appendChild(cleanBtn);
+
         const typeLabel = document.createElement('span');
         typeLabel.id = 'trackTypeLabel';
         typeLabel.innerText = `[${trackType}]`;
@@ -147,25 +148,16 @@ export class TrackControls {
         const searchBtn = document.createElement('button');
         searchBtn.className = 'text-[10px] bg-emerald-900/30 hover:bg-emerald-800 text-emerald-400 px-2 py-0.5 rounded transition border border-emerald-900/50 ml-2';
         searchBtn.innerHTML = '<i class="fas fa-search mr-1"></i>Find';
-        searchBtn.title = "Search Freesound";
         searchBtn.onclick = () => {
             if (this.searchModal) {
-                let query = "";
-                if (t.type === 'simple-drum') query = t.params.drumType || "drum";
-                else if (t.customSample) query = t.customSample.name.replace('.wav', '').replace('.mp3', '');
-                else if (t.autoName) query = t.autoName;
-                else query = "drum hit";
-                
+                let query = t.type === 'simple-drum' ? (t.params.drumType || "drum") : (t.customSample ? t.customSample.name.replace('.wav', '').replace('.mp3', '') : "drum hit");
                 this.searchModal.open(t, query);
-            } else {
-                alert("Search module not initialized");
             }
         };
         row1.appendChild(searchBtn);
 
         container.appendChild(row1);
 
-        // Row 2: Type buttons
         const row2 = document.createElement('div');
         row2.className = 'flex gap-1 w-full justify-between';
         
@@ -173,10 +165,8 @@ export class TrackControls {
         rstBtn.id = 'resetParamBtn';
         rstBtn.className = 'text-[9px] bg-neutral-700 hover:bg-neutral-600 text-neutral-300 px-1.5 py-1 rounded transition border border-neutral-600 min-w-[24px]';
         rstBtn.innerHTML = '<i class="fas fa-undo"></i>';
-        rstBtn.title = 'Reset Parameters';
         rstBtn.onclick = () => {
              const t = this.tracks[this.selectedTrackIndex];
-             console.log(`[TrackControls] Resetting parameters for Track ${this.selectedTrackIndex + 1}`);
              if (t.type === 'granular') {
                  t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
                  t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
@@ -197,18 +187,11 @@ export class TrackControls {
                 if (!this.trackManager || !this.trackManager.audioEngine) return;
                 const ae = this.trackManager.audioEngine;
                 const t = this.tracks[this.selectedTrackIndex];
-                console.log(`[TrackControls] Changing track type to: ${label} for Track ${this.selectedTrackIndex + 1}`);
-                
                 if (isAuto) {
                     t.type = 'automation';
                     t.steps.fill(0);
                     const stepElements = this.matrixStepElements[t.id];
-                    if(stepElements) {
-                         stepElements.forEach(el => { 
-                             el.className = 'step-btn'; 
-                             el.classList.remove('active', 'vel-1', 'vel-2', 'vel-3'); 
-                         });
-                    }
+                    if(stepElements) stepElements.forEach(el => { el.className = 'step-btn'; });
                     this.updateTrackControlsVisibility();
                 } else if (is909) {
                     t.type = 'simple-drum';
@@ -222,11 +205,7 @@ export class TrackControls {
                     t.type = 'granular';
                     this.updateTrackControlsVisibility();
                     const newBuf = ae.generateBufferByType(type);
-                    if (newBuf) {
-                        t.buffer = newBuf;
-                        t.customSample = null;
-                        t.rmsMap = ae.analyzeBuffer(newBuf);
-                    }
+                    if (newBuf) { t.buffer = newBuf; t.customSample = null; t.rmsMap = ae.analyzeBuffer(newBuf); }
                 }
                 this.selectTrack(this.selectedTrackIndex); 
             };
@@ -243,10 +222,8 @@ export class TrackControls {
 
         container.appendChild(row2);
 
-        // Row 3: Choke groups
         const row3 = document.createElement('div');
         row3.className = 'flex gap-0.5 w-full';
-        
         const grpLabel = document.createElement('span');
         grpLabel.innerText = 'CHK';
         grpLabel.className = 'text-[9px] font-bold text-neutral-500 mr-1 flex items-center';
@@ -256,56 +233,31 @@ export class TrackControls {
             const btn = document.createElement('button');
             const targetGroup = i + 1;
             const isAssigned = t.chokeGroup === targetGroup;
-            
             const bgClass = isAssigned ? '' : 'bg-neutral-800 text-neutral-500';
             const style = isAssigned ? `background-color: #ef4444; color: #fff; border-color: #b91c1c;` : '';
-            
             btn.className = `flex-1 h-4 text-[8px] border border-neutral-700 rounded flex items-center justify-center hover:bg-neutral-700 transition ${bgClass}`;
             btn.style.cssText = style;
             btn.innerText = targetGroup;
-            
-            btn.onclick = () => {
-                if (t.chokeGroup === targetGroup) {
-                    t.chokeGroup = 0; 
-                } else {
-                    t.chokeGroup = targetGroup; 
-                }
-                this.selectTrack(this.selectedTrackIndex); 
-            };
-            
+            btn.onclick = () => { t.chokeGroup = (t.chokeGroup === targetGroup) ? 0 : targetGroup; this.selectTrack(this.selectedTrackIndex); };
             row3.appendChild(btn);
         }
-        
         container.appendChild(row3);
     }
-
-    // ============================================================================
-    // CONTROL VISIBILITY
-    // ============================================================================
 
     updateTrackControlsVisibility() {
         const t = this.tracks[this.selectedTrackIndex];
         if (!t) return;
 
-        // Reset Toggle Button States in UI
         const btnBar = document.getElementById('resetOnBarBtn');
         const btnTrig = document.getElementById('resetOnTrigBtn');
 
         if (btnBar) {
-            btnBar.onclick = () => {
-                t.resetOnBar = !t.resetOnBar;
-                console.log(`[TrackControls] Track ${this.selectedTrackIndex + 1} ResetOnBar set to: ${t.resetOnBar}`);
-                this.updateTrackControlsVisibility();
-            };
+            btnBar.onclick = () => { t.resetOnBar = !t.resetOnBar; this.updateTrackControlsVisibility(); };
             btnBar.className = `w-5 h-5 text-[8px] border rounded transition ${t.resetOnBar ? 'bg-emerald-600 text-white border-emerald-400' : 'bg-neutral-800 text-neutral-500 border-neutral-700 hover:bg-neutral-700'}`;
         }
 
         if (btnTrig) {
-            btnTrig.onclick = () => {
-                t.resetOnTrig = !t.resetOnTrig;
-                console.log(`[TrackControls] Track ${this.selectedTrackIndex + 1} ResetOnTrig set to: ${t.resetOnTrig}`);
-                this.updateTrackControlsVisibility();
-            };
+            btnTrig.onclick = () => { t.resetOnTrig = !t.resetOnTrig; this.updateTrackControlsVisibility(); };
             btnTrig.className = `w-5 h-5 text-[8px] border rounded transition ${t.resetOnTrig ? 'bg-amber-600 text-white border-amber-400' : 'bg-neutral-800 text-neutral-500 border-neutral-700 hover:bg-neutral-700'}`;
         }
 
@@ -313,9 +265,7 @@ export class TrackControls {
         const granularControls = document.getElementById('granularControls');
         const drumControls = document.getElementById('simpleDrumControls');
         const lfoSection = document.getElementById('lfoSection');
-        const typeLabel = document.getElementById('trackTypeLabel');
         const speedSel = document.getElementById('autoSpeedSelect');
-        const chokeSel = document.getElementById('chokeGroupSelect'); 
 
         if(granularControls) granularControls.classList.add('hidden');
         if(drumControls) drumControls.classList.add('hidden');
@@ -340,75 +290,31 @@ export class TrackControls {
         }
         else {
             const wasHidden = granularControls && granularControls.classList.contains('hidden');
-            
             if(granularControls) granularControls.classList.remove('hidden');
             if(lfoSection) lfoSection.classList.remove('hidden');
-            
-            if(wasHidden) {
-                setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
-            }
+            if(wasHidden) setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
         }
     }
-
-    // ============================================================================
-    // KNOBS UPDATE
-    // ============================================================================
 
     updateKnobs() {
         const t = this.tracks[this.selectedTrackIndex];
         if(!t) return;
-
-        // DEBUG: Validation loop to catch NaN or Infinity parameters
-        for (const [key, val] of Object.entries(t.params)) {
-            if (typeof val === 'number' && (isNaN(val) || !isFinite(val))) {
-                console.error(`[TrackControls] CRITICAL: Parameter "${key}" on Track ${this.selectedTrackIndex + 1} is invalid:`, val);
-            }
-        }
-
-        // Monitoring for distortion triggers
-        if (t.type === 'granular' && (t.params.pitch < 0.1 || t.params.volume > 1.2 || Math.abs(t.params.scanSpeed) > 1.5)) {
-            console.warn(`[TrackControls] High-intensity state on Track ${this.selectedTrackIndex + 1}:`, {
-                pitch: t.params.pitch,
-                scanSpd: t.params.scanSpeed,
-                vol: t.params.volume
-            });
-        }
-
         document.querySelectorAll('.param-slider').forEach(el => {
             const param = el.dataset.param;
             if(t.params[param] !== undefined) {
                 el.value = t.params[param];
-                
                 let suffix = '';
-                // UPDATED: Default to 3 decimals
                 let displayValue = t.params[param].toFixed(3); 
-
-                if(param === 'density') {
-                    suffix = 'hz';
-                    displayValue = t.params[param].toFixed(0); // Integer for Density
-                }
+                if(param === 'density') { suffix = 'hz'; displayValue = t.params[param].toFixed(0); }
                 if(param === 'grainSize') suffix = 's';
                 if(param === 'pitch') suffix = 'x';
                 if(param === 'overlap') suffix = 'x';
-                if(param === 'scanSpeed') suffix = '';
-                // Position, Sample Start/End default to 3 decimals
-
-                // Target the correct value-display element
                 let displayEl = el.nextElementSibling;
-                if (displayEl && !displayEl.classList.contains('value-display')) {
-                    displayEl = el.parentElement.nextElementSibling;
-                }
-
-                if(displayEl && displayEl.classList.contains('value-display')) {
-                    displayEl.innerText = displayValue + suffix;
-                }
+                if (displayEl && !displayEl.classList.contains('value-display')) displayEl = el.parentElement.nextElementSibling;
+                if(displayEl && displayEl.classList.contains('value-display')) displayEl.innerText = displayValue + suffix;
             }
         });
     }
-
-    // ============================================================================
-    // LFO UI
-    // ============================================================================
 
     updateLfoUI() {
         if(!this.tracks[this.selectedTrackIndex]) return;
@@ -416,23 +322,13 @@ export class TrackControls {
         const normalGrp = Math.floor(this.selectedTrackIndex / TRACKS_PER_GROUP);
         const grp = this.randomChokeMode ? this.randomChokeGroups[this.selectedTrackIndex] : normalGrp;
         const groupColorDark = `hsl(${grp * 45}, 70%, 35%)`;
-        
         document.querySelectorAll('.lfo-tab').forEach(b => {
             const i = parseInt(b.dataset.lfo);
-            if(i === this.selectedLfoIndex) {
-                b.classList.remove('text-neutral-400', 'hover:bg-neutral-700');
-                b.classList.add('text-white');
-                b.style.backgroundColor = groupColorDark;
-            } else {
-                b.classList.add('text-neutral-400', 'hover:bg-neutral-700');
-                b.classList.remove('text-white');
-                b.style.backgroundColor = '';
-            }
+            if(i === this.selectedLfoIndex) { b.classList.remove('text-neutral-400', 'hover:bg-neutral-700'); b.classList.add('text-white'); b.style.backgroundColor = groupColorDark; }
+            else { b.classList.add('text-neutral-400', 'hover:bg-neutral-700'); b.classList.remove('text-white'); b.style.backgroundColor = ''; }
         });
-        
         const rateVal = document.getElementById('lfoRateVal');
         const amtVal = document.getElementById('lfoAmtVal');
-        
         document.getElementById('lfoTarget').value = lfo.target;
         document.getElementById('lfoWave').value = lfo.wave;
         document.getElementById('lfoRate').value = lfo.rate;
@@ -440,10 +336,6 @@ export class TrackControls {
         document.getElementById('lfoAmt').value = lfo.amount;
         if(amtVal) amtVal.innerText = lfo.amount.toFixed(2);
     }
-
-    // ============================================================================
-    // GETTERS / SETTERS
-    // ============================================================================
 
     getSelectedTrackIndex() { return this.selectedTrackIndex; }
     getSelectedLfoIndex() { return this.selectedLfoIndex; }
