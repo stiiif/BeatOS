@@ -260,7 +260,7 @@
                 <!-- 1. GRANULAR CONTROLS (Hidden when 909 is active) -->
                 <div id="granularControls">
                     
-                    <!-- NEW Collapsible Header -->
+                    <!-- Collapsible Header -->
                     <div class="flex justify-between items-center mb-2 cursor-pointer select-none group" onclick="toggleSection('granularContent', this)">
                         <label class="text-[10px] text-neutral-500 uppercase font-bold group-hover:text-neutral-300 transition-colors pointer-events-none">
                             <i class="fas fa-cubes mr-1"></i> GRANULAR ENGINE
@@ -423,53 +423,63 @@
                 </div> <!-- End Granular Controls -->
 
                 <!-- 2. 909 CONTROLS (Hidden by default) -->
-                <div id="simpleDrumControls" class="hidden space-y-6">
-                    <div class="flex items-center justify-between border-b border-neutral-700 pb-2">
-                        <h3 class="text-xs font-bold text-orange-400 uppercase"><i class="fas fa-drum mr-2"></i>909
-                            ENGINE</h3>
+                <div id="simpleDrumControls" class="hidden">
+                    <!-- Collapsible Header -->
+                    <div class="flex justify-between items-center mb-2 cursor-pointer select-none group" onclick="toggleSection('simpleDrumContent', this)">
+                        <label class="text-[10px] text-neutral-500 uppercase font-bold group-hover:text-neutral-300 transition-colors pointer-events-none">
+                            <i class="fas fa-drum mr-1"></i> 909 ENGINE
+                        </label>
+                        <i class="fas fa-chevron-down text-[10px] text-neutral-600 transition-transform duration-200"></i>
                     </div>
 
-                    <div class="bg-neutral-800/50 p-4 rounded border border-neutral-800">
-                        <!-- Drum Type Selection REMOVED (Handled by Top Row now) -->
-
-                        <div class="grid grid-cols-2 gap-6">
-                            <div class="knob-container">
-                                <label class="text-[10px] text-neutral-500 mb-2">Tuning</label>
-                                <input type="range" min="0" max="1" step="0.01" data-param="drumTune"
-                                    class="param-slider">
-                                <span class="text-[10px] text-orange-400 font-mono mt-1">0.50</span>
-                            </div>
-                            <div class="knob-container">
-                                <label class="text-[10px] text-neutral-500 mb-2">Decay</label>
-                                <input type="range" min="0" max="1" step="0.01" data-param="drumDecay"
-                                    class="param-slider">
-                                <span class="text-[10px] text-orange-400 font-mono mt-1">0.50</span>
+                    <!-- Collapsible Content Wrapper -->
+                    <div id="simpleDrumContent" class="transition-all duration-300 origin-top">
+                        <div class="bg-neutral-800/50 p-4 rounded border border-neutral-800 space-y-6">
+                            <div class="grid grid-cols-2 gap-6">
+                                <div class="knob-container">
+                                    <label class="text-[10px] text-neutral-500 mb-2">Tuning</label>
+                                    <input type="range" min="0" max="1" step="0.01" data-param="drumTune"
+                                        class="param-slider">
+                                    <span class="text-[10px] text-orange-400 font-mono mt-1">0.50</span>
+                                </div>
+                                <div class="knob-container">
+                                    <label class="text-[10px] text-neutral-500 mb-2">Decay</label>
+                                    <input type="range" min="0" max="1" step="0.01" data-param="drumDecay"
+                                        class="param-slider">
+                                    <span class="text-[10px] text-orange-400 font-mono mt-1">0.50</span>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- 3. AUTOMATION CONTROLS (Hidden by default) -->
-                <div id="automationControls" class="hidden space-y-6">
-                    <div class="flex items-center justify-between border-b border-neutral-700 pb-2">
-                        <h3 class="text-xs font-bold text-indigo-400 uppercase"><i
-                                class="fas fa-robot mr-2"></i>AUTOMATION LANE</h3>
+                <div id="automationControls" class="hidden">
+                    <!-- Collapsible Header -->
+                    <div class="flex justify-between items-center mb-2 cursor-pointer select-none group" onclick="toggleSection('automationContent', this)">
+                        <label class="text-[10px] text-neutral-500 uppercase font-bold group-hover:text-neutral-300 transition-colors pointer-events-none">
+                            <i class="fas fa-robot mr-1"></i> AUTOMATION LANE
+                        </label>
+                        <i class="fas fa-chevron-down text-[10px] text-neutral-600 transition-transform duration-200"></i>
                     </div>
 
-                    <div class="bg-neutral-800/50 p-4 rounded border border-neutral-800">
-                        <label class="text-[10px] text-neutral-500 block mb-2 font-bold uppercase">Clock Speed</label>
-                        <select id="autoSpeedSelect"
-                            class="w-full bg-neutral-900 text-neutral-300 text-xs rounded border border-neutral-700 p-2 outline-none">
-                            <option value="1">1/1 (Normal)</option>
-                            <option value="2">1/2 (Half Speed)</option>
-                            <option value="4">1/4 (Quarter Speed)</option>
-                            <option value="8">1/8 (Slow)</option>
-                        </select>
-                        <p class="text-[9px] text-neutral-500 mt-2">
-                            Click steps to cycle intensity (1-5).<br>
-                            Triggers randomization on value change.<br>
-                            Reverts to original sound on empty steps.
-                        </p>
+                    <!-- Collapsible Content Wrapper -->
+                    <div id="automationContent" class="transition-all duration-300 origin-top">
+                        <div class="bg-neutral-800/50 p-4 rounded border border-neutral-800 space-y-6">
+                            <label class="text-[10px] text-neutral-500 block mb-2 font-bold uppercase">Clock Speed</label>
+                            <select id="autoSpeedSelect"
+                                class="w-full bg-neutral-900 text-neutral-300 text-xs rounded border border-neutral-700 p-2 outline-none">
+                                <option value="1">1/1 (Normal)</option>
+                                <option value="2">1/2 (Half Speed)</option>
+                                <option value="4">1/4 (Quarter Speed)</option>
+                                <option value="8">1/8 (Slow)</option>
+                            </select>
+                            <p class="text-[9px] text-neutral-500 mt-2">
+                                Click steps to cycle intensity (1-5).<br>
+                                Triggers randomization on value change.<br>
+                                Reverts to original sound on empty steps.
+                            </p>
+                        </div>
                     </div>
                 </div>
 
