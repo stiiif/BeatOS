@@ -285,8 +285,18 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
             t.customSample = null;
             t.rmsMap = audioEngine.analyzeBuffer(newBuf);
             visualizer.triggerRedraw();
-            const typeLabel = document.getElementById('trackTypeLabel');
-            typeLabel.textContent = type.toUpperCase() + ' (Synth)';
+            
+            // Re-trigger header update to refresh type label properly using standardized logic
+            // (Previous manual textContent setting removed in favor of centralized update)
+            const normalGrp = Math.floor(currentTrackIdx / TRACKS_PER_GROUP);
+            const randomChokeInfo = uiManager.getRandomChokeInfo();
+            const grp = randomChokeInfo.mode ? randomChokeInfo.groups[currentTrackIdx] : normalGrp;
+            const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
+            
+            // This ensures consistent [SYNTH] or specific name if implemented later
+            uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
+            
+            // Temporary visual feedback on button
             const originalBg = e.target.style.backgroundColor;
             e.target.style.backgroundColor = '#059669';
             setTimeout(() => { e.target.style.backgroundColor = originalBg; }, 200);
@@ -296,7 +306,8 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
 
 document.getElementById('load909Btn').addEventListener('click', () => {
     if (!audioEngine.getContext()) return;
-    const t = tracks[uiManager.getSelectedTrackIndex()];
+    const currentTrackIdx = uiManager.getSelectedTrackIndex();
+    const t = tracks[currentTrackIdx];
     t.type = 'simple-drum';
     t.params.drumType = 'kick'; t.params.drumTune = 0.5; t.params.drumDecay = 0.5;
     updateTrackControlsVisibility();
@@ -305,13 +316,21 @@ document.getElementById('load909Btn').addEventListener('click', () => {
     const ctx = bufCanvas.getContext('2d');
     ctx.fillStyle = '#111'; ctx.fillRect(0, 0, bufCanvas.width, bufCanvas.height);
     ctx.font = '10px monospace'; ctx.fillStyle = '#f97316'; ctx.fillText("909 ENGINE ACTIVE", 10, 40);
+    
+    // FIX: Force Header Update
+    const normalGrp = Math.floor(currentTrackIdx / TRACKS_PER_GROUP);
+    const randomChokeInfo = uiManager.getRandomChokeInfo();
+    const grp = randomChokeInfo.mode ? randomChokeInfo.groups[currentTrackIdx] : normalGrp;
+    const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
+    uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
 });
 
 // Fixed: Bind to the static AUTO button instead of creating it
 const loadAutoBtn = document.getElementById('loadAutoBtn');
 if (loadAutoBtn) {
     loadAutoBtn.addEventListener('click', () => {
-        const t = tracks[uiManager.getSelectedTrackIndex()];
+        const currentTrackIdx = uiManager.getSelectedTrackIndex();
+        const t = tracks[currentTrackIdx];
         t.type = 'automation';
         t.steps.fill(0);
         const stepElements = uiManager.matrixStepElements[t.id];
@@ -323,6 +342,13 @@ if (loadAutoBtn) {
         const ctx = bufCanvas.getContext('2d');
         ctx.fillStyle = '#111'; ctx.fillRect(0, 0, bufCanvas.width, bufCanvas.height);
         ctx.font = '10px monospace'; ctx.fillStyle = '#818cf8'; ctx.fillText("AUTOMATION TRACK", 10, 40);
+        
+        // FIX: Force Header Update
+        const normalGrp = Math.floor(currentTrackIdx / TRACKS_PER_GROUP);
+        const randomChokeInfo = uiManager.getRandomChokeInfo();
+        const grp = randomChokeInfo.mode ? randomChokeInfo.groups[currentTrackIdx] : normalGrp;
+        const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
+        uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
     });
 }
 
