@@ -86,7 +86,7 @@ export class AutomationPanel {
         // Scrollable Matrix Container
         const scrollArea = document.createElement('div');
         // Changed h-64 to h-auto to allow content-based height
-        scrollArea.className = 'overflow-y-auto custom-scrollbar bg-[#0a0a0a] rounded border border-neutral-800 h-auto'; 
+        scrollArea.className = 'overflow-y-auto custom-scrollbar bg-[#0a0a0a] rounded border border-neutral-800 h-auto max-h-[60vh]'; 
         
         // The Grid
         const grid = document.createElement('div');
@@ -287,14 +287,17 @@ export class AutomationPanel {
             track.lfos.forEach((lfo, i) => {
                 if (i >= NUM_LFOS) return;
                 const cell = document.createElement('div');
-                cell.className = 'grid-cell border-b border-neutral-800/50 hover:bg-[#1a1a1a]';
+                // Added cursor-pointer to the cell to indicate interaction
+                cell.className = 'grid-cell border-b border-neutral-800/50 hover:bg-[#1a1a1a] cursor-pointer';
                 
                 const isActive = lfo.target === target.id;
                 const activeClass = isActive ? `node-active lfo-color-${i % 6}` : '';
                 
                 const node = document.createElement('div');
                 node.className = `circuit-node ${activeClass}`;
-                node.onclick = () => {
+                
+                // Moved onclick handler from the small 'node' div to the parent 'cell' div
+                cell.onclick = () => {
                     // Radio button logic per column
                     if (lfo.target === target.id) {
                         lfo.target = 'none'; // Toggle off
