@@ -45,18 +45,48 @@ export class AutomationPanel {
             return;
         }
 
-        // Clear existing content (which might be the old UI)
-        container.innerHTML = '';
+        // --- NEW: COLLAPSIBLE STRUCTURE LOGIC ---
+        // Check if we have already built the outer shell (Header + Wrapper)
+        // This prevents rebuilding the DOM on every update, keeping the collapse state
+        let contentWrapper = document.getElementById('modulatorContent');
+        
+        if (!contentWrapper) {
+            // Build the Shell
+            container.innerHTML = ''; // Clear old static content
 
-        // Header
-        const header = document.createElement('div');
-        header.className = 'flex items-center gap-2 mb-2 px-2';
-        header.innerHTML = '<h3 class="text-xs font-bold text-neutral-400 uppercase"><i class="fas fa-wave-square mr-1"></i> Modulators</h3>';
-        container.appendChild(header);
+            // Collapsible Header
+            const header = document.createElement('div');
+            header.className = 'flex justify-between items-center mb-2 cursor-pointer select-none group';
+            // Trigger the global toggleSection function
+            header.onclick = () => {
+                if (window.toggleSection) {
+                    window.toggleSection('modulatorContent', header);
+                }
+            };
+            
+            // Fixed font size to match exactly granular engine [10px]
+            header.innerHTML = `
+                <label class="text-[10px] text-neutral-500 uppercase font-bold group-hover:text-neutral-300 transition-colors pointer-events-none cursor-pointer">
+                    <i class="fas fa-wave-square mr-1"></i> MODULATORS
+                </label>
+                <i class="fas fa-chevron-down text-[10px] text-neutral-600 transition-transform duration-200"></i>
+            `;
+            container.appendChild(header);
+
+            // Wrapper for Content
+            contentWrapper = document.createElement('div');
+            contentWrapper.id = 'modulatorContent';
+            contentWrapper.className = 'transition-all duration-300 origin-top block'; // Ensure visible by default
+            container.appendChild(contentWrapper);
+        }
+
+        // --- RENDER CONTENT INTO WRAPPER ---
+        contentWrapper.innerHTML = '';
 
         // Scrollable Matrix Container
         const scrollArea = document.createElement('div');
-        scrollArea.className = 'overflow-y-auto custom-scrollbar bg-[#0a0a0a] rounded border border-neutral-800 h-auto max-h-[60vh]'; // Fixed height for scrolling
+        // Changed h-64 to h-auto to allow content-based height
+        scrollArea.className = 'overflow-y-auto custom-scrollbar bg-[#0a0a0a] rounded border border-neutral-800 h-auto'; 
         
         // The Grid
         const grid = document.createElement('div');
@@ -65,7 +95,7 @@ export class AutomationPanel {
         grid.style.gridTemplateColumns = `70px repeat(${NUM_LFOS}, 1fr)`;
         
         scrollArea.appendChild(grid);
-        container.appendChild(scrollArea);
+        contentWrapper.appendChild(scrollArea);
 
         this.renderSourceRow(grid, track);
         this.renderWaveRow(grid, track);
