@@ -403,7 +403,10 @@ if (btnOTO) {
         t.steps.fill(0);
         const stepElements = uiManager.matrixStepElements[t.id];
         if (stepElements) {
-            stepElements.forEach(el => { el.className = 'step-btn'; el.classList.remove('active'); });
+            stepElements.forEach(el => { 
+                // BUG FIX: Don't wipe className (which kills grid dividers), simply remove active classes
+                el.classList.remove('active', 'vel-1', 'vel-2', 'vel-3', 'auto-level-1', 'auto-level-2', 'auto-level-3', 'auto-level-4', 'auto-level-5');
+            });
         }
         updateTrackControlsVisibility();
         const bufCanvas = document.getElementById('bufferDisplay');
