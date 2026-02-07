@@ -152,6 +152,7 @@ export class AutomationPanel {
 
         const waves = ['sine', 'square', 'sawtooth', 'triangle', 'pulse', 'random'];
         const icons = ['water', 'square-full', 'bolt', 'play', 'grip-lines', 'random']; // FontAwesome mapping
+        const labels = ['SIN', 'SQR', 'SAW', 'TRI', 'PLS', 'RND'];
 
         track.lfos.forEach((lfo, i) => {
             if (i >= NUM_LFOS) return;
@@ -168,11 +169,12 @@ export class AutomationPanel {
                 const activeClass = isActive ? `active lfo-color-${i % 6}` : '';
                 
                 // Special rotation for Triangle (play icon)
-                const rotateClass = wave === 'triangle' ? '-rotate-90' : '';
+                //const rotateClass = wave === 'triangle' ? '-rotate-90' : '';
                 
                 btn.className = `wave-btn ${activeClass}`;
                 btn.title = wave;
-                btn.innerHTML = `<i class="fas fa-${icons[idx]} ${rotateClass}"></i>`;
+                //btn.innerHTML = `<i class="fas fa-${icons[idx]} ${rotateClass}"></i>`;
+                btn.textContent = labels[idx];
                 
                 btn.onclick = () => {
                     lfo.wave = wave;
