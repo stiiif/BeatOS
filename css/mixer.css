@@ -1,27 +1,28 @@
 /* css/mixer.css */
 
 :root {
-    --track-width: 42px;
-    --knob-ratio: 0.62;
-    --strip-gap: 0px;
-    --knob-gap: 0px;
-    --fader-height: 180px;
-    --thumb-height: 24px;
-    --thumb-width: 32px;
+    --track-width: 48px; /* Slightly wider for better knob clarity */
+    --knob-ratio: 0.55;
 }
 
 .mixer-container {
     display: flex;
     flex-direction: row; 
-    flex-wrap: nowrap;   
     height: 100%;
     width: 100%;
-    background-color: #0a0a0a;
+    background-color: #050505;
     overflow-x: auto;    
     overflow-y: hidden;
-    padding: 8px;
-    gap: var(--strip-gap);
-    align-items: flex-start;
+    padding: 10px;
+    gap: 1px;
+    position: relative;
+}
+
+.meter-overlay-layer {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+    z-index: 10;
 }
 
 /* --- STRIPS --- */
@@ -32,46 +33,38 @@
     background-color: #121212;
     border: 1px solid #1a1a1a;
     border-radius: 2px;
-    position: relative;
     flex-shrink: 0;
+    min-width: var(--track-width);
 }
 
-.mixer-strip.label-strip { width: 50px; background-color: #0a0a0a; border: none; z-index: 5; }
-.mixer-strip.track-strip { width: var(--track-width); min-width: 18px; }
-.mixer-strip.group-strip { background-color: #181818; border-color: #222; width: 50px; }
-
-/* FEATURE REQUEST 3: Return Strip Cleanup */
-.mixer-strip.return-strip {
-    width: 50px;
-    border-color: #222;
-    /* Background colors set inline in JS now, but can have base styling here */
-    box-shadow: none; 
-}
-
-.mixer-strip.master-strip { background-color: #111; border-color: #331111; width: 60px; margin-left: 6px; }
+.mixer-strip.label-strip { width: 55px; background-color: #080808; border-color: transparent; }
+.mixer-strip.group-strip { background-color: #181818; width: 60px; border-color: #222; }
+.mixer-strip.return-strip { width: 60px; border-color: transparent; }
+.mixer-strip.master-strip { background-color: #0d0d0d; border-color: #331111; width: 70px; margin-left: 10px; }
 
 /* --- HEADER --- */
 .strip-header {
-    height: 24px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
     background-color: #1a1a1a;
     border-bottom: 1px solid #000;
-    flex-shrink: 0;
+    font-size: 0.6rem;
+    font-weight: bold;
+    color: #666;
 }
-.strip-num, .strip-name { font-size: 0.5rem; font-weight: bold; color: #666; white-space: nowrap; }
+.strip-header.clickable:hover { background-color: #222; color: #fff; cursor: pointer; }
 
 /* --- CONTROLS --- */
 .strip-controls {
     flex: 1;
-    overflow-y: auto; 
-    padding: 6px 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--knob-gap);
-    background: transparent;
+    padding: 8px 0;
+    gap: 4px;
+    overflow-y: auto;
 }
 .strip-controls::-webkit-scrollbar { width: 0px; }
 
@@ -81,83 +74,98 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1px;
     width: 100%;
-    height: calc(var(--track-width) * var(--knob-ratio) + 12px);
-    min-height: 20px;
+    min-height: 32px; /* Fixed height to prevent collapse */
+    margin-bottom: 2px;
 }
-.mixer-pot.label-item label { font-size: 0.5rem; color: #555; font-weight: bold; text-transform: uppercase; text-align: right; width: 100%; padding-right: 4px; }
+
+.mixer-pot label {
+    font-size: 0.5rem;
+    color: #555;
+    font-weight: bold;
+    text-transform: uppercase;
+    text-align: center;
+    width: 100%;
+    margin-bottom: 2px;
+}
 
 .knob-outer {
-    width: calc(var(--track-width) * var(--knob-ratio));
-    height: calc(var(--track-width) * var(--knob-ratio));
-    max-width: 24px; max-height: 24px; min-width: 14px; min-height: 14px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     background: #222;
     border: 1px solid #000;
     position: relative;
     cursor: ns-resize;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
 }
-.knob-line { width: 10%; height: 35%; background: #555; position: absolute; top: 15%; left: 45%; border-radius: 1px; }
 
-/* Knob Colors */
+.knob-inner { width: 100%; height: 100%; position: absolute; }
+.knob-line {
+    width: 2px; height: 8px; background: #888;
+    position: absolute; top: 2px; left: 11px; border-radius: 1px;
+}
+
 .knob-color-red .knob-line { background: #ef4444; }
-.knob-color-blue .knob-line { background: #3b82f6; }
 .knob-color-green .knob-line { background: #10b981; }
+.knob-color-blue .knob-line { background: #3b82f6; }
 .knob-color-yellow .knob-line { background: #eab308; }
-.knob-color-purple .knob-line { background: #d946ef; }
+.knob-color-purple .knob-line { background: #a855f7; }
 
-/* --- FADER SECTION --- */
+.knob-value-tip {
+    position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+    font-size: 0.55rem; color: #10b981; background: #000;
+    padding: 1px 3px; border-radius: 2px; white-space: nowrap;
+    opacity: 0; pointer-events: none; transition: opacity 0.1s;
+    z-index: 50;
+}
+.knob-outer:hover .knob-value-tip { opacity: 1; }
+
+/* --- FADERS --- */
 .strip-fader-section {
-    height: 150px; 
-    width: 100%;
+    height: 160px;
     background: #0d0d0d;
     border-top: 1px solid #000;
-    padding: 6px 2px;
+    padding: 8px 4px;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 4px;
+    gap: 6px;
 }
 
-.strip-btn-row { display: flex; width: 100%; gap: 1px; height: 16px; }
+.strip-btn-row { display: flex; width: 100%; gap: 2px; height: 18px; }
 .mixer-btn {
-    flex: 1; font-size: 0.45rem; background: #222; color: #555; border: 1px solid #000; border-radius: 1px; cursor: pointer;
+    flex: 1; font-size: 0.5rem; background: #262626; color: #666;
+    border: 1px solid #1a1a1a; border-radius: 1px; cursor: pointer;
 }
-.mixer-btn.mute.active { background: #ef4444; color: white; }
-.mixer-btn.solo.active { background: #eab308; color: black; }
+.mixer-btn.mute.active { background: #ef4444; color: #fff; }
+.mixer-btn.solo.active { background: #eab308; color: #000; }
 
 .fader-wrapper { position: relative; width: 100%; flex: 1; display: flex; justify-content: center; }
 .fader-bg-slot {
     position: absolute; top: 0; bottom: 0; left: 50%; transform: translateX(-50%);
-    width: 4px; background-color: #050505; border-radius: 2px; z-index: 1;
-}
-
-.fader-ruler {
-    position: absolute; top: 0; bottom: 0; right: 2px; width: 4px; z-index: 2;
-    background: repeating-linear-gradient(to bottom, #333 0px, #333 1px, transparent 1px, transparent 10%);
-    opacity: 0.3; pointer-events: none;
+    width: 6px; background: #050505; border-radius: 3px; z-index: 1;
 }
 
 input[type=range].v-fader {
-    -webkit-appearance: slider-vertical; width: 100%; height: 100%; background: transparent; cursor: pointer; position: relative; z-index: 10;
+    -webkit-appearance: slider-vertical; width: 100%; height: 100%; background: transparent; 
+    cursor: pointer; position: relative; z-index: 20;
 }
 
 input[type=range].v-fader::-webkit-slider-thumb {
-    -webkit-appearance: none; height: var(--thumb-height); width: 30px; margin-left: -15px;
-    background: #2a2a2a; border: 1px solid #000; border-radius: 1px;
+    -webkit-appearance: none; height: 20px; width: 32px;
+    background: #333; border: 1px solid #000; border-radius: 2px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.5);
 }
 
 /* Extras */
 .drive-select {
-    width: 90%; background: #000; color: #555; font-size: 0.4rem;
-    border: 1px solid #222; margin-bottom: 2px; appearance: none; text-align: center;
+    width: 90%; background: #000; color: #666; font-size: 0.4rem;
+    border: 1px solid #222; margin-bottom: 2px; padding: 1px;
 }
-.section-label { font-size: 0.4rem; color: #444; font-weight: bold; margin-bottom: 2px; text-align: center; }
-.mixer-btn.kill { background: #111; color: #444; border: none; }
-.mixer-btn.kill.active { background: #ef4444; color: white; }
-
 .eq-section {
-    width: 94%; background: #0d0d0d; border: 1px solid #1a1a1a;
-    padding: 2px; display: flex; flex-direction: column; align-items: center; margin-bottom: 4px;
+    width: 94%; background: #0a0a0a; border: 1px solid #1a1a1a;
+    padding: 4px 2px; display: flex; flex-direction: column; align-items: center; margin-bottom: 4px;
 }
+.section-label { font-size: 0.45rem; color: #444; margin-bottom: 4px; border-bottom: 1px solid #222; width: 100%; text-align: center; }
+.mixer-btn.kill { height: 14px; background: #111; color: #444; border: none; font-size: 0.4rem; }
+.mixer-btn.kill.active { background: #ef4444; color: #fff; }
