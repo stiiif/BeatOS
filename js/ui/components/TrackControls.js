@@ -171,6 +171,7 @@ export class TrackControls {
                  t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
                  t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
                  t.params.sampleStart = 0.000; t.params.sampleEnd = 1.000;
+                 t.params.edgeCrunch = 0.0; t.params.orbit = 0.0; // Reset new params
              } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
              t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
              t.lfos.forEach(lfo => { lfo.target = 'none'; });
@@ -309,6 +310,11 @@ export class TrackControls {
                 if(param === 'grainSize') suffix = 's';
                 if(param === 'pitch') suffix = 'x';
                 if(param === 'overlap') suffix = 'x';
+                
+                // Special formatting for new params
+                if(param === 'edgeCrunch') { suffix = '%'; displayValue = (t.params[param] * 100).toFixed(0); }
+                if(param === 'orbit') { suffix = '%'; displayValue = (t.params[param] * 100).toFixed(0); }
+
                 let displayEl = el.nextElementSibling;
                 if (displayEl && !displayEl.classList.contains('value-display')) displayEl = el.parentElement.nextElementSibling;
                 if(displayEl && displayEl.classList.contains('value-display')) displayEl.innerText = displayValue + suffix;

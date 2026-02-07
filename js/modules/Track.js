@@ -56,6 +56,10 @@ export class Track {
             // --- NEW PARAMETERS (Sample Window) ---
             sampleStart: 0.000,
             sampleEnd: 1.000,
+
+            // --- CHAOS PARAMETERS ---
+            edgeCrunch: 0.0, // 0 to 1
+            orbit: 0.0,      // 0 to 1
             
             // --- 909 / Simple Drum Params ---
             drumType: 'kick', 
