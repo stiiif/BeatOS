@@ -180,7 +180,12 @@ export class SearchModal {
         // Load Handler
         const loadBtn = item.querySelector('.load-sound-btn');
         loadBtn.addEventListener('click', async () => {
+            // FIX: Capture track reference and ID immediately before any async work.
+            // If the modal is closed while loader is working, this.activeTrack becomes null,
+            // but our local variables 'targetTrack' and 'trackId' remain valid.
             if (!this.activeTrack) return;
+            const targetTrack = this.activeTrack;
+            const trackId = targetTrack.id;
             
             const originalText = loadBtn.innerText;
             loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
@@ -189,37 +194,34 @@ export class SearchModal {
             try {
                 // Use the highest quality preview as the source (MP3)
                 const url = sound.previews['preview-hq-mp3'];
-                await this.loader.loadSampleFromUrl(url, this.activeTrack);
+                await this.loader.loadSampleFromUrl(url, targetTrack);
                 
                 // Force Engine Type to Granular
-                this.activeTrack.type = 'granular';
+                targetTrack.type = 'granular';
                 
                 // Reset parameters for clean one-shot playback
-                this.activeTrack.params.position = 0;
-                this.activeTrack.params.grainSize = 0.10; 
-                this.activeTrack.params.density = 20;    
-                this.activeTrack.params.spray = 0;
-                this.activeTrack.params.pitch = 1.0;
-                this.activeTrack.params.overlap = 2.0;   
-                this.activeTrack.params.scanSpeed = 0;
-                this.activeTrack.params.ampAttack = 0.01;
-                this.activeTrack.params.ampDecay = 0.01;
-                this.activeTrack.params.ampRelease = 0.01;
+                targetTrack.params.position = 0;
+                targetTrack.params.grainSize = 0.10; 
+                targetTrack.params.density = 20;    
+                targetTrack.params.spray = 0;
+                targetTrack.params.pitch = 1.0;
+                targetTrack.params.overlap = 2.0;   
+                targetTrack.params.scanSpeed = 0;
+                targetTrack.params.ampAttack = 0.01;
+                targetTrack.params.ampDecay = 0.01;
+                targetTrack.params.ampRelease = 0.01;
                 
                 // Provide visual feedback
                 loadBtn.innerHTML = '<i class="fas fa-check"></i>';
                 loadBtn.classList.add('bg-emerald-600', 'text-white');
                 
                 // Update track name in UI
-                this.activeTrack.customSample.name = sound.name; 
+                targetTrack.customSample.name = sound.name; 
                 
-                // FIX FOR BUG 1: Capture trackId BEFORE calling hide(), because hide() sets activeTrack to null
-                const trackId = this.activeTrack.id;
-
                 // Close after brief delay
                 setTimeout(() => {
-                    this.hide();
-                    // Force refresh of track header/controls
+                    this.hide(); // Sets this.activeTrack to null
+                    // Force refresh of track header/controls using the captured trackId
                     window.dispatchEvent(new CustomEvent('trackSampleLoaded', { detail: { trackId: trackId } }));
                 }, 500);
 
