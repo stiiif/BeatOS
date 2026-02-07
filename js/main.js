@@ -282,7 +282,14 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
         const newBuf = audioEngine.generateBufferByType(type);
         if (newBuf) {
             t.buffer = newBuf;
-            t.customSample = null;
+            
+            // Set customSample with the name so updateCustomTrackHeader displays it
+            t.customSample = {
+                name: type === 'texture' ? 'FM Texture' : type.toUpperCase(),
+                buffer: newBuf,
+                duration: newBuf.duration
+            };
+            
             t.rmsMap = audioEngine.analyzeBuffer(newBuf);
             visualizer.triggerRedraw();
             
@@ -317,6 +324,7 @@ document.getElementById('load909Btn').addEventListener('click', () => {
     const currentTrackIdx = uiManager.getSelectedTrackIndex();
     const t = tracks[currentTrackIdx];
     t.type = 'simple-drum';
+    t.customSample = null; // Clear custom sample so UI knows it's 909
     t.params.drumType = 'kick'; t.params.drumTune = 0.5; t.params.drumDecay = 0.5;
     updateTrackControlsVisibility();
     uiManager.updateKnobs();
@@ -340,6 +348,7 @@ if (loadAutoBtn) {
         const currentTrackIdx = uiManager.getSelectedTrackIndex();
         const t = tracks[currentTrackIdx];
         t.type = 'automation';
+        t.customSample = null; // Clear custom sample so UI knows it's Automation
         t.steps.fill(0);
         const stepElements = uiManager.matrixStepElements[t.id];
         if (stepElements) {
