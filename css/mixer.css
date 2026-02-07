@@ -16,7 +16,7 @@
     flex-wrap: nowrap;   
     height: 100%;
     width: 100%;
-    background-color: #121212;
+    background-color: #0a0a0a;
     overflow-x: auto;    
     overflow-y: hidden;
     padding: 8px;
@@ -29,18 +29,26 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    background-color: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 3px;
-    box-shadow: 1px 0 3px rgba(0,0,0,0.3);
+    background-color: #121212;
+    border: 1px solid #1a1a1a;
+    border-radius: 2px;
     position: relative;
     flex-shrink: 0;
 }
 
-.mixer-strip.label-strip { width: 50px; background-color: #151515; border: none; z-index: 5; }
+.mixer-strip.label-strip { width: 50px; background-color: #0a0a0a; border: none; z-index: 5; }
 .mixer-strip.track-strip { width: var(--track-width); min-width: 18px; }
-.mixer-strip.group-strip { background-color: #252525; border-color: #444; width: 50px; }
-.mixer-strip.master-strip { background-color: #1a1515; border-color: #552222; width: 60px; margin-left: 6px; box-shadow: -2px 0 5px rgba(0,0,0,0.5); }
+.mixer-strip.group-strip { background-color: #181818; border-color: #222; width: 50px; }
+
+/* FEATURE REQUEST 3: Return Strip Cleanup */
+.mixer-strip.return-strip {
+    width: 50px;
+    border-color: #222;
+    /* Background colors set inline in JS now, but can have base styling here */
+    box-shadow: none; 
+}
+
+.mixer-strip.master-strip { background-color: #111; border-color: #331111; width: 60px; margin-left: 6px; }
 
 /* --- HEADER --- */
 .strip-header {
@@ -48,26 +56,24 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: #2a2a2a;
+    background-color: #1a1a1a;
     border-bottom: 1px solid #000;
     flex-shrink: 0;
-    overflow: hidden;
 }
-.strip-num, .strip-name { font-size: 0.55rem; font-weight: bold; color: #ccc; white-space: nowrap; }
+.strip-num, .strip-name { font-size: 0.5rem; font-weight: bold; color: #666; white-space: nowrap; }
 
 /* --- CONTROLS --- */
 .strip-controls {
     flex: 1;
     overflow-y: auto; 
-    overflow-x: hidden;
     padding: 6px 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: var(--knob-gap);
-    background: linear-gradient(180deg, #1e1e1e 0%, #151515 100%);
+    background: transparent;
 }
-.strip-controls::-webkit-scrollbar { width: 0px; background: transparent; }
+.strip-controls::-webkit-scrollbar { width: 0px; }
 
 /* --- KNOBS --- */
 .mixer-pot {
@@ -79,213 +85,79 @@
     width: 100%;
     height: calc(var(--track-width) * var(--knob-ratio) + 12px);
     min-height: 20px;
-    flex-shrink: 0;
 }
-.mixer-pot.label-item label { font-size: 0.55rem; color: #888; font-weight: bold; text-transform: uppercase; text-align: right; width: 100%; padding-right: 4px; }
-.mixer-pot.track-item label { display: none; }
+.mixer-pot.label-item label { font-size: 0.5rem; color: #555; font-weight: bold; text-transform: uppercase; text-align: right; width: 100%; padding-right: 4px; }
 
 .knob-outer {
     width: calc(var(--track-width) * var(--knob-ratio));
     height: calc(var(--track-width) * var(--knob-ratio));
-    max-width: 28px; max-height: 28px; min-width: 14px; min-height: 14px;
+    max-width: 24px; max-height: 24px; min-width: 14px; min-height: 14px;
     border-radius: 50%;
-    background: conic-gradient(from 180deg, #333 0%, #111 100%);
+    background: #222;
     border: 1px solid #000;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.5);
     position: relative;
     cursor: ns-resize;
 }
-.knob-inner { width: 100%; height: 100%; border-radius: 50%; position: absolute; top: 0; left: 0; }
-.knob-line { width: 10%; height: 35%; background: #ccc; position: absolute; top: 15%; left: 45%; border-radius: 1px; box-shadow: 0 0 2px rgba(255,255,255,0.3); }
+.knob-line { width: 10%; height: 35%; background: #555; position: absolute; top: 15%; left: 45%; border-radius: 1px; }
 
 /* Knob Colors */
-.knob-color-red .knob-line { background: #ef4444; box-shadow: 0 0 3px #ef4444; }
-.knob-color-blue .knob-line { background: #3b82f6; box-shadow: 0 0 3px #3b82f6; }
-.knob-color-green .knob-line { background: #10b981; box-shadow: 0 0 3px #10b981; }
-.knob-color-yellow .knob-line { background: #eab308; box-shadow: 0 0 3px #eab308; }
-.knob-color-purple .knob-line { background: #d946ef; box-shadow: 0 0 3px #d946ef; }
-
-.knob-value-tip {
-    font-size: 0.6rem; color: #10b981; position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
-    background: rgba(0,0,0,0.9); padding: 1px 3px; border-radius: 2px; opacity: 0; pointer-events: none; z-index: 100; white-space: nowrap;
-}
-.knob-outer:hover .knob-value-tip, .mixer-pot.dragging .knob-value-tip { opacity: 1; }
+.knob-color-red .knob-line { background: #ef4444; }
+.knob-color-blue .knob-line { background: #3b82f6; }
+.knob-color-green .knob-line { background: #10b981; }
+.knob-color-yellow .knob-line { background: #eab308; }
+.knob-color-purple .knob-line { background: #d946ef; }
 
 /* --- FADER SECTION --- */
 .strip-fader-section {
-    height: 160px; /* Increased height for better fader throw */
+    height: 150px; 
     width: 100%;
-    background: #111;
+    background: #0d0d0d;
     border-top: 1px solid #000;
     padding: 6px 2px;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 4px;
-    flex-shrink: 0;
 }
 
-.strip-btn-row {
-    display: flex;
-    width: 100%;
-    gap: 1px;
-    height: 18px;
-    margin-bottom: 2px;
-}
-
+.strip-btn-row { display: flex; width: 100%; gap: 1px; height: 16px; }
 .mixer-btn {
-    flex: 1;
-    font-size: 0.5rem;
-    padding: 0;
-    background: #333;
-    color: #666;
-    border: 1px solid #000;
-    border-radius: 2px;
-    cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
+    flex: 1; font-size: 0.45rem; background: #222; color: #555; border: 1px solid #000; border-radius: 1px; cursor: pointer;
 }
 .mixer-btn.mute.active { background: #ef4444; color: white; }
 .mixer-btn.solo.active { background: #eab308; color: black; }
 
-/* --- NEW FADER CONTAINER UI --- */
-.fader-wrapper {
-    position: relative;
-    width: 100%;
-    flex: 1;
-    display: flex;
-    justify-content: center;
-}
-
-/* The Background Slot (Grey background behind fader) */
+.fader-wrapper { position: relative; width: 100%; flex: 1; display: flex; justify-content: center; }
 .fader-bg-slot {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 6px; /* Narrow slot */
-    background-color: #080808;
-    border: 1px solid #222;
-    border-radius: 3px;
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
-    z-index: 1;
+    position: absolute; top: 0; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 4px; background-color: #050505; border-radius: 2px; z-index: 1;
 }
 
-/* The VU Meter Canvas (Left side) */
-.fader-vu-meter {
-    position: absolute;
-    top: 2%;
-    bottom: 2%;
-    left: 2px; /* Pin to left of strip */
-    width: 4px;
-    background: #000;
-    z-index: 2;
-    border-radius: 2px;
-    opacity: 0.8;
-}
-
-/* The Ruler / Axis (Right side) */
 .fader-ruler {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    right: 2px; /* Pin to right of strip */
-    width: 6px;
-    z-index: 2;
-    /* Logarithmic ticks generated via gradients */
-    background: 
-        repeating-linear-gradient(
-            to bottom,
-            #444 0px,
-            #444 1px,
-            transparent 1px,
-            transparent 10%
-        );
-    opacity: 0.5;
-    pointer-events: none;
+    position: absolute; top: 0; bottom: 0; right: 2px; width: 4px; z-index: 2;
+    background: repeating-linear-gradient(to bottom, #333 0px, #333 1px, transparent 1px, transparent 10%);
+    opacity: 0.3; pointer-events: none;
 }
 
-/* The Input Element (Invisible Track, Visible Thumb) */
 input[type=range].v-fader {
-    -webkit-appearance: slider-vertical;
-    writing-mode: bt-lr;
-    width: 100%;
-    height: 100%;
-    background: transparent;
-    cursor: pointer;
-    margin: 0;
-    position: relative;
-    z-index: 10; /* Top layer for interaction */
-}
-
-/* Firefox Fix */
-@-moz-document url-prefix() {
-    input[type=range].v-fader { writing-mode: vertical-lr; direction: rtl; }
-}
-
-/* --- FADER CAP (THUMB) STYLING --- */
-
-/* Webkit (Chrome/Safari) */
-input[type=range].v-fader::-webkit-slider-runnable-track {
-    background: transparent;
-    border: none;
+    -webkit-appearance: slider-vertical; width: 100%; height: 100%; background: transparent; cursor: pointer; position: relative; z-index: 10;
 }
 
 input[type=range].v-fader::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    height: var(--thumb-height);
-    width: 36px; /* Wider than the slot to cover it nicely */
-    margin-left: -18px; /* Center adjustment */
-    
-    /* Cap Design */
-    background: linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 100%);
-    border: 1px solid #000;
-    border-radius: 2px;
-    box-shadow: 
-        0 4px 6px rgba(0,0,0,0.6), /* Drop shadow */
-        inset 0 1px 0 rgba(255,255,255,0.1); /* Highlight */
-    
-    /* Grip Lines */
-    background-image: 
-        linear-gradient(to bottom, transparent 45%, #000 45%, #000 55%, transparent 55%),
-        linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 100%);
+    -webkit-appearance: none; height: var(--thumb-height); width: 30px; margin-left: -15px;
+    background: #2a2a2a; border: 1px solid #000; border-radius: 1px;
 }
 
-/* Hover State for Cap */
-input[type=range].v-fader:hover::-webkit-slider-thumb {
-    background: linear-gradient(180deg, #444 0%, #222 100%);
-    box-shadow: 0 0 0 1px #555, 0 4px 8px rgba(0,0,0,0.8);
-}
-
-/* Fader Cap Line Indicator (Center) */
-/* Note: Standard input[range] thumbs can't easily have pseudo-elements. 
-   We simulate the line using background-image above or simplify. 
-   For a distinct color line like the knobs, we rely on the gradient trick 
-   or strict JS overlay. I'll use a white horizontal line via gradient.
-*/
-
-/* --- GROUP & MASTER STYLES --- */
+/* Extras */
 .drive-select {
-    width: 96%; background-color: #111; color: #aaa; font-size: 0.45rem;
-    border: 1px solid #333; padding: 1px; margin-bottom: 2px; border-radius: 2px;
-    -webkit-appearance: none; -moz-appearance: none; appearance: none; text-align: center; cursor: pointer;
+    width: 90%; background: #000; color: #555; font-size: 0.4rem;
+    border: 1px solid #222; margin-bottom: 2px; appearance: none; text-align: center;
 }
-.drive-select:hover { border-color: #555; color: #fff; }
-.drive-select option { background-color: #111; color: #ccc; }
-
-.section-label {
-    font-size: 0.45rem; color: #888; font-weight: bold; margin-bottom: 2px;
-    width: 100%; text-align: center; border-bottom: 1px solid #333; padding-bottom: 1px; letter-spacing: 0.5px;
-}
-
-.mixer-btn.kill { background: #222; border: 1px solid #444; color: #888; margin: 0 1px; }
-.mixer-btn.kill:hover { background: #333; color: #fff; }
-.mixer-btn.kill.active { background: #ef4444; color: white; border-color: #ef4444; box-shadow: 0 0 4px #ef4444; }
-
-.width-slider { width: 40px; height: 4px; -webkit-appearance: none; background: #444; border-radius: 2px; cursor: ew-resize; }
-.width-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 8px; border-radius: 50%; background: #888; }
+.section-label { font-size: 0.4rem; color: #444; font-weight: bold; margin-bottom: 2px; text-align: center; }
+.mixer-btn.kill { background: #111; color: #444; border: none; }
+.mixer-btn.kill.active { background: #ef4444; color: white; }
 
 .eq-section {
-    width: 96%; background: #111; border: 1px solid #333; border-radius: 2px;
-    padding: 4px 1px; display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 4px;
+    width: 94%; background: #0d0d0d; border: 1px solid #1a1a1a;
+    padding: 2px; display: flex; flex-direction: column; align-items: center; margin-bottom: 4px;
 }
