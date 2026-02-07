@@ -56,7 +56,7 @@ export class AutomationPanel {
 
         // Scrollable Matrix Container
         const scrollArea = document.createElement('div');
-        scrollArea.className = 'overflow-y-auto custom-scrollbar bg-[#0a0a0a] rounded border border-neutral-800 h-64'; // Fixed height for scrolling
+        scrollArea.className = 'overflow-y-auto custom-scrollbar bg-[#0a0a0a] rounded border border-neutral-800 h-auto max-h-[60vh]'; // Fixed height for scrolling
         
         // The Grid
         const grid = document.createElement('div');
