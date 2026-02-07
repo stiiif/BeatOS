@@ -172,9 +172,11 @@ export class AutomationPanel {
                 //const rotateClass = wave === 'triangle' ? '-rotate-90' : '';
                 
                 btn.className = `wave-btn ${activeClass}`;
+                btn.style.fontSize = '9px';
+                btn.style.fontFamily = 'JetBrains Mono';
                 btn.title = wave;
-                //btn.innerHTML = `<i class="fas fa-${icons[idx]} ${rotateClass}"></i>`;
                 btn.textContent = labels[idx];
+                //btn.innerHTML = `<i class="fas fa-${icons[idx]} ${rotateClass}"></i>`;
                 
                 btn.onclick = () => {
                     lfo.wave = wave;
