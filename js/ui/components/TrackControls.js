@@ -247,19 +247,34 @@ export class TrackControls {
         const normalGrp = Math.floor(this.selectedTrackIndex / TRACKS_PER_GROUP);
         const grp = this.randomChokeMode ? this.randomChokeGroups[this.selectedTrackIndex] : normalGrp;
         const groupColorDark = `hsl(${grp * 45}, 70%, 35%)`;
+        
         document.querySelectorAll('.lfo-tab').forEach(b => {
             const i = parseInt(b.dataset.lfo);
             if(i === this.selectedLfoIndex) { b.classList.remove('text-neutral-400', 'hover:bg-neutral-700'); b.classList.add('text-white'); b.style.backgroundColor = groupColorDark; }
             else { b.classList.add('text-neutral-400', 'hover:bg-neutral-700'); b.classList.remove('text-white'); b.style.backgroundColor = ''; }
         });
+        
         const rateVal = document.getElementById('lfoRateVal');
         const amtVal = document.getElementById('lfoAmtVal');
-        document.getElementById('lfoTarget').value = lfo.target;
-        document.getElementById('lfoWave').value = lfo.wave;
-        document.getElementById('lfoRate').value = lfo.rate;
-        if(rateVal) rateVal.innerText = lfo.rate.toFixed(1);
-        document.getElementById('lfoAmt').value = lfo.amount;
-        if(amtVal) amtVal.innerText = lfo.amount.toFixed(2);
+        
+        // FIX: Check for existence of old UI elements before accessing them
+        const lfoTargetEl = document.getElementById('lfoTarget');
+        if (lfoTargetEl) lfoTargetEl.value = lfo.target;
+        
+        const lfoWaveEl = document.getElementById('lfoWave');
+        if (lfoWaveEl) lfoWaveEl.value = lfo.wave;
+        
+        const lfoRateEl = document.getElementById('lfoRate');
+        if (lfoRateEl) {
+            lfoRateEl.value = lfo.rate;
+            if(rateVal) rateVal.innerText = lfo.rate.toFixed(1);
+        }
+        
+        const lfoAmtEl = document.getElementById('lfoAmt');
+        if (lfoAmtEl) {
+            lfoAmtEl.value = lfo.amount;
+            if(amtVal) amtVal.innerText = lfo.amount.toFixed(2);
+        }
     }
 
     getSelectedTrackIndex() { return this.selectedTrackIndex; }

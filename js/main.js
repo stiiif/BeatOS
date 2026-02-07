@@ -497,10 +497,18 @@ document.querySelectorAll('.lfo-tab').forEach(b => {
     b.addEventListener('click', e => { uiManager.setSelectedLfoIndex(parseInt(e.target.dataset.lfo)); uiManager.updateLfoUI(); });
 });
 
-document.getElementById('lfoTarget').addEventListener('change', e => { tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].target = e.target.value; });
-document.getElementById('lfoWave').addEventListener('change', e => { tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].wave = e.target.value; });
-document.getElementById('lfoRate').addEventListener('input', e => { const v = parseFloat(e.target.value); tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].rate = v; document.getElementById('lfoRateVal').innerText = v.toFixed(1); });
-document.getElementById('lfoAmt').addEventListener('input', e => { const v = parseFloat(e.target.value); tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].amount = v; document.getElementById('lfoAmtVal').innerText = v.toFixed(2); });
+// FIX: Wrap old LFO listeners with existence checks to prevent crashes when new UI is loaded
+const lfoTargetEl = document.getElementById('lfoTarget');
+if (lfoTargetEl) lfoTargetEl.addEventListener('change', e => { tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].target = e.target.value; });
+
+const lfoWaveEl = document.getElementById('lfoWave');
+if (lfoWaveEl) lfoWaveEl.addEventListener('change', e => { tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].wave = e.target.value; });
+
+const lfoRateEl = document.getElementById('lfoRate');
+if (lfoRateEl) lfoRateEl.addEventListener('input', e => { const v = parseFloat(e.target.value); tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].rate = v; document.getElementById('lfoRateVal').innerText = v.toFixed(1); });
+
+const lfoAmtEl = document.getElementById('lfoAmt');
+if (lfoAmtEl) lfoAmtEl.addEventListener('input', e => { const v = parseFloat(e.target.value); tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].amount = v; document.getElementById('lfoAmtVal').innerText = v.toFixed(2); });
 
 uiManager.initUI(addTrack, addGroup, () => { visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex()); visualizer.triggerRedraw(); updateTrackControlsVisibility(); });
 window.addEventListener('resize', () => visualizer.resizeCanvas());
