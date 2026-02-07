@@ -540,6 +540,14 @@ export class Mixer {
         const strip = document.createElement('div');
         strip.className = 'mixer-strip track-strip';
         
+        // --- Dynamic Background Color Based on Group ---
+        const groupIndex = Math.floor(track.id / TRACKS_PER_GROUP);
+        // HSL tint: (Group * 45) deg, low saturation, very low lightness
+        // This creates a "tiny amount of ink" in the dark grey
+        const hue = groupIndex * 45;
+        strip.style.backgroundColor = `hsl(${hue}, 20%, 12%)`; 
+        strip.style.borderColor = `hsl(${hue}, 30%, 20%)`; // Slightly lighter border for definition
+
         const header = document.createElement('div');
         header.className = 'strip-header';
         header.style.cursor = 'pointer'; // Make it clickable
@@ -549,6 +557,8 @@ export class Mixer {
 
         const controls = document.createElement('div');
         controls.className = 'strip-controls'; 
+        // Match background for inner controls container to blend seamlessly
+        controls.style.background = `linear-gradient(180deg, hsl(${hue}, 20%, 12%) 0%, hsl(${hue}, 20%, 10%) 100%)`;
 
         const getBus = () => track.bus;
 
