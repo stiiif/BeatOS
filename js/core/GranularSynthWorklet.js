@@ -1,4 +1,4 @@
-// Granular SynthWorklet - Fixed Accumulation/Distortion Bug
+// Granular SynthWorklet - Fixed DISTORT BUG and Global FX Parameter Mapping
 import { MAX_TRACKS } from '../utils/constants.js';
 
 export class GranularSynthWorklet {
@@ -40,7 +40,7 @@ export class GranularSynthWorklet {
                 
                 this.workletNode.connectedTracks = new Set();
                 this.isInitialized = true;
-                console.log('[GranularSynthWorklet] Loaded with DSP Fixes');
+                console.log('[GranularSynthWorklet] ✅ High-Density DSP Fix Applied');
             } catch (error) {
                 console.error('[GranularSynthWorklet] Initialization failed:', error);
                 throw error;
@@ -73,6 +73,46 @@ export class GranularSynthWorklet {
         this.trackBufferCache.set(track, track.buffer);
     }
 
+    /**
+     * Updates the global track bus nodes (Filter, Volume, Pan) in real-time.
+     * This handles mapping slider values to audio-rate parameters.
+     */
+    syncTrackBusParams(track, time = null) {
+        if (!track.bus || !this.audioEngine.getContext()) return;
+        const ctx = this.audioEngine.getContext();
+        const now = time !== null ? time : ctx.currentTime;
+        const p = track.params;
+
+        // Calculate LFO modulations for bus parameters
+        let mod = { filter: 0, hpFilter: 0, volume: 0, pan: 0 };
+        track.lfos.forEach(lfo => {
+            if (lfo.amount === 0) return;
+            const v = lfo.getValue(now);
+            if (lfo.target === 'filter') mod.filter += v * 5000; // Shift LPF by up to 5kHz
+            if (lfo.target === 'hpFilter') mod.hpFilter += v * 2000; // Shift HPF by up to 2kHz
+            if (lfo.target === 'volume') mod.volume += v * 0.5;
+            if (lfo.target === 'pan') mod.pan += v;
+        });
+
+        // Apply Mapped Frequencies (Logarithmic curve)
+        if (track.bus.hp) {
+            const freq = this.audioEngine.getMappedFrequency(Math.max(20, p.hpFilter + mod.hpFilter), 'hp');
+            track.bus.hp.frequency.setTargetAtTime(freq, now, 0.05);
+        }
+        if (track.bus.lp) {
+            const freq = this.audioEngine.getMappedFrequency(Math.max(100, p.filter + mod.filter), 'lp');
+            track.bus.lp.frequency.setTargetAtTime(freq, now, 0.05);
+        }
+        if (track.bus.vol) {
+            const gain = Math.max(0, p.volume + mod.volume);
+            track.bus.vol.gain.setTargetAtTime(gain, now, 0.05);
+        }
+        if (track.bus.pan) {
+            const panVal = Math.max(-1, Math.min(1, p.pan + mod.pan));
+            track.bus.pan.pan.setTargetAtTime(panVal, now, 0.05);
+        }
+    }
+
     async scheduleNote(track, time, scheduleVisualDrawCallback, velocityLevel = 2, stepIndex = 0) {
         if (track.type === 'simple-drum') {
             this.audioEngine.triggerDrum(track, time, velocityLevel);
@@ -86,11 +126,16 @@ export class GranularSynthWorklet {
         await this.ensureBufferLoaded(track);
 
         if (!this.workletNode.connectedTracks.has(track.id)) {
+            // outputIndex = track.id
             this.workletNode.connect(track.bus.input, track.id, 0);
             this.workletNode.connectedTracks.add(track.id);
         }
 
-        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, filter:0, hpFilter:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0 };
+        // Sync bus parameters at trig time
+        this.syncTrackBusParams(track, time);
+
+        // Calculate granular engine specific modulations
+        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0, relGrain:0 };
         track.lfos.forEach(lfo => {
             const v = lfo.getValue(time);
             if(mod[lfo.target] !== undefined) mod[lfo.target] += v;
@@ -110,7 +155,7 @@ export class GranularSynthWorklet {
             data: {
                 trackId: track.id,
                 time: time,
-                duration: (p.relGrain || 0.4) + (mod.relGrain || 0),
+                duration: (p.relGrain || 0.4) + mod.relGrain,
                 stepIndex: stepIndex,
                 params: {
                     position: p.position,
@@ -194,11 +239,10 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const frameCount = outputs[0][0].length;
         const now = currentTime;
         
-        // --- FIX 1: CLEAR OUTPUTS (Avoid Accumulation Distortion) ---
+        // Zero out outputs to prevent accumulation
         for (let o = 0; o < outputs.length; o++) {
-            for (let c = 0; c < outputs[o].length; c++) {
-                outputs[o][c].fill(0);
-            }
+            if (outputs[o][0]) outputs[o][0].fill(0);
+            if (outputs[o][1]) outputs[o][1].fill(0);
         }
 
         // 1. Scheduler
@@ -222,7 +266,10 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        // 2. DSP
+        // --- AGC: Linear Voice Scaling ---
+        const globalScale = 1.0 / (1.0 + (this.activeVoiceIndices.length * 0.15));
+
+        // 2. DSP - Accumulation Stage
         for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
             const vIdx = this.activeVoiceIndices[i];
             const voice = this.voices[vIdx];
@@ -252,16 +299,28 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 
                 const frac = rPos - idx;
                 const sample = s1 + frac * (s2 - s1);
-                
                 const winIdx = (ph * invGL) | 0;
                 const win = this.windowLUT[winIdx] || 0;
                 
-                const val = sample * win * baseAmp * amp;
+                const val = sample * win * baseAmp * amp * globalScale;
                 
                 L[j] += val; R[j] += val;
                 ph++;
             }
             voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
+        }
+
+        // --- LIMITER: Soft Knee Clipping ---
+        for (let o = 0; o < outputs.length; o++) {
+            const outL = outputs[o][0];
+            const outR = outputs[o][1];
+            if (!outL) continue;
+            for (let j = 0; j < frameCount; j++) {
+                const sL = outL[j];
+                const sR = outR[j];
+                outputs[o][0][j] = sL / (1.0 + Math.abs(sL));
+                outputs[o][1][j] = sR / (1.0 + Math.abs(sR));
+            }
         }
 
         this.updatePlayheads(frameCount);
@@ -270,13 +329,15 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
 
     updatePlayheads(frameCount) {
         for (let tId = 0; tId < 32; tId++) {
-            const activeNote = this.activeNotes.find(n => n.trackId === tId);
-            if (activeNote) {
-                const spd = activeNote.params.scanSpeed || 0;
-                // Accurate scan movement per block
-                this.trackPlayheads[tId] = (this.trackPlayheads[tId] + (spd * (frameCount / sampleRate))) % 1.0;
-                if (this.trackPlayheads[tId] < 0) this.trackPlayheads[tId] += 1.0;
+            let targetSpeed = 0;
+            for (let i = this.activeNotes.length - 1; i >= 0; i--) {
+                if (this.activeNotes[i].trackId === tId) {
+                    targetSpeed = this.activeNotes[i].params.scanSpeed;
+                    break;
+                }
             }
+            this.trackPlayheads[tId] = (this.trackPlayheads[tId] + (targetSpeed * (frameCount / sampleRate))) % 1.0;
+            if (this.trackPlayheads[tId] < 0) this.trackPlayheads[tId] += 1.0;
         }
     }
 
@@ -288,11 +349,12 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         if(!v) return; 
         
         let pos = this.trackPlayheads[note.trackId];
+        pos += (Math.random() * 0.0001); 
+
         if(note.params.spray > 0) pos += (Math.random()*2-1)*note.params.spray;
         
         v.active = true; v.trackId = note.trackId; v.buffer = buf; v.bufferLength = buf.length;
         v.position = Math.max(0, Math.min(1, pos)); v.phase = 0;
-        
         v.grainLength = Math.max(128, Math.floor((note.params.grainSize||0.1) * sampleRate));
         v.invGrainLength = 4095 / v.grainLength;
         v.pitch = note.params.pitch||1; v.velocity = note.params.velocity||1;
