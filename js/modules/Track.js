@@ -1,4 +1,4 @@
-// Track Module - Full state management for BeatOS V2
+// Track Module
 import { LFO } from './LFO.js';
 import { NUM_STEPS, NUM_LFOS } from '../utils/constants.js';
 
@@ -23,14 +23,12 @@ export class Track {
         this.chokeGroup = 0; 
         this.activeSources = new Set(); 
 
-        // Playhead Reset Flags (Scan Speed Logic)
+        // New Playhead Reset Flags
         this.resetOnBar = false;
         this.resetOnTrig = false;
-
-        // --- HEAT ENGINE STATE ---
+        
+        // NEW: Clean Mode State (Hard AGC)
         this.cleanMode = false;
-        this.heatDrive = 1.0;   // Pre-Clipper Multiplier (Saturation Intensity)
-        this.heatCeiling = 1.0; // Clipping Threshold (Master Volume Safety)
 
         this.bus = {
             input: null,
@@ -55,7 +53,7 @@ export class Track {
             pitch: 1.0, 
             relGrain: 2.00,  
             
-            // --- Sample Window ---
+            // --- NEW PARAMETERS (Sample Window) ---
             sampleStart: 0.000,
             sampleEnd: 1.000,
             
@@ -66,8 +64,8 @@ export class Track {
             
             // --- Amp Envelope ---
             ampAttack: 0.01,
-            ampDecay: 0.1,
-            ampRelease: 0.3,
+            ampDecay: 0.01,
+            ampRelease: 0.01,
             
             // --- Track Bus (Mixer) ---
             hpFilter: 20,
@@ -75,7 +73,7 @@ export class Track {
             volume: 0.8, 
             pan: 0,
             
-            // --- Mixer Params ---
+            // --- New Mixer Params ---
             gain: 1.0, 
             eqLow: 0,  
             eqMid: 0,  
