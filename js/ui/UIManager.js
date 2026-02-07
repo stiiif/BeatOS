@@ -86,9 +86,11 @@ export class UIManager {
             this.appendTrackRow(t.id, visualizerCallback);
         });
 
+        // FIX FOR BUG 2: Ensure visualizerCallback is passed when a sample finishes loading
         window.addEventListener('trackSampleLoaded', (e) => {
             if (e.detail.trackId === this.getSelectedTrackIndex()) {
-                this.selectTrack(this.getSelectedTrackIndex());
+                // We pass the stored visualizerCallback to ensure the scope refreshes
+                this.selectTrack(this.getSelectedTrackIndex(), this.visualizerCallback);
                 if(this.mixer) this.mixer.render(); // Refresh mixer names
             }
         });

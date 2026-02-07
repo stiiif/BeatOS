@@ -213,11 +213,14 @@ export class SearchModal {
                 // Update track name in UI
                 this.activeTrack.customSample.name = sound.name; 
                 
+                // FIX FOR BUG 1: Capture trackId BEFORE calling hide(), because hide() sets activeTrack to null
+                const trackId = this.activeTrack.id;
+
                 // Close after brief delay
                 setTimeout(() => {
                     this.hide();
                     // Force refresh of track header/controls
-                    window.dispatchEvent(new CustomEvent('trackSampleLoaded', { detail: { trackId: this.activeTrack.id } }));
+                    window.dispatchEvent(new CustomEvent('trackSampleLoaded', { detail: { trackId: trackId } }));
                 }, 500);
 
             } catch (err) {
