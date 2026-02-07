@@ -76,7 +76,10 @@ export class UIManager {
             // Wire up Mixer Callbacks -> Trigger Global Logic
             this.mixer.setCallbacks(
                 (trackId) => this.toggleMute(trackId),
-                (trackId) => this.toggleSolo(trackId)
+                (trackId) => this.toggleSolo(trackId),
+                (grpId) => this.toggleMuteGroup(grpId),
+                (grpId) => this.toggleSoloGroup(grpId),
+                (trackId) => this.selectTrack(trackId, this.visualizerCallback)
             );
             
             this.mixer.render();

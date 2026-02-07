@@ -32,6 +32,7 @@ export class Mixer {
         this.onSolo = null;
         this.onMuteGroup = null; 
         this.onSoloGroup = null;
+        this.onSelect = null; // New Callback for selection
 
         // Animation Loop Binding
         this.animateMeters = this.animateMeters.bind(this);
@@ -81,11 +82,12 @@ export class Mixer {
         });
     }
 
-    setCallbacks(onMute, onSolo, onMuteGroup, onSoloGroup) {
+    setCallbacks(onMute, onSolo, onMuteGroup, onSoloGroup, onSelect) {
         this.onMute = onMute;
         this.onSolo = onSolo;
         this.onMuteGroup = onMuteGroup;
         this.onSoloGroup = onSoloGroup;
+        this.onSelect = onSelect;
     }
 
     updateTrackState(trackId) {
@@ -540,7 +542,9 @@ export class Mixer {
         
         const header = document.createElement('div');
         header.className = 'strip-header';
+        header.style.cursor = 'pointer'; // Make it clickable
         header.innerHTML = `<span class="strip-num">${track.id + 1}</span>`;
+        header.onclick = () => { if (this.onSelect) this.onSelect(track.id); }; // Handle Selection
         strip.appendChild(header);
 
         const controls = document.createElement('div');
