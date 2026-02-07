@@ -1,4 +1,4 @@
-// Granular SynthWorklet - Optimized with Playhead Reset Logic
+// Granular SynthWorklet - Fixed Accumulation/Distortion Bug
 import { MAX_TRACKS } from '../utils/constants.js';
 
 export class GranularSynthWorklet {
@@ -40,7 +40,7 @@ export class GranularSynthWorklet {
                 
                 this.workletNode.connectedTracks = new Set();
                 this.isInitialized = true;
-                console.log('[GranularSynthWorklet] Loaded with Reset Logic');
+                console.log('[GranularSynthWorklet] Loaded with DSP Fixes');
             } catch (error) {
                 console.error('[GranularSynthWorklet] Initialization failed:', error);
                 throw error;
@@ -105,21 +105,20 @@ export class GranularSynthWorklet {
             default: gainMult = 0.75;
         }
 
-        // Send playhead reset instructions to worklet
         this.workletNode.port.postMessage({
             type: 'noteOn',
             data: {
                 trackId: track.id,
                 time: time,
                 duration: (p.relGrain || 0.4) + (mod.relGrain || 0),
-                stepIndex: stepIndex, // Pass step index for Step 1 reset check
+                stepIndex: stepIndex,
                 params: {
                     position: p.position,
                     scanSpeed: p.scanSpeed,
                     density: Math.max(1, (p.density || 20) + mod.density),
-                    grainSize: Math.max(0.01, (p.grainSize || 0.1) + mod.grainSize),
+                    grainSize: Math.max(0.005, (p.grainSize || 0.1) + mod.grainSize),
                     overlap: Math.max(0, (p.overlap || 0) + mod.overlap),
-                    pitch: Math.max(0.1, (p.pitch || 1.0) + mod.pitch),
+                    pitch: Math.max(0.01, (p.pitch || 1.0) + mod.pitch),
                     velocity: gainMult,
                     spray: Math.max(0, (p.spray || 0) + mod.spray),
                     resetOnBar: track.resetOnBar,
@@ -153,8 +152,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         this.activeVoiceIndices = [];
         this.activeNotes = [];
         this.trackBuffers = new Map();
-        
-        // Track per-track internal playheads
         this.trackPlayheads = new Float32Array(32); 
 
         this.LUT_SIZE = 4096;
@@ -175,16 +172,12 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     }
 
     handleNoteOn(data) {
-        // Implementation of Reset Logic
         const trackId = data.trackId;
         const params = data.params;
         
-        // 1. Reset on Trig: Playhead instantly matches Position param
         if (params.resetOnTrig) {
             this.trackPlayheads[trackId] = params.position;
-        } 
-        // 2. Reset on Bar: Only match Position param if this is Step 1 (Index 0)
-        else if (params.resetOnBar && data.stepIndex === 0) {
+        } else if (params.resetOnBar && data.stepIndex === 0) {
             this.trackPlayheads[trackId] = params.position;
         }
 
@@ -201,6 +194,14 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const frameCount = outputs[0][0].length;
         const now = currentTime;
         
+        // --- FIX 1: CLEAR OUTPUTS (Avoid Accumulation Distortion) ---
+        for (let o = 0; o < outputs.length; o++) {
+            for (let c = 0; c < outputs[o].length; c++) {
+                outputs[o][c].fill(0);
+            }
+        }
+
+        // 1. Scheduler
         for (let i = this.activeNotes.length - 1; i >= 0; i--) {
             const note = this.activeNotes[i];
             if (now > note.startTime + note.duration) { this.activeNotes.splice(i, 1); continue; }
@@ -208,7 +209,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 let interval = 1 / Math.max(1, note.params.density || 20);
                 if (note.params.overlap > 0) interval = (note.params.grainSize||0.1) / Math.max(0.1, note.params.overlap);
                 let spawnLimit = 3;
-                while (note.nextGrainTime < now + (frameCount * 0.000023) && spawnLimit > 0) {
+                while (note.nextGrainTime < now + (frameCount / sampleRate) && spawnLimit > 0) {
                     if (note.nextGrainTime >= now) this.spawnGrain(note);
                     note.nextGrainTime += interval;
                     spawnLimit--;
@@ -216,8 +217,12 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             }
         }
 
-        if (this.activeVoiceIndices.length === 0) return true;
+        if (this.activeVoiceIndices.length === 0) {
+            this.updatePlayheads(frameCount);
+            return true;
+        }
 
+        // 2. DSP
         for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
             const vIdx = this.activeVoiceIndices[i];
             const voice = this.voices[vIdx];
@@ -247,8 +252,10 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 
                 const frac = rPos - idx;
                 const sample = s1 + frac * (s2 - s1);
+                
                 const winIdx = (ph * invGL) | 0;
-                const win = this.windowLUT[winIdx];
+                const win = this.windowLUT[winIdx] || 0;
+                
                 const val = sample * win * baseAmp * amp;
                 
                 L[j] += val; R[j] += val;
@@ -257,19 +264,20 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
         }
 
-        // Update Global Playheads for Scanning
+        this.updatePlayheads(frameCount);
+        return true;
+    }
+
+    updatePlayheads(frameCount) {
         for (let tId = 0; tId < 32; tId++) {
-            // Find scanning speed for this track from active notes (approximate)
             const activeNote = this.activeNotes.find(n => n.trackId === tId);
             if (activeNote) {
                 const spd = activeNote.params.scanSpeed || 0;
-                // Move playhead based on frame rate
-                this.trackPlayheads[tId] = (this.trackPlayheads[tId] + (spd * 0.0001)) % 1.0;
+                // Accurate scan movement per block
+                this.trackPlayheads[tId] = (this.trackPlayheads[tId] + (spd * (frameCount / sampleRate))) % 1.0;
                 if (this.trackPlayheads[tId] < 0) this.trackPlayheads[tId] += 1.0;
             }
         }
-
-        return true;
     }
 
     spawnGrain(note) {
@@ -279,14 +287,13 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         for(let i=0; i<64; i++) if(!this.voices[i].active) { v = this.voices[i]; this.activeVoiceIndices.push(i); break; }
         if(!v) return; 
         
-        // Use the tracked playhead position
         let pos = this.trackPlayheads[note.trackId];
         if(note.params.spray > 0) pos += (Math.random()*2-1)*note.params.spray;
         
         v.active = true; v.trackId = note.trackId; v.buffer = buf; v.bufferLength = buf.length;
         v.position = Math.max(0, Math.min(1, pos)); v.phase = 0;
-        const sr = 44100;
-        v.grainLength = Math.max(128, Math.floor((note.params.grainSize||0.1) * sr));
+        
+        v.grainLength = Math.max(128, Math.floor((note.params.grainSize||0.1) * sampleRate));
         v.invGrainLength = 4095 / v.grainLength;
         v.pitch = note.params.pitch||1; v.velocity = note.params.velocity||1;
         v.releasing = false; v.releaseAmp = 1.0;

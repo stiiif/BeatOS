@@ -369,8 +369,7 @@ export class TrackControls {
                 if(param === 'scanSpeed') suffix = '';
                 // Position, Sample Start/End default to 3 decimals
 
-                // FIX: Target the correct value-display element
-                // Logic: If the slider is wrapped (like Scan Spd), the display is the sibling of the wrapper.
+                // Target the correct value-display element
                 let displayEl = el.nextElementSibling;
                 if (displayEl && !displayEl.classList.contains('value-display')) {
                     displayEl = el.parentElement.nextElementSibling;
