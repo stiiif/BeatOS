@@ -1,4 +1,4 @@
-// Granular SynthWorklet - Fixed Accumulation/Distortion Bug
+// Granular SynthWorklet - Fixed DISTORT BUG with Advanced AGC & Phase Decorrelation
 import { MAX_TRACKS } from '../utils/constants.js';
 
 export class GranularSynthWorklet {
@@ -40,7 +40,7 @@ export class GranularSynthWorklet {
                 
                 this.workletNode.connectedTracks = new Set();
                 this.isInitialized = true;
-                console.log('[GranularSynthWorklet] Loaded with DSP Fixes');
+                console.log('[GranularSynthWorklet] ✅ High-Density DSP Fix Applied');
             } catch (error) {
                 console.error('[GranularSynthWorklet] Initialization failed:', error);
                 throw error;
@@ -194,11 +194,10 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const frameCount = outputs[0][0].length;
         const now = currentTime;
         
-        // --- FIX 1: CLEAR OUTPUTS (Avoid Accumulation Distortion) ---
+        // Zero out outputs to prevent accumulation
         for (let o = 0; o < outputs.length; o++) {
-            for (let c = 0; c < outputs[o].length; c++) {
-                outputs[o][c].fill(0);
-            }
+            if (outputs[o][0]) outputs[o][0].fill(0);
+            if (outputs[o][1]) outputs[o][1].fill(0);
         }
 
         // 1. Scheduler
@@ -222,7 +221,11 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        // 2. DSP
+        // --- IMPROVED AGC: Linear Voice Scaling ---
+        // Prevents saturation when 60+ grains sum together
+        const globalScale = 1.0 / (1.0 + (this.activeVoiceIndices.length * 0.15));
+
+        // 2. DSP - Accumulation Stage
         for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
             const vIdx = this.activeVoiceIndices[i];
             const voice = this.voices[vIdx];
@@ -252,16 +255,30 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 
                 const frac = rPos - idx;
                 const sample = s1 + frac * (s2 - s1);
-                
                 const winIdx = (ph * invGL) | 0;
                 const win = this.windowLUT[winIdx] || 0;
                 
-                const val = sample * win * baseAmp * amp;
+                const val = sample * win * baseAmp * amp * globalScale;
                 
                 L[j] += val; R[j] += val;
                 ph++;
             }
             voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
+        }
+
+        // --- IMPROVED LIMITER: Soft Knee Clipping ---
+        for (let o = 0; o < outputs.length; o++) {
+            const outL = outputs[o][0];
+            const outR = outputs[o][1];
+            if (!outL) continue;
+            for (let j = 0; j < frameCount; j++) {
+                // Soft clipping saturation (Tanh approximation)
+                // Using x / (1 + |x|) for speed and clean rounding
+                const sL = outL[j];
+                const sR = outR[j];
+                outputs[o][0][j] = sL / (1.0 + Math.abs(sL));
+                outputs[o][1][j] = sR / (1.0 + Math.abs(sR));
+            }
         }
 
         this.updatePlayheads(frameCount);
@@ -270,13 +287,15 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
 
     updatePlayheads(frameCount) {
         for (let tId = 0; tId < 32; tId++) {
-            const activeNote = this.activeNotes.find(n => n.trackId === tId);
-            if (activeNote) {
-                const spd = activeNote.params.scanSpeed || 0;
-                // Accurate scan movement per block
-                this.trackPlayheads[tId] = (this.trackPlayheads[tId] + (spd * (frameCount / sampleRate))) % 1.0;
-                if (this.trackPlayheads[tId] < 0) this.trackPlayheads[tId] += 1.0;
+            let targetSpeed = 0;
+            for (let i = this.activeNotes.length - 1; i >= 0; i--) {
+                if (this.activeNotes[i].trackId === tId) {
+                    targetSpeed = this.activeNotes[i].params.scanSpeed;
+                    break;
+                }
             }
+            this.trackPlayheads[tId] = (this.trackPlayheads[tId] + (targetSpeed * (frameCount / sampleRate))) % 1.0;
+            if (this.trackPlayheads[tId] < 0) this.trackPlayheads[tId] += 1.0;
         }
     }
 
@@ -288,11 +307,15 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         if(!v) return; 
         
         let pos = this.trackPlayheads[note.trackId];
+        
+        // --- ANTI-PHASE LOCKING ---
+        // Add a micro-offset (decorrelation) to prevent summing spikes when multiple grains reset simultaneously
+        pos += (Math.random() * 0.0001); 
+
         if(note.params.spray > 0) pos += (Math.random()*2-1)*note.params.spray;
         
         v.active = true; v.trackId = note.trackId; v.buffer = buf; v.bufferLength = buf.length;
         v.position = Math.max(0, Math.min(1, pos)); v.phase = 0;
-        
         v.grainLength = Math.max(128, Math.floor((note.params.grainSize||0.1) * sampleRate));
         v.invGrainLength = 4095 / v.grainLength;
         v.pitch = note.params.pitch||1; v.velocity = note.params.velocity||1;
