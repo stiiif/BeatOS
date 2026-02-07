@@ -354,10 +354,20 @@ if (loadAutoBtn) {
 
 document.querySelectorAll('.drum-sel-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
-        const t = tracks[uiManager.getSelectedTrackIndex()];
+        const currentTrackIdx = uiManager.getSelectedTrackIndex();
+        const t = tracks[currentTrackIdx];
         if (t.type === 'simple-drum') {
             t.params.drumType = e.target.dataset.drum;
             updateTrackControlsVisibility();
+            
+            // --- FIX START: Force header update to show new drum name ---
+            const normalGrp = Math.floor(currentTrackIdx / TRACKS_PER_GROUP);
+            const randomChokeInfo = uiManager.getRandomChokeInfo();
+            const grp = randomChokeInfo.mode ? randomChokeInfo.groups[currentTrackIdx] : normalGrp;
+            const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
+            
+            uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
+            // --- FIX END ---
         }
     });
 });
