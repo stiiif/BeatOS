@@ -282,6 +282,26 @@ export class TrackControls {
         const t = this.tracks[this.selectedTrackIndex];
         if (!t) return;
 
+        // Reset Toggle Button States in UI
+        const btnBar = document.getElementById('resetOnBarBtn');
+        const btnTrig = document.getElementById('resetOnTrigBtn');
+
+        if (btnBar) {
+            btnBar.onclick = () => {
+                t.resetOnBar = !t.resetOnBar;
+                this.updateTrackControlsVisibility();
+            };
+            btnBar.className = `w-5 h-5 text-[8px] border rounded transition ${t.resetOnBar ? 'bg-emerald-600 text-white border-emerald-400' : 'bg-neutral-800 text-neutral-500 border-neutral-700 hover:bg-neutral-700'}`;
+        }
+
+        if (btnTrig) {
+            btnTrig.onclick = () => {
+                t.resetOnTrig = !t.resetOnTrig;
+                this.updateTrackControlsVisibility();
+            };
+            btnTrig.className = `w-5 h-5 text-[8px] border rounded transition ${t.resetOnTrig ? 'bg-amber-600 text-white border-amber-400' : 'bg-neutral-800 text-neutral-500 border-neutral-700 hover:bg-neutral-700'}`;
+        }
+
         const autoControls = document.getElementById('automationControls');
         const granularControls = document.getElementById('granularControls');
         const drumControls = document.getElementById('simpleDrumControls');
@@ -349,8 +369,15 @@ export class TrackControls {
                 if(param === 'scanSpeed') suffix = '';
                 // Position, Sample Start/End default to 3 decimals
 
-                if(el.nextElementSibling) {
-                    el.nextElementSibling.innerText = displayValue + suffix;
+                // FIX: Target the correct value-display element
+                // Logic: If the slider is wrapped (like Scan Spd), the display is the sibling of the wrapper.
+                let displayEl = el.nextElementSibling;
+                if (displayEl && !displayEl.classList.contains('value-display')) {
+                    displayEl = el.parentElement.nextElementSibling;
+                }
+
+                if(displayEl && displayEl.classList.contains('value-display')) {
+                    displayEl.innerText = displayValue + suffix;
                 }
             }
         });
