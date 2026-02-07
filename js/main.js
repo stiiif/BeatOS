@@ -257,6 +257,7 @@ document.getElementById('resetParamBtn').addEventListener('click', () => {
     if (t.type === 'granular') {
         t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
         t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
+        t.params.edgeCrunch = 0.0; t.params.orbit = 0.0; // Reset new params
     } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
     t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
     t.lfos.forEach(lfo => { lfo.target = 'none'; });
@@ -306,15 +307,10 @@ document.getElementById('load909Btn').addEventListener('click', () => {
     ctx.font = '10px monospace'; ctx.fillStyle = '#f97316'; ctx.fillText("909 ENGINE ACTIVE", 10, 40);
 });
 
-const btnContainer = document.querySelector('.flex.gap-1.ml-2');
-if (btnContainer && !document.getElementById('loadAutoBtn')) {
-    const autoBtn = document.createElement('button');
-    autoBtn.id = 'loadAutoBtn';
-    autoBtn.className = 'text-[9px] font-bold bg-indigo-900/30 hover:bg-indigo-800 text-indigo-400 px-2 py-1 rounded transition border border-indigo-900/50';
-    autoBtn.title = 'Convert to Automation Track';
-    autoBtn.innerText = 'AUTO';
-    btnContainer.appendChild(autoBtn);
-    autoBtn.addEventListener('click', () => {
+// Fixed: Bind to the static AUTO button instead of creating it
+const loadAutoBtn = document.getElementById('loadAutoBtn');
+if (loadAutoBtn) {
+    loadAutoBtn.addEventListener('click', () => {
         const t = tracks[uiManager.getSelectedTrackIndex()];
         t.type = 'automation';
         t.steps.fill(0);
