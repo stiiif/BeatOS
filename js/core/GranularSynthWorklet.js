@@ -38,6 +38,13 @@ export class GranularSynthWorklet {
                     processorOptions: {}
                 });
                 
+                // Set up message listener to receive grain count updates from the processor
+                this.workletNode.port.onmessage = (event) => {
+                    if (event.data.type === 'grainCount') {
+                        this.activeGrains = event.data.count;
+                    }
+                };
+
                 this.workletNode.connectedTracks = new Set();
                 this.isInitialized = true;
                 console.log('[GranularSynthWorklet] ✅ High-Density DSP Fix Applied');
@@ -159,7 +166,7 @@ export class GranularSynthWorklet {
                     spray: Math.max(0, (p.spray || 0) + mod.spray),
                     resetOnBar: track.resetOnBar,
                     resetOnTrig: track.resetOnTrig,
-                    cleanMode: track.cleanMode // PASS FLAG
+                    cleanMode: track.cleanMode
                 }
             }
         });
@@ -172,8 +179,19 @@ export class GranularSynthWorklet {
         this.activeGrains = 0;
     }
     
-    getActiveGrainCount() { return this.activeGrains; }
-    setMaxGrains(max) {}
+    // Resolved the "is not a function" error by ensuring this method exists
+    getActiveGrainCount() { 
+        return this.activeGrains; 
+    }
+    
+    setMaxGrains(max) {
+        if (this.workletNode) {
+            this.workletNode.port.postMessage({
+                type: 'setMaxGrains',
+                data: { max }
+            });
+        }
+    }
 
     getWorkletCode() {
         return `
@@ -181,16 +199,18 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
         this.MAX_VOICES = 64;
+        this.safetyLimit = 400; // Default limit
         this.voices = Array(this.MAX_VOICES).fill(null).map((_, id) => ({
             id, active: false, buffer: null, bufferLength: 0,
             position: 0, phase: 0, grainLength: 0, pitch: 1.0, velocity: 1.0,
             trackId: 0, releasing: false, releaseAmp: 1.0, invGrainLength: 0,
-            cleanMode: false // LOCAL STORE
+            cleanMode: false
         }));
         this.activeVoiceIndices = [];
         this.activeNotes = [];
         this.trackBuffers = new Map();
         this.trackPlayheads = new Float32Array(32); 
+        this.lastReportedCount = 0;
 
         this.LUT_SIZE = 4096;
         this.windowLUT = new Float32Array(this.LUT_SIZE);
@@ -205,6 +225,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 case 'setBuffer': this.trackBuffers.set(data.trackId, data.buffer); break;
                 case 'stopAll': this.stopAllVoices(); this.activeNotes = []; break;
                 case 'stopTrack': this.stopTrack(data.trackId); break;
+                case 'setMaxGrains': this.safetyLimit = data.max; break;
             }
         };
     }
@@ -245,11 +266,22 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 if (note.params.overlap > 0) interval = (note.params.grainSize||0.1) / Math.max(0.1, note.params.overlap);
                 let spawnLimit = 3;
                 while (note.nextGrainTime < now + (frameCount / sampleRate) && spawnLimit > 0) {
-                    if (note.nextGrainTime >= now) this.spawnGrain(note);
+                    if (note.nextGrainTime >= now) {
+                        // Check safety limit before spawning
+                        if (this.activeVoiceIndices.length < this.MAX_VOICES) {
+                            this.spawnGrain(note);
+                        }
+                    }
                     note.nextGrainTime += interval;
                     spawnLimit--;
                 }
             }
+        }
+
+        // Send active grain count back to main thread periodically
+        if (this.activeVoiceIndices.length !== this.lastReportedCount) {
+            this.lastReportedCount = this.activeVoiceIndices.length;
+            this.port.postMessage({ type: 'grainCount', count: this.lastReportedCount });
         }
 
         if (this.activeVoiceIndices.length === 0) {
@@ -257,7 +289,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        // 2. DSP - Accumulation Stage
         for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
             const vIdx = this.activeVoiceIndices[i];
             const voice = this.voices[vIdx];
@@ -270,9 +301,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const start = voice.position * bufLen;
             const baseAmp = voice.velocity;
             
-            // SWITCHABLE GAIN SCALING
-            // Hard Clean: Sum of grains is exactly 1.0 (Safe but quieter)
-            // Soft Saturate: Original linear scaling (Loud and gritty)
             const trackScale = voice.cleanMode 
                 ? (1.0 / Math.max(1, this.activeVoiceIndices.length)) 
                 : (1.0 / (1.0 + (this.activeVoiceIndices.length * 0.15)));
@@ -339,7 +367,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const buf = this.trackBuffers.get(note.trackId);
         if(!buf) return;
         let v = null;
-        for(let i=0; i<64; i++) if(!this.voices[i].active) { v = this.voices[i]; this.activeVoiceIndices.push(i); break; }
+        for(let i=0; i<this.MAX_VOICES; i++) if(!this.voices[i].active) { v = this.voices[i]; this.activeVoiceIndices.push(i); break; }
         if(!v) return; 
         
         let pos = this.trackPlayheads[note.trackId];
@@ -353,7 +381,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         v.invGrainLength = 4095 / v.grainLength;
         v.pitch = note.params.pitch||1; v.velocity = note.params.velocity||1;
         v.releasing = false; v.releaseAmp = 1.0;
-        v.cleanMode = note.params.cleanMode; // SET LOCAL FLAG
+        v.cleanMode = note.params.cleanMode;
     }
     killVoice(idx) {
         const vIdx = this.activeVoiceIndices[idx];
