@@ -1,9 +1,7 @@
 export class TrackDetailsPanel {
     constructor(uiManager) {
-        // Target the container where controls should live.
-        // In index.html, this is inside .right-pane -> .flex-1.
-        // We will insert a specific container div in index.html to target.
-        this.containerId = 'trackSpecificContainer';
+        // FIXED: ID now matches the one defined in index.html
+        this.containerId = 'trackSpecificControls';
         this.uiManager = uiManager;
         this.tracks = [];
     }
@@ -14,7 +12,10 @@ export class TrackDetailsPanel {
 
     render() {
         const container = document.getElementById(this.containerId);
-        if (!container) return;
+        if (!container) {
+            console.error(`TrackDetailsPanel: Container #${this.containerId} not found!`);
+            return;
+        }
 
         const trackIdx = this.uiManager.getSelectedTrackIndex();
         const track = this.tracks[trackIdx];
@@ -22,6 +23,7 @@ export class TrackDetailsPanel {
 
         container.innerHTML = ''; // Clear previous controls
 
+        // Exclusive Injection: Only create the controls for the active type
         if (track.type === 'granular') {
             container.appendChild(this.createGranularControls());
         } else if (track.type === 'simple-drum') {
@@ -29,11 +31,6 @@ export class TrackDetailsPanel {
         } else if (track.type === 'automation') {
             container.appendChild(this.createAutomationControls());
         }
-        
-        // We need to re-initialize values of sliders since they are fresh DOM elements
-        // This effectively replaces 'updateKnobs' for the structural part, 
-        // but TrackControls.updateKnobs() still handles value updates.
-        // We should call updateKnobs() immediately after render in the caller.
     }
 
     createGranularControls() {

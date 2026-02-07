@@ -17,7 +17,6 @@ export class TrackControls {
 
     setTracks(tracks) {
         this.tracks = tracks;
-        console.log(`[TrackControls] Tracks set. Count: ${tracks.length}`);
     }
 
     setGridElements(trackLabelElements, matrixStepElements) {
@@ -46,8 +45,6 @@ export class TrackControls {
             this.trackLabelElements[this.selectedTrackIndex].classList.add('selected');
         
         const displayNum = idx + 1;
-        
-        // Fix: Update the number in the header directly
         const numEl = document.getElementById('currentTrackNum');
         if(numEl) numEl.innerText = displayNum < 10 ? '0'+displayNum : displayNum;
         
@@ -56,33 +53,30 @@ export class TrackControls {
         const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
         const groupColorGlow = `hsla(${grp * 45}, 70%, 50%, 0.4)`;
         
-        // Fix: Update Group Label
         const grpLbl = document.getElementById('trackGroupLabel');
         if(grpLbl) {
             grpLbl.innerText = `GRP ${grp}`;
             grpLbl.style.color = groupColor;
         }
         
-        // Fix: Update Header Content
         this.updateCustomTrackHeader(idx, grp, groupColor);
 
-        // Fix: Update Indicator
         const indicator = document.getElementById('trackIndicator');
         if(indicator) {
             indicator.style.backgroundColor = groupColor;
             indicator.style.boxShadow = `0 0 8px ${groupColorGlow}`;
         }
         
-        // Update Panel Theme
         const rightPanel = document.querySelector('.right-pane');
         if (rightPanel) {
             rightPanel.style.setProperty('--group-color', groupColor);
             rightPanel.style.setProperty('--group-color-glow', groupColorGlow);
         }
         
-        this.updateKnobs();
-        this.updateLfoUI();
+        // Note: Knobs and LFO UI will be updated by UIManager *after* injection.
+        // updateTrackControlsVisibility now just handles sub-element states.
         this.updateTrackControlsVisibility(); 
+        
         if (visualizerCallback) visualizerCallback();
     }
 
@@ -90,7 +84,6 @@ export class TrackControls {
         const t = this.tracks[idx];
         if (!t) return;
 
-        // 1. Determine Track Name and Type
         let trackName = `Track ${idx + 1 < 10 ? '0' + (idx + 1) : idx + 1}`;
         let trackType = 'Synth';
         
@@ -108,7 +101,6 @@ export class TrackControls {
             trackType = 'Synth';
         }
 
-        // 2. Update Text Elements (using new IDs from HTML)
         const nameEl = document.getElementById('trackNameText');
         const typeEl = document.getElementById('trackTypeLabel');
         
@@ -120,7 +112,6 @@ export class TrackControls {
             typeEl.innerText = `[${trackType}]`;
         }
 
-        // 3. Update CLEAN Button State
         const cleanBtn = document.getElementById('cleanModeBtn');
         if (cleanBtn) {
             cleanBtn.onclick = () => {
@@ -135,11 +126,9 @@ export class TrackControls {
             }
         }
 
-        // 4. Update Choke Group Buttons
         const chokeContainer = document.getElementById('chokeGroupContainer');
         if (chokeContainer) {
             chokeContainer.innerHTML = '';
-            // Rebuild Choke Buttons (Logic is simple enough to rebuild safely)
             const grpLabel = document.createElement('span');
             grpLabel.innerText = 'CHK';
             grpLabel.className = 'text-[9px] font-bold text-neutral-500 mr-1 flex items-center';
@@ -161,11 +150,17 @@ export class TrackControls {
     }
 
     updateTrackControlsVisibility() {
+        // Since TrackDetailsPanel now completely replaces content, 
+        // we only need to handle sub-element states (like buttons inside the active view)
+        // AND visibility of the LFO section (which is separate).
+        
         const t = this.tracks[this.selectedTrackIndex];
         if (!t) return;
 
+        // 1. Handle Sub-Buttons (if they exist in current view)
         const btnBar = document.getElementById('resetOnBarBtn');
         const btnTrig = document.getElementById('resetOnTrigBtn');
+        const speedSel = document.getElementById('autoSpeedSelect');
 
         if (btnBar) {
             btnBar.onclick = () => { t.resetOnBar = !t.resetOnBar; this.updateTrackControlsVisibility(); };
@@ -176,47 +171,37 @@ export class TrackControls {
             btnTrig.onclick = () => { t.resetOnTrig = !t.resetOnTrig; this.updateTrackControlsVisibility(); };
             btnTrig.className = `w-5 h-5 text-[8px] border rounded transition ${t.resetOnTrig ? 'bg-amber-600 text-white border-amber-400' : 'bg-neutral-800 text-neutral-500 border-neutral-700 hover:bg-neutral-700'}`;
         }
-
-        const autoControls = document.getElementById('automationControls');
-        const granularControls = document.getElementById('granularControls');
-        const drumControls = document.getElementById('simpleDrumControls');
-        const lfoSection = document.getElementById('lfoSection');
-        const speedSel = document.getElementById('autoSpeedSelect');
-
-        if(granularControls) granularControls.classList.add('hidden');
-        if(drumControls) drumControls.classList.add('hidden');
-        if(lfoSection) lfoSection.classList.add('hidden');
-        if(autoControls) autoControls.classList.add('hidden');
-
-        if (t.type === 'automation') {
-            if(autoControls) autoControls.classList.remove('hidden');
-            if(speedSel) speedSel.value = t.clockDivider || 1;
-        } 
-        else if (t.type === 'simple-drum') {
-            if(drumControls) drumControls.classList.remove('hidden');
-            // Highlighting active drum type on the new buttons (top row)
-            // Note: Since buttons are static, we might want to highlight them if we want persistent state visualization
-            // However, previous implementation handled highlighting. Let's see if we can do it.
-            // We can query selector .type-909-btn
-            document.querySelectorAll('.type-909-btn').forEach(btn => {
-                if (btn.dataset.drum === t.params.drumType) {
-                    btn.classList.remove('bg-orange-900/30', 'text-orange-400', 'border-orange-900/50');
-                    btn.classList.add('bg-orange-600', 'text-white', 'border-orange-500');
-                } else {
-                    btn.classList.add('bg-orange-900/30', 'text-orange-400', 'border-orange-900/50');
-                    btn.classList.remove('bg-orange-600', 'text-white', 'border-orange-500');
-                }
-            });
+        
+        if (speedSel && t.type === 'automation') {
+            speedSel.value = t.clockDivider || 1;
         }
-        else {
-            const wasHidden = granularControls && granularControls.classList.contains('hidden');
-            if(granularControls) granularControls.classList.remove('hidden');
-            if(lfoSection) lfoSection.classList.remove('hidden');
-            if(wasHidden) setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
+
+        // 2. Handle 909 Buttons Highlighting (Header - Always Exists)
+        document.querySelectorAll('.type-909-btn').forEach(btn => {
+            if (t.type === 'simple-drum' && btn.dataset.drum === t.params.drumType) {
+                btn.classList.remove('bg-orange-900/30', 'text-orange-400', 'border-orange-900/50');
+                btn.classList.add('bg-orange-600', 'text-white', 'border-orange-500');
+            } else {
+                btn.classList.add('bg-orange-900/30', 'text-orange-400', 'border-orange-900/50');
+                btn.classList.remove('bg-orange-600', 'text-white', 'border-orange-500');
+            }
+        });
+
+        // 3. Handle LFO Section Visibility (Managed by AutomationPanel but toggled here)
+        const lfoSection = document.getElementById('lfoSection');
+        if (lfoSection) {
+            if (t.type === 'granular') {
+                lfoSection.classList.remove('hidden');
+                // Ensure layout triggers if it was hidden
+                // setTimeout(() => window.dispatchEvent(new Event('resize')), 0); 
+            } else {
+                lfoSection.classList.add('hidden');
+            }
         }
     }
 
     updateKnobs() {
+        // Updates values of whatever sliders currently exist in DOM
         const t = this.tracks[this.selectedTrackIndex];
         if(!t) return;
         document.querySelectorAll('.param-slider').forEach(el => {
@@ -229,52 +214,28 @@ export class TrackControls {
                 if(param === 'grainSize') suffix = 's';
                 if(param === 'pitch') suffix = 'x';
                 if(param === 'overlap') suffix = 'x';
-                
-                // Special formatting for new params
                 if(param === 'edgeCrunch') { suffix = '%'; displayValue = (t.params[param] * 100).toFixed(0); }
                 if(param === 'orbit') { suffix = '%'; displayValue = (t.params[param] * 100).toFixed(0); }
 
                 let displayEl = el.nextElementSibling;
-                if (displayEl && !displayEl.classList.contains('value-display')) displayEl = el.parentElement.nextElementSibling;
-                if(displayEl && displayEl.classList.contains('value-display')) displayEl.innerText = displayValue + suffix;
+                // DOM structure might vary (label | input | div) or (div > label, input, span)
+                // In ParamGrid: Label | Input | Value
+                if (displayEl && displayEl.classList.contains('value-display')) {
+                    displayEl.innerText = displayValue + suffix;
+                }
             }
         });
     }
 
     updateLfoUI() {
-        if(!this.tracks[this.selectedTrackIndex]) return;
-        const lfo = this.tracks[this.selectedTrackIndex].lfos[this.selectedLfoIndex];
-        const normalGrp = Math.floor(this.selectedTrackIndex / TRACKS_PER_GROUP);
-        const grp = this.randomChokeMode ? this.randomChokeGroups[this.selectedTrackIndex] : normalGrp;
-        const groupColorDark = `hsl(${grp * 45}, 70%, 35%)`;
+        // This is now largely handled by AutomationPanel.render(), 
+        // but we might need to update values if we don't re-render entire matrix.
+        // Given the Monolith design, AutomationPanel.render() is fast enough and safer.
+        // UIManager calls AutomationPanel.render() anyway.
+        // So this method effectively does nothing or delegates.
         
-        document.querySelectorAll('.lfo-tab').forEach(b => {
-            const i = parseInt(b.dataset.lfo);
-            if(i === this.selectedLfoIndex) { b.classList.remove('text-neutral-400', 'hover:bg-neutral-700'); b.classList.add('text-white'); b.style.backgroundColor = groupColorDark; }
-            else { b.classList.add('text-neutral-400', 'hover:bg-neutral-700'); b.classList.remove('text-white'); b.style.backgroundColor = ''; }
-        });
-        
-        const rateVal = document.getElementById('lfoRateVal');
-        const amtVal = document.getElementById('lfoAmtVal');
-        
-        // FIX: Check for existence of old UI elements before accessing them
-        const lfoTargetEl = document.getElementById('lfoTarget');
-        if (lfoTargetEl) lfoTargetEl.value = lfo.target;
-        
-        const lfoWaveEl = document.getElementById('lfoWave');
-        if (lfoWaveEl) lfoWaveEl.value = lfo.wave;
-        
-        const lfoRateEl = document.getElementById('lfoRate');
-        if (lfoRateEl) {
-            lfoRateEl.value = lfo.rate;
-            if(rateVal) rateVal.innerText = lfo.rate.toFixed(1);
-        }
-        
-        const lfoAmtEl = document.getElementById('lfoAmt');
-        if (lfoAmtEl) {
-            lfoAmtEl.value = lfo.amount;
-            if(amtVal) amtVal.innerText = lfo.amount.toFixed(2);
-        }
+        // However, if we want to update just values without re-rendering DOM:
+        // AutomationPanel handles its own slider updates via listeners.
     }
 
     getSelectedTrackIndex() { return this.selectedTrackIndex; }
