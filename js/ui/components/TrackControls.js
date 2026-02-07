@@ -17,6 +17,7 @@ export class TrackControls {
 
     setTracks(tracks) {
         this.tracks = tracks;
+        console.log(`[TrackControls] Tracks set. Count: ${tracks.length}`);
     }
 
     setGridElements(trackLabelElements, matrixStepElements) {
@@ -42,6 +43,8 @@ export class TrackControls {
     // ============================================================================
 
     selectTrack(idx, visualizerCallback = null) {
+        console.log(`[TrackControls] Selecting Track index: ${idx} (Track ${idx + 1})`);
+        
         if(this.trackLabelElements[this.selectedTrackIndex])
             this.trackLabelElements[this.selectedTrackIndex].classList.remove('selected');
         this.selectedTrackIndex = idx;
@@ -173,6 +176,7 @@ export class TrackControls {
         rstBtn.title = 'Reset Parameters';
         rstBtn.onclick = () => {
              const t = this.tracks[this.selectedTrackIndex];
+             console.log(`[TrackControls] Resetting parameters for Track ${this.selectedTrackIndex + 1}`);
              if (t.type === 'granular') {
                  t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
                  t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
@@ -193,6 +197,7 @@ export class TrackControls {
                 if (!this.trackManager || !this.trackManager.audioEngine) return;
                 const ae = this.trackManager.audioEngine;
                 const t = this.tracks[this.selectedTrackIndex];
+                console.log(`[TrackControls] Changing track type to: ${label} for Track ${this.selectedTrackIndex + 1}`);
                 
                 if (isAuto) {
                     t.type = 'automation';
@@ -289,6 +294,7 @@ export class TrackControls {
         if (btnBar) {
             btnBar.onclick = () => {
                 t.resetOnBar = !t.resetOnBar;
+                console.log(`[TrackControls] Track ${this.selectedTrackIndex + 1} ResetOnBar set to: ${t.resetOnBar}`);
                 this.updateTrackControlsVisibility();
             };
             btnBar.className = `w-5 h-5 text-[8px] border rounded transition ${t.resetOnBar ? 'bg-emerald-600 text-white border-emerald-400' : 'bg-neutral-800 text-neutral-500 border-neutral-700 hover:bg-neutral-700'}`;
@@ -297,6 +303,7 @@ export class TrackControls {
         if (btnTrig) {
             btnTrig.onclick = () => {
                 t.resetOnTrig = !t.resetOnTrig;
+                console.log(`[TrackControls] Track ${this.selectedTrackIndex + 1} ResetOnTrig set to: ${t.resetOnTrig}`);
                 this.updateTrackControlsVisibility();
             };
             btnTrig.className = `w-5 h-5 text-[8px] border rounded transition ${t.resetOnTrig ? 'bg-amber-600 text-white border-amber-400' : 'bg-neutral-800 text-neutral-500 border-neutral-700 hover:bg-neutral-700'}`;
@@ -350,6 +357,23 @@ export class TrackControls {
     updateKnobs() {
         const t = this.tracks[this.selectedTrackIndex];
         if(!t) return;
+
+        // DEBUG: Validation loop to catch NaN or Infinity parameters
+        for (const [key, val] of Object.entries(t.params)) {
+            if (typeof val === 'number' && (isNaN(val) || !isFinite(val))) {
+                console.error(`[TrackControls] CRITICAL: Parameter "${key}" on Track ${this.selectedTrackIndex + 1} is invalid:`, val);
+            }
+        }
+
+        // Monitoring for distortion triggers
+        if (t.type === 'granular' && (t.params.pitch < 0.1 || t.params.volume > 1.2 || Math.abs(t.params.scanSpeed) > 1.5)) {
+            console.warn(`[TrackControls] High-intensity state on Track ${this.selectedTrackIndex + 1}:`, {
+                pitch: t.params.pitch,
+                scanSpd: t.params.scanSpeed,
+                vol: t.params.volume
+            });
+        }
+
         document.querySelectorAll('.param-slider').forEach(el => {
             const param = el.dataset.param;
             if(t.params[param] !== undefined) {
