@@ -295,6 +295,14 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
             
             // This ensures consistent [SYNTH] or specific name if implemented later
             uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
+
+            // Force update the label to show the specific granular type (KICK, SNR, etc.)
+            const typeLabel = document.getElementById('trackTypeLabel');
+            if (typeLabel) {
+                // Map internal types to display names if needed, or just use uppercase
+                const displayType = type === 'texture' ? 'FM' : type.toUpperCase();
+                typeLabel.textContent = `[${displayType}]`;
+            }
             
             // Temporary visual feedback on button
             const originalBg = e.target.style.backgroundColor;
