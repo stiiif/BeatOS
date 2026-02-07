@@ -1,10 +1,30 @@
+// js/ui/components/EffectControls.js
 export class EffectControls {
     constructor(effectsManager) {
         this.manager = effectsManager;
         this.container = document.getElementById('effectsControlsContainer');
-        this.activeLfos = [0, 0]; // Active LFO Tab for FX A and FX B
         this.isDragging = false;
         
+        // Colors & Config
+        this.fxConfig = {
+            0: {
+                name: 'DELAY',
+                class: 'border-emerald-500/20',
+                activeBtnClass: 'active-a',
+                lfoColors: ['c-blue', 'c-purple', 'c-amber'],
+                paramNames: ['Time', 'Feedback', 'Color', 'Mix'],
+                types: ['DLY', 'REV', 'FLG', 'CHR']
+            },
+            1: {
+                name: 'REVERB',
+                class: 'border-purple-500/20',
+                activeBtnClass: 'active-b',
+                lfoColors: ['c-emerald', 'c-blue', 'c-amber'],
+                paramNames: ['Tone', 'Size', 'Damp', 'Mix'],
+                types: ['DLY', 'REV', 'FLG', 'CHR']
+            }
+        };
+
         // Bind animate loop
         this.animate = this.animate.bind(this);
         requestAnimationFrame(this.animate);
@@ -14,184 +34,212 @@ export class EffectControls {
         if (!this.container) return;
         this.container.innerHTML = '';
 
-        // Render both FX A and FX B stacked
         [0, 1].forEach(fxId => {
-            const state = this.manager.getEffectState(fxId);
-            const color = fxId === 0 ? 'text-emerald-400' : 'text-purple-400';
-            const borderColor = fxId === 0 ? 'border-emerald-500/30' : 'border-purple-500/30';
-            const label = fxId === 0 ? 'FX A (DELAY)' : 'FX B (REVERB)';
-            
-            const section = document.createElement('div');
-            section.className = `mb-4 bg-neutral-900/50 rounded border ${borderColor} p-2 flex flex-col gap-2`;
-            section.id = `fx-section-${fxId}`;
-            
-            // Header
-            const header = document.createElement('div');
-            header.className = `text-[10px] font-bold ${color} border-b border-neutral-800 pb-1 mb-1`;
-            header.innerText = label;
-            section.appendChild(header);
-
-            // Main Content Grid
-            const content = document.createElement('div');
-            content.className = 'flex gap-2';
-
-            // 1. LEFT: 4 Knobs (P1, P2, P3, Mix)
-            const knobsDiv = document.createElement('div');
-            knobsDiv.className = 'w-16 flex flex-col gap-2 shrink-0';
-            const paramNames = fxId === 0 
-                ? ['Time', 'Fdbk', 'Color', 'Mix'] 
-                : ['Tone', 'Size', '---', 'Mix'];
-
-            state.params.forEach((val, idx) => {
-                const wrap = document.createElement('div');
-                wrap.className = 'flex flex-col items-center';
-                wrap.innerHTML = `
-                    <label class="text-[8px] text-neutral-500 mb-0.5 w-full text-left truncate">${paramNames[idx]}</label>
-                    <input type="range" min="0" max="1" step="0.01" value="${val}" class="w-full h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer fx-param-slider" data-fx="${fxId}" data-target="${idx}">
-                `;
-                const input = wrap.querySelector('input');
-                input.addEventListener('mousedown', () => this.isDragging = true);
-                input.addEventListener('mouseup', () => this.isDragging = false);
-                input.oninput = (e) => {
-                    this.manager.setParam(fxId, idx, parseFloat(e.target.value));
-                };
-                knobsDiv.appendChild(wrap);
-            });
-            content.appendChild(knobsDiv);
-
-            // 2. MIDDLE: LFO Controls (Switched Tabs)
-            const lfoDiv = document.createElement('div');
-            lfoDiv.className = 'w-24 shrink-0 flex flex-col border-l border-neutral-800 pl-2';
-            
-            // Tabs
-            const lfoTabs = document.createElement('div');
-            lfoTabs.className = 'flex gap-1 mb-2 bg-neutral-800 rounded p-0.5';
-            [0, 1, 2].forEach(i => {
-                const btn = document.createElement('button');
-                btn.className = `flex-1 text-[8px] font-bold rounded py-0.5 ${this.activeLfos[fxId] === i ? 'bg-neutral-600 text-white' : 'text-neutral-500'}`;
-                btn.innerText = `L${i+1}`;
-                btn.onclick = () => {
-                    this.activeLfos[fxId] = i;
-                    this.render(); 
-                };
-                lfoTabs.appendChild(btn);
-            });
-            lfoDiv.appendChild(lfoTabs);
-
-            const activeLfoIdx = this.activeLfos[fxId];
-            const lfo = state.lfos[activeLfoIdx];
-            
-            // Map LFO param indices for visualization
-            // Rate index = 4 + (lfoIdx * 3)
-            // Amt index = 5 + (lfoIdx * 3)
-            const rateTargetIdx = 4 + (activeLfoIdx * 3);
-            const amtTargetIdx = 5 + (activeLfoIdx * 3);
-
-            const controlsWrap = document.createElement('div');
-            controlsWrap.className = "flex flex-col gap-2";
-            controlsWrap.innerHTML = `
-                <div class="flex justify-between items-center">
-                    <span class="text-[8px] text-neutral-500">Wave</span>
-                    <select class="lfo-wave bg-transparent text-[8px] text-neutral-400 outline-none w-10 text-right">
-                        <option value="sine" ${lfo.wave==='sine'?'selected':''}>SIN</option>
-                        <option value="square" ${lfo.wave==='square'?'selected':''}>SQR</option>
-                        <option value="sawtooth" ${lfo.wave==='sawtooth'?'selected':''}>SAW</option>
-                        <option value="random" ${lfo.wave==='random'?'selected':''}>RND</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="text-[8px] text-neutral-500 block">Rate</label>
-                    <input type="range" class="lfo-rate w-full h-1 bg-neutral-700 rounded fx-param-slider" min="0.1" max="20" step="0.1" value="${lfo.rate}" data-fx="${fxId}" data-target="${rateTargetIdx}">
-                </div>
-                <div>
-                    <label class="text-[8px] text-neutral-500 block">Amt</label>
-                    <input type="range" class="lfo-amt w-full h-1 bg-neutral-700 rounded fx-param-slider" min="0" max="1" step="0.01" value="${lfo.amount}" data-fx="${fxId}" data-target="${amtTargetIdx}">
-                </div>
-            `;
-            
-            const lfoRateInput = controlsWrap.querySelector('.lfo-rate');
-            const lfoAmtInput = controlsWrap.querySelector('.lfo-amt');
-            
-            [lfoRateInput, lfoAmtInput].forEach(inp => {
-                inp.addEventListener('mousedown', () => this.isDragging = true);
-                inp.addEventListener('mouseup', () => this.isDragging = false);
-            });
-
-            controlsWrap.querySelector('.lfo-wave').onchange = (e) => this.manager.setLfoParam(fxId, activeLfoIdx, 'wave', e.target.value);
-            lfoRateInput.oninput = (e) => this.manager.setLfoParam(fxId, activeLfoIdx, 'rate', parseFloat(e.target.value));
-            lfoAmtInput.oninput = (e) => this.manager.setLfoParam(fxId, activeLfoIdx, 'amount', parseFloat(e.target.value));
-            
-            lfoDiv.appendChild(controlsWrap);
-            content.appendChild(lfoDiv);
-
-            // 3. RIGHT: 3x13 Matrix (Synthi Style)
-            const matrixDiv = document.createElement('div');
-            matrixDiv.className = 'flex-1 border-l border-neutral-800 pl-2 overflow-x-auto';
-            
-            const grid = document.createElement('div');
-            grid.style.display = 'grid';
-            grid.style.gridTemplateColumns = 'repeat(13, minmax(0, 1fr))';
-            grid.style.gap = '2px';
-
-            const sourceLabels = ['L1', 'L2', 'L3'];
-            const targetTooltips = [
-                'P1', 'P2', 'P3', 'Mix',
-                'L1 Rate', 'L1 Amt', 'L1 Wav',
-                'L2 Rate', 'L2 Amt', 'L2 Wav',
-                'L3 Rate', 'L3 Amt', 'L3 Wav'
-            ];
-
-            // 3 Rows (LFOs)
-            for(let row=0; row<3; row++) {
-                for(let col=0; col<13; col++) {
-                    const pin = document.createElement('div');
-                    const isActive = state.matrix[row][col];
-                    
-                    pin.className = `w-2 h-2 rounded-full border border-neutral-700 flex items-center justify-center cursor-pointer hover:border-white transition-colors ${isActive ? 'bg-white' : 'bg-neutral-900'}`;
-                    
-                    if (!isActive) {
-                        pin.innerHTML = '<div class="w-0.5 h-0.5 bg-neutral-800 rounded-full"></div>';
-                    } else {
-                        pin.style.backgroundColor = fxId === 0 ? '#34d399' : '#c084fc';
-                        pin.style.boxShadow = `0 0 4px ${fxId === 0 ? '#34d399' : '#c084fc'}`;
-                    }
-
-                    pin.title = `Src: ${sourceLabels[row]} -> Dest: ${targetTooltips[col]}`;
-                    
-                    pin.onclick = () => {
-                        this.manager.toggleMatrix(fxId, row, col);
-                        this.render();
-                    };
-                    
-                    // Visual separation
-                    if (col === 3 || col === 6 || col === 9) {
-                        pin.style.marginRight = '3px';
-                    }
-
-                    grid.appendChild(pin);
-                }
-            }
-            matrixDiv.appendChild(grid);
-            
-            // Labels
-            const axisX = document.createElement('div');
-            axisX.style.display = 'grid';
-            axisX.style.gridTemplateColumns = 'repeat(13, minmax(0, 1fr))';
-            axisX.style.gap = '2px';
-            axisX.className = 'mt-1 text-[5px] text-neutral-500 font-mono text-center';
-            
-            ['P1','P2','P3','Mx', 'R','A','W', 'R','A','W', 'R','A','W'].forEach((l, idx) => {
-                const sp = document.createElement('span');
-                sp.innerText = l;
-                if (idx === 3 || idx === 6 || idx === 9) sp.style.marginRight = '3px';
-                axisX.appendChild(sp);
-            });
-            matrixDiv.appendChild(axisX);
-
-            content.appendChild(matrixDiv);
-            section.appendChild(content);
-            this.container.appendChild(section);
+            const el = this.renderMonolith(fxId);
+            this.container.appendChild(el);
         });
+    }
+
+    renderMonolith(fxId) {
+        const state = this.manager.getEffectState(fxId);
+        const config = this.fxConfig[fxId];
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = `monolith-container ${config.class}`;
+
+        // 1. FX SELECTION HEADER
+        const header = document.createElement('div');
+        header.className = 'fx-selector';
+        config.types.forEach((type, idx) => {
+            const btn = document.createElement('div');
+            // Hardcoded active state for now based on index
+            const isActive = (fxId === 0 && idx === 0) || (fxId === 1 && idx === 1);
+            btn.className = `fx-type-btn ${isActive ? config.activeBtnClass : ''}`;
+            btn.innerText = type;
+            header.appendChild(btn);
+        });
+        wrapper.appendChild(header);
+
+        // 2. FX MACROS
+        const macros = document.createElement('div');
+        macros.className = 'fx-macros';
+        config.paramNames.forEach((name, pIdx) => {
+            const div = document.createElement('div');
+            div.innerHTML = `<label class="macro-label">${name}</label>`;
+            
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.className = 'macro-slider fx-param-slider';
+            slider.min = 0; slider.max = 1; slider.step = 0.01;
+            slider.value = state.params[pIdx];
+            slider.dataset.fx = fxId;
+            slider.dataset.target = pIdx; // Targets 0-3 are Params
+            
+            slider.addEventListener('mousedown', () => this.isDragging = true);
+            slider.addEventListener('mouseup', () => this.isDragging = false);
+            slider.oninput = (e) => {
+                this.manager.setParam(fxId, pIdx, parseFloat(e.target.value));
+            };
+
+            div.appendChild(slider);
+            macros.appendChild(div);
+        });
+        wrapper.appendChild(macros);
+
+        // 3. MODULATOR MATRIX
+        const grid = document.createElement('div');
+        grid.className = 'synthi-grid';
+        grid.style.gridTemplateColumns = '70px repeat(3, 1fr)';
+
+        // -- ROW: SOURCE (L1, L2, L3) --
+        const lblSrc = document.createElement('div');
+        lblSrc.className = 'grid-cell label-cell bg-[#181818]';
+        lblSrc.innerText = 'SOURCE';
+        grid.appendChild(lblSrc);
+
+        state.lfos.forEach((lfo, i) => {
+            const cell = document.createElement('div');
+            cell.className = `grid-cell ${config.lfoColors[i]}`;
+            
+            const btn = document.createElement('div');
+            const isOn = lfo.amount > 0;
+            btn.className = `lfo-switch ${isOn ? 'on' : ''}`;
+            btn.innerText = `L${i+1}`;
+            
+            btn.onclick = () => {
+                if (lfo.amount > 0) {
+                    lfo._lastAmt = lfo.amount;
+                    lfo.amount = 0;
+                } else {
+                    lfo.amount = lfo._lastAmt || 0.5;
+                }
+                this.render(); // Re-render to update switch state
+            };
+            
+            cell.appendChild(btn);
+            grid.appendChild(cell);
+        });
+
+        // -- ROW: WAVE --
+        const lblWave = document.createElement('div');
+        lblWave.className = 'grid-cell label-cell';
+        lblWave.style.height = '48px';
+        lblWave.innerText = 'WAVE';
+        grid.appendChild(lblWave);
+
+        const waves = ['sine', 'square', 'sawtooth', 'triangle', 'pulse', 'random'];
+        const waveLabels = ['SIN', 'SQR', 'SAW', 'TRI', 'PLS', 'RND'];
+
+        state.lfos.forEach((lfo, i) => {
+            const cell = document.createElement('div');
+            cell.className = `grid-cell p-0 ${config.lfoColors[i]}`;
+            
+            const microGrid = document.createElement('div');
+            microGrid.className = 'wave-micro-grid';
+            
+            waves.forEach((w, idx) => {
+                const b = document.createElement('div');
+                const active = lfo.wave === w;
+                b.className = `wave-btn ${active ? 'active' : ''}`;
+                b.innerText = waveLabels[idx];
+                b.onclick = () => {
+                    this.manager.setLfoParam(fxId, i, 'wave', w);
+                    this.render();
+                };
+                microGrid.appendChild(b);
+            });
+            cell.appendChild(microGrid);
+            grid.appendChild(cell);
+        });
+
+        // -- ROW: RATE --
+        this.createSliderRow(grid, 'RATE', state.lfos, config.lfoColors, (lfo) => lfo.rate, (i, val) => this.manager.setLfoParam(fxId, i, 'rate', val), 0.1, 20, 0.1);
+
+        // -- ROW: AMOUNT --
+        this.createSliderRow(grid, 'AMOUNT', state.lfos, config.lfoColors, (lfo) => lfo.amount, (i, val) => this.manager.setLfoParam(fxId, i, 'amount', val), 0, 1, 0.01);
+
+        // -- ROW: CLEAR --
+        const lblClear = document.createElement('div');
+        lblClear.className = 'grid-cell label-cell bg-[#222] text-[7px] h-6';
+        lblClear.innerText = 'CLEAR';
+        grid.appendChild(lblClear);
+
+        state.lfos.forEach((lfo, i) => {
+            const cell = document.createElement('div');
+            cell.className = 'grid-cell bg-[#222] h-6 cursor-pointer hover:text-red-500 text-neutral-600 transition';
+            cell.innerHTML = '<i class="fas fa-trash text-[8px]"></i>';
+            cell.onclick = () => {
+                // Clear this column in the matrix
+                // LFO index i corresponds to matrix row i
+                // We need to clear fx.matrix[i]
+                for(let t=0; t<13; t++) {
+                    state.matrix[i][t] = 0;
+                }
+                this.render();
+            };
+            grid.appendChild(cell);
+        });
+
+        // -- MATRIX DESTINATIONS --
+        // Config params are targets 0-3
+        config.paramNames.forEach((name, pIdx) => {
+            this.createMatrixRow(grid, name, state, pIdx, config.lfoColors, fxId);
+        });
+
+        wrapper.appendChild(grid);
+        return wrapper;
+    }
+
+    createSliderRow(grid, label, lfos, colors, getter, setter, min, max, step) {
+        const lbl = document.createElement('div');
+        lbl.className = 'grid-cell label-cell';
+        lbl.innerText = label;
+        grid.appendChild(lbl);
+
+        lfos.forEach((lfo, i) => {
+            const cell = document.createElement('div');
+            cell.className = `grid-cell ${colors[i]}`;
+            
+            const input = document.createElement('input');
+            input.type = 'range';
+            input.className = 'micro-slider';
+            input.min = min; input.max = max; input.step = step;
+            input.value = getter(lfo);
+            
+            input.oninput = (e) => setter(i, parseFloat(e.target.value));
+            // Trigger re-render on change to update Amount switch state if needed
+            input.onchange = () => this.render();
+
+            cell.appendChild(input);
+            grid.appendChild(cell);
+        });
+    }
+
+    createMatrixRow(grid, label, state, targetIdx, colors, fxId) {
+        const lbl = document.createElement('div');
+        lbl.className = 'grid-cell label-cell border-t border-neutral-800';
+        lbl.innerText = label;
+        grid.appendChild(lbl);
+
+        // 3 LFOs (Columns)
+        for(let lfoIdx=0; lfoIdx<3; lfoIdx++) {
+            const cell = document.createElement('div');
+            cell.className = `grid-cell border-t border-neutral-800 ${colors[lfoIdx]}`;
+            
+            const isActive = state.matrix[lfoIdx][targetIdx];
+            
+            // Always show the diamond frame (node)
+            const node = document.createElement('div');
+            node.className = `circuit-node ${isActive ? 'node-active' : ''}`;
+            
+            cell.onclick = () => {
+                this.manager.toggleMatrix(fxId, lfoIdx, targetIdx);
+                this.render();
+            };
+
+            cell.appendChild(node);
+            grid.appendChild(cell);
+        }
     }
 
     animate() {
@@ -200,7 +248,6 @@ export class EffectControls {
             return;
         }
 
-        // Update all sliders with "data-fx" and "data-target"
         const sliders = this.container.querySelectorAll('.fx-param-slider');
         sliders.forEach(slider => {
             const fxId = parseInt(slider.dataset.fx);
