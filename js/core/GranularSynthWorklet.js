@@ -311,16 +311,35 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 if (rel) { amp -= 0.015; if (amp <= 0) { this.killVoice(i); break; } }
                 if (ph >= gLen) { this.killVoice(i); break; }
                 
-                const rPos = start + (ph * pitch);
-                let idx = rPos | 0;
-                if (idx >= bufLen) idx %= bufLen;
+                let rPos = start + (ph * pitch);
+                let idx, frac;
+
+                if (voice.cleanMode) {
+                    // --- CLEAN MODE FIX: Safe float wrapping ---
+                    // Wrap rPos (float) to stay within buffer range (0 to bufLen)
+                    // This prevents 'readPos - idx' from becoming massive
+                    while (rPos >= bufLen) rPos -= bufLen;
+                    while (rPos < 0) rPos += bufLen;
+                    idx = rPos | 0;
+                    frac = rPos - idx;
+                } else {
+                    // --- DIRTY MODE: Original Behavior ---
+                    // The "feature" relies on rPos exceeding bufLen while idx wraps
+                    idx = rPos | 0;
+                    if (idx >= bufLen) idx %= bufLen;
+                    if (idx < 0) idx = (idx % bufLen + bufLen) % bufLen;
+                    
+                    // When rPos > bufLen (e.g. 350005.5) and idx is wrapped (5),
+                    // frac becomes ~350000.5, causing massive gain explosion
+                    frac = rPos - idx; 
+                }
                 
-                const s1 = buf[idx];
+                const s1 = buf[idx] || 0;
                 let idx2 = idx + 1;
                 if (idx2 >= bufLen) idx2 = 0;
-                const s2 = buf[idx2];
+                const s2 = buf[idx2] || 0;
                 
-                const frac = rPos - idx;
+                // Interpolation (where the explosion happens if frac is huge)
                 const sample = s1 + frac * (s2 - s1);
                 const winIdx = (ph * invGL) | 0;
                 const win = this.windowLUT[winIdx] || 0;
