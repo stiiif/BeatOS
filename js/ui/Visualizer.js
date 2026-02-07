@@ -3,6 +3,7 @@ import { globalBus } from '../events/EventBus.js';
 
 export class Visualizer {
     constructor(canvasId, bufferCanvasId, audioEngine) {
+        // ... (constructor logic unchanged) ...
         // Main canvas ID ignored now if we move to per-track logic, but kept for compatibility
         this.bufCanvas = document.getElementById(bufferCanvasId);
         if(this.bufCanvas) {
@@ -237,8 +238,7 @@ export class Visualizer {
         this.drawOverlays(ctx, t, w, h, audioCtx.currentTime, sampleStart, sampleEnd);
     }
 
-    // --- DRAWING STYLES (Updated for Zoom) ---
-
+    // ... (drawing styles unchanged) ...
     // Style 1: Mirror Gradient (SoundCloud style)
     drawStyleMirror(ctx, data, w, h, startIdx, windowLength) {
         const step = Math.max(1, Math.ceil(windowLength / w));
@@ -434,12 +434,17 @@ export class Visualizer {
         let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0, sampleStart:0, sampleEnd:0 };
         
         t.lfos.forEach(lfo => {
-            // Removed target check here as LFOs might be used for Matrix, but for overlay we only care about specific visual targets.
-            // However, Track.js structure still uses lfo.target for modulation mapping.
-            // If lfo.target is 'none', it won't affect these.
-            if (lfo.amount > 0 && lfo.target !== 'none') {
+            // Updated to handle multiple targets array
+            if (lfo.amount > 0) {
                 const v = lfo.getValue(time);
-                if(mod[lfo.target] !== undefined) mod[lfo.target] += v;
+                if (lfo.targets && lfo.targets.length > 0) {
+                    lfo.targets.forEach(target => {
+                        if(mod[target] !== undefined) mod[target] += v;
+                    });
+                } else if (lfo.target && lfo.target !== 'none') {
+                    // Backward compatibility
+                    if(mod[lfo.target] !== undefined) mod[lfo.target] += v;
+                }
             }
         });
 

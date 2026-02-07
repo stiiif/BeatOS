@@ -535,6 +535,53 @@ export class AudioEngine {
         }
     }
 
+    syncTrackBusParams(track, time = null) {
+        if (!track.bus || !this.audioEngine.getContext()) return;
+        const ctx = this.audioEngine.getContext();
+        const now = time !== null ? time : ctx.currentTime;
+        const p = track.params;
+
+        let mod = { filter: 0, hpFilter: 0, volume: 0, pan: 0 };
+        track.lfos.forEach(lfo => {
+            if (lfo.amount === 0) return;
+            const v = lfo.getValue(now);
+            
+            // Support for Multiple Targets
+            if (lfo.targets && lfo.targets.length > 0) {
+                lfo.targets.forEach(target => {
+                    if (target === 'filter') mod.filter += v * 5000; 
+                    if (target === 'hpFilter') mod.hpFilter += v * 2000; 
+                    if (target === 'volume') mod.volume += v * 0.5;
+                    if (target === 'pan') mod.pan += v;
+                });
+            } else if (lfo.target) {
+                // Legacy support
+                if (lfo.target === 'filter') mod.filter += v * 5000; 
+                if (lfo.target === 'hpFilter') mod.hpFilter += v * 2000; 
+                if (lfo.target === 'volume') mod.volume += v * 0.5;
+                if (lfo.target === 'pan') mod.pan += v;
+            }
+        });
+
+        if (track.bus.hp) {
+            const freq = this.audioEngine.getMappedFrequency(Math.max(20, p.hpFilter + mod.hpFilter), 'hp');
+            track.bus.hp.frequency.setTargetAtTime(freq, now, 0.05);
+        }
+        if (track.bus.lp) {
+            const freq = this.audioEngine.getMappedFrequency(Math.max(100, p.filter + mod.filter), 'lp');
+            track.bus.lp.frequency.setTargetAtTime(freq, now, 0.05);
+        }
+        if (track.bus.vol) {
+            const gain = Math.max(0, p.volume + mod.volume);
+            track.bus.vol.gain.setTargetAtTime(gain, now, 0.05);
+        }
+        if (track.bus.pan) {
+            const panVal = Math.max(-1, Math.min(1, p.pan + mod.pan));
+            track.bus.pan.pan.setTargetAtTime(panVal, now, 0.05);
+        }
+    }
+
+    // ... (rest of methods unchanged) ...
     // --- UTILS ---
     trimBuffer(buffer, staticThreshold = 0.002, useTransientDetection = true) {
         if (!buffer) return null;

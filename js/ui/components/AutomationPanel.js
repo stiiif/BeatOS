@@ -266,7 +266,7 @@ export class AutomationPanel {
             btn.title = 'Clear Column';
             btn.innerHTML = '<i class="fas fa-trash"></i>';
             btn.onclick = () => {
-                lfo.target = 'none';
+                lfo.targets = []; // Clear all targets
                 this.render();
             };
 
@@ -290,7 +290,8 @@ export class AutomationPanel {
                 // Added cursor-pointer to the cell to indicate interaction
                 cell.className = 'grid-cell border-b border-neutral-800/50 hover:bg-[#1a1a1a] cursor-pointer';
                 
-                const isActive = lfo.target === target.id;
+                // Check if this target ID is in the lfo.targets array
+                const isActive = lfo.targets.includes(target.id);
                 const activeClass = isActive ? `node-active lfo-color-${i % 6}` : '';
                 
                 const node = document.createElement('div');
@@ -298,11 +299,13 @@ export class AutomationPanel {
                 
                 // Moved onclick handler from the small 'node' div to the parent 'cell' div
                 cell.onclick = () => {
-                    // Radio button logic per column
-                    if (lfo.target === target.id) {
-                        lfo.target = 'none'; // Toggle off
+                    // Toggle logic: Add or Remove target from array
+                    if (lfo.targets.includes(target.id)) {
+                        // Remove
+                        lfo.targets = lfo.targets.filter(t => t !== target.id);
                     } else {
-                        lfo.target = target.id;
+                        // Add
+                        lfo.targets.push(target.id);
                     }
                     this.render();
                 };

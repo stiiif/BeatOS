@@ -13,6 +13,7 @@ export class GranularSynthWorklet {
         this.pendingLoads = new Map();
     }
 
+    // ... (rest of init and ensureBufferLoaded is unchanged) ...
     async init() {
         if (this.isInitialized) return;
         if (this.initPromise) return this.initPromise;
@@ -90,10 +91,22 @@ export class GranularSynthWorklet {
         track.lfos.forEach(lfo => {
             if (lfo.amount === 0) return;
             const v = lfo.getValue(now);
-            if (lfo.target === 'filter') mod.filter += v * 5000; 
-            if (lfo.target === 'hpFilter') mod.hpFilter += v * 2000; 
-            if (lfo.target === 'volume') mod.volume += v * 0.5;
-            if (lfo.target === 'pan') mod.pan += v;
+            
+            // Support for Multiple Targets
+            if (lfo.targets && lfo.targets.length > 0) {
+                lfo.targets.forEach(target => {
+                    if (target === 'filter') mod.filter += v * 5000; 
+                    if (target === 'hpFilter') mod.hpFilter += v * 2000; 
+                    if (target === 'volume') mod.volume += v * 0.5;
+                    if (target === 'pan') mod.pan += v;
+                });
+            } else if (lfo.target) {
+                // Legacy support
+                if (lfo.target === 'filter') mod.filter += v * 5000; 
+                if (lfo.target === 'hpFilter') mod.hpFilter += v * 2000; 
+                if (lfo.target === 'volume') mod.volume += v * 0.5;
+                if (lfo.target === 'pan') mod.pan += v;
+            }
         });
 
         if (track.bus.hp) {
@@ -136,7 +149,16 @@ export class GranularSynthWorklet {
         let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0, relGrain:0, edgeCrunch: 0, orbit: 0 };
         track.lfos.forEach(lfo => {
             const v = lfo.getValue(time);
-            if(mod[lfo.target] !== undefined) mod[lfo.target] += v;
+            
+            // Support multiple targets
+            if (lfo.targets && lfo.targets.length > 0) {
+                lfo.targets.forEach(target => {
+                    if(mod[target] !== undefined) mod[target] += v;
+                });
+            } else if (lfo.target && mod[lfo.target] !== undefined) {
+                // Legacy support
+                mod[lfo.target] += v;
+            }
         });
 
         const p = track.params;
@@ -342,58 +364,20 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                     // Raw buggy fraction
                     let rawFrac = rPos - idx;
                     
-                    // If Edge Crunch is 0, we still want the pure bug (full overflow)
-                    // If Edge Crunch is > 0, we control the overflow
-                    // Wait, the requirement is: "Map this slider exponentially... interpolate between (readPos % 1) and (readPos - idx)"
-                    
-                    // To keep the original "bug" as the default state (when Chaos is at max/min?),
-                    // The bug happens when frac explodes. 
-                    // Let's implement the blend logic from the report:
-                    
-                    // Safe fraction (what Clean mode does implicitly)
                     let safeFrac = rPos - Math.floor(rPos); 
                     
-                    // Apply Edge Crunch (Chaos) Control
-                    // 0.0 = Safe (No Crunch) -> Wait, default without Clean should be FULL bug?
-                    // The prompt asked for "Edge Crunch" to control the behavior.
-                    // If EdgeCrunch is 0, it should probably be standard playback (like Clean).
-                    // If EdgeCrunch is 1, it should be the full bug.
-                    
                     if (voice.edgeCrunch > 0) {
-                        // Blend logic:
-                        // allowedOverflow scales with edgeCrunch.
-                        // If edgeCrunch is small (0.01), allowedOverflow is small (1.01), limiting the glitch to a click.
-                        // If edgeCrunch is large (1.0), allowedOverflow allows massive values.
-                        
-                        // Using logic from report:
-                        // "If Crunch is 0: force safeFrac"
-                        // "If Crunch is 1: allow rawFrac"
-                        
-                        // We need an exponential curve for useful control because rawFrac can be ~350,000
-                        // Let's assume max buffer is around 10s @ 44k = 441000 samples.
-                        // An exponential scale: 1.0 + (bufferLength * (edgeCrunch^4))
-                        
                         let maxOverflow = 1.0 + (voice.edgeCrunch * voice.edgeCrunch * voice.edgeCrunch * bufLen);
                         
-                        // If rawFrac is negative (reverse playback bug variant), handle magnitude
                         if (rawFrac < 0) {
                              frac = Math.max(rawFrac, -maxOverflow);
                         } else {
                              frac = Math.min(rawFrac, maxOverflow);
                         }
                         
-                        // If edgeCrunch is exactly 0, we effectively want safeFrac? 
-                        // Actually, if cleanMode is FALSE and edgeCrunch is 0, user might expect the original bug?
-                        // But the report says "Chaos 0.0 (Clean): Perfect playback".
-                        // So EdgeCrunch=0 makes Dirty Mode sound Clean.
                         if (voice.edgeCrunch < 0.001) frac = safeFrac;
                         
                     } else {
-                        // If EdgeCrunch parameter is not provided or 0, 
-                        // AND we are in Dirty Mode, we should probably default to Safe to avoid unexpected earsplitting?
-                        // OR, to preserve the "bug is a feature" for existing patches, maybe default to 0 (Clean)?
-                        // The user said "I want to be able to tame it... turn this malfunction into a feature".
-                        // So default should be Tamed (0).
                         frac = safeFrac; 
                     }
                 }
@@ -457,16 +441,9 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         // --- ORBIT (Scan Jitter) Logic ---
         if (note.params.orbit > 0) {
             // Apply jitter to the read position BEFORE it is assigned to the voice
-            // This effectively randomizes where the grain starts relative to the playhead
-            // causing it to cross the buffer boundary more/less frequently
-            
-            // Random value -0.5 to 0.5 scaled by Orbit amount
             const jitter = (this.random() - 0.5) * note.params.orbit;
             pos += jitter;
             
-            // Wrap the position so it stays valid 0-1
-            // Note: If we wrap here, we might PREVENT the glitch if we land safely inside.
-            // But Orbit is meant to increase chaos probability.
             if (pos < 0) pos += 1.0;
             if (pos > 1) pos -= 1.0;
         } else {
@@ -478,8 +455,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         
         v.active = true; v.trackId = note.trackId; v.buffer = buf; v.bufferLength = buf.length;
         
-        // Ensure initial position is within 0-1 range for the start of the grain
-        // The glitch happens when 'readPos' (derived from this) runs off the edge later
         v.position = Math.max(0, Math.min(1, pos)); 
         
         v.phase = 0;

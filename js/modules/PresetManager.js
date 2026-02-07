@@ -20,7 +20,12 @@ export class PresetManager {
                 muted: t.muted, 
                 soloed: t.soloed, 
                 stepLock: t.stepLock,
-                lfos: t.lfos.map(l => ({ wave: l.wave, rate: l.rate, amount: l.amount, target: l.target })),
+                lfos: t.lfos.map(l => ({ 
+                    wave: l.wave, 
+                    rate: l.rate, 
+                    amount: l.amount, 
+                    targets: l.targets // Changed target to targets array
+                })),
                 samplePath: null // Will be filled if custom sample exists
             };
 
@@ -50,7 +55,7 @@ export class PresetManager {
 
         const presetData = {
             bpm: bpm,
-            version: "2.0", // Bump version for .beatos format
+            version: "2.1", // Bump version for .beatos format with multi-LFO targets
             tracks: tracksData
         };
 
@@ -138,8 +143,18 @@ export class PresetManager {
             
             if (trackData.lfos) trackData.lfos.forEach((lData, lIdx) => {
                 if(lIdx < NUM_LFOS) {
-                    t.lfos[lIdx].wave = lData.wave; t.lfos[lIdx].rate = lData.rate;
-                    t.lfos[lIdx].amount = lData.amount; t.lfos[lIdx].target = lData.target;
+                    t.lfos[lIdx].wave = lData.wave; 
+                    t.lfos[lIdx].rate = lData.rate;
+                    t.lfos[lIdx].amount = lData.amount; 
+                    
+                    // Backward Compatibility for loading old presets
+                    if (lData.targets) {
+                        t.lfos[lIdx].targets = [...lData.targets];
+                    } else if (lData.target) {
+                        t.lfos[lIdx].targets = [lData.target];
+                    } else {
+                        t.lfos[lIdx].targets = [];
+                    }
                 }
             });
 

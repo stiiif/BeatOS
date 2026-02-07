@@ -46,7 +46,7 @@ export class TrackLibrary {
                 wave: l.wave, 
                 rate: l.rate, 
                 amount: l.amount, 
-                target: l.target 
+                targets: [...l.targets] // Save targets array
             })),
             // Store custom sample info if present (but NOT the buffer)
             customSample: track.customSample ? {
@@ -74,7 +74,12 @@ export class TrackLibrary {
             muted: track.muted,
             soloed: track.soloed,
             stepLock: track.stepLock,
-            lfos: track.lfos.map(l => ({ wave: l.wave, rate: l.rate, amount: l.amount, target: l.target })),
+            lfos: track.lfos.map(l => ({ 
+                wave: l.wave, 
+                rate: l.rate, 
+                amount: l.amount, 
+                targets: [...l.targets]
+            })),
             hasSample: false
         };
 
@@ -155,7 +160,15 @@ export class TrackLibrary {
                     targetTrack.lfos[lIdx].wave = lData.wave;
                     targetTrack.lfos[lIdx].rate = lData.rate;
                     targetTrack.lfos[lIdx].amount = lData.amount;
-                    targetTrack.lfos[lIdx].target = lData.target;
+                    
+                    // Handle Targets with Backward Compatibility
+                    if (lData.targets) {
+                        targetTrack.lfos[lIdx].targets = [...lData.targets];
+                    } else if (lData.target) {
+                        targetTrack.lfos[lIdx].targets = [lData.target];
+                    } else {
+                        targetTrack.lfos[lIdx].targets = [];
+                    }
                 }
             });
         }
