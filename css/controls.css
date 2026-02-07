@@ -51,7 +51,7 @@ input[type=range]::-moz-range-track {
     background-color: #171717; /* Neutral-900 */
     border-radius: 8px;
     padding: 16px;
-    font-family: 'Inter', sans-serif;
+    font-family: 'JetBrains Mono', monospace;
     box-shadow: 0 4px 10px rgba(0,0,0,0.2);
     border: 1px solid #262626;
 }
