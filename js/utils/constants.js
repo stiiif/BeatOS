@@ -25,3 +25,26 @@ export const VELOCITY_GAINS = {
     2: 0.75, // Normal (Medium Velocity)
     3: 1.0   // Accent (High Velocity)
 };
+
+// Modulation Targets for LFOs
+export const MODULATION_TARGETS = [
+    { id: 'position', name: 'Position' },
+    { id: 'spray', name: 'Spray' },
+    { id: 'sampleStart', name: 'Start' },
+    { id: 'sampleEnd', name: 'End' },
+    { id: 'scanSpeed', name: 'Speed' },
+    { id: 'density', name: 'Density' },
+    { id: 'grainSize', name: 'Size' },
+    { id: 'overlap', name: 'Overlap' },
+    { id: 'pitch', name: 'Pitch' },
+    { id: 'relGrain', name: 'Rel Dur' },
+    { id: 'ampAttack', name: 'Attack' },
+    { id: 'ampDecay', name: 'Decay' },
+    { id: 'ampRelease', name: 'Release' },
+    { id: 'hpFilter', name: 'HPF' },
+    { id: 'filter', name: 'LPF' },
+    { id: 'volume', name: 'Vol' },
+    { id: 'pan', name: 'Pan' },
+    { id: 'edgeCrunch', name: 'Crunch' },
+    { id: 'orbit', name: 'Orbit' }
+];

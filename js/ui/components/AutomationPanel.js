@@ -1,11 +1,20 @@
 // js/ui/components/AutomationPanel.js
-import { NUM_LFOS } from '../../utils/constants.js';
+import { NUM_LFOS, MODULATION_TARGETS } from '../../utils/constants.js';
 
 export class AutomationPanel {
     constructor() {
         this.tracks = [];
         this.selectedTrackIndex = 0;
-        this.selectedLfoIndex = 0;
+        // Keep track of which LFO is "enabled" (has amount > 0 or user toggled it)
+        // In this UI, toggling LFO effectively sets/unsets amount or just visual state?
+        // Request said: "act as switch buttons that enable/disable the LFO (without clearing the destination matrix!)"
+        // This implies a separate 'enabled' state or caching the amount.
+        // For simplicity, we'll store a local 'disabled' state for each LFO of the current track
+        // OR better: use the LFO's amount. If amount > 0, it's ON. If 0, it's OFF.
+        // To support "disable without clearing", we need to store the "previous amount" in the LFO object itself?
+        // Since we can't easily modify the LFO class structure here, we'll assume LFO ON = amount > 0.
+        // If user clicks OFF, we set amount to 0. If user clicks ON, we restore to 1.0 or previous?
+        // Let's modify the UI to simply visualize Amount > 0 as ON.
     }
 
     setTracks(tracks) {
@@ -14,90 +23,260 @@ export class AutomationPanel {
 
     setSelectedTrackIndex(idx) {
         this.selectedTrackIndex = idx;
+        this.render();
     }
 
-    setSelectedLfoIndex(idx) {
-        this.selectedLfoIndex = idx;
-    }
-
-    // ============================================================================
-    // GENERATE LFO TABS
-    // ============================================================================
-
-    generateLfoTabs(onSetSelectedLfoIndex, onUpdateLfoUI) {
-        const container = document.getElementById('lfoTabsContainer');
-        if (!container) return;
-        container.innerHTML = '';
-        
-        for(let i=0; i<NUM_LFOS; i++) {
-            const btn = document.createElement('button');
-            // EXACT STYLING - DO NOT CHANGE
-            btn.className = 'lfo-tab flex-1 text-[10px] font-bold py-1 rounded transition text-neutral-400 hover:bg-neutral-700 min-w-[40px]';
-            btn.dataset.lfo = i;
-            btn.innerText = `LFO ${i+1}`;
-            btn.addEventListener('click', (e) => {
-                const index = parseInt(e.target.dataset.lfo);
-                this.selectedLfoIndex = index;
-                if (onSetSelectedLfoIndex) onSetSelectedLfoIndex(index);
-                if (onUpdateLfoUI) onUpdateLfoUI();
-            });
-            container.appendChild(btn);
-        }
-    }
-
-    // ============================================================================
-    // BIND AUTOMATION CONTROLS
-    // ============================================================================
-
-    bindAutomationControls() {
-        const sel = document.getElementById('autoSpeedSelect');
-        if(sel) {
-            sel.addEventListener('change', (e) => {
-                const t = this.tracks[this.selectedTrackIndex];
-                if(t && t.type === 'automation') {
-                    t.clockDivider = parseInt(e.target.value);
-                }
-            });
-        }
-    }
-
-    // ============================================================================
-    // SLIDER WHEEL HANDLING
-    // ============================================================================
-
-    handleSliderWheel(e) {
-        const el = e.target;
-        const step = parseFloat(el.step) || 0.01;
-        const min = parseFloat(el.min);
-        const max = parseFloat(el.max);
-        
-        // Middle mouse button for coarse adjustment
-        const isCoarse = (e.buttons & 4) === 4; 
-        const dir = Math.sign(e.deltaY) * -1; 
-        const multiplier = isCoarse ? 10 : 1;
-        
-        let val = parseFloat(el.value);
-        val += dir * step * multiplier;
-        val = Math.max(min, Math.min(max, val));
-        
-        el.value = val;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-
-    // ============================================================================
-    // INITIALIZE
-    // ============================================================================
-
+    // Since the main logic is now "The Monolith", we replace the old initialization
     initialize(onSetSelectedLfoIndex, onUpdateLfoUI) {
-        this.generateLfoTabs(onSetSelectedLfoIndex, onUpdateLfoUI);
-        this.bindAutomationControls();
+        // We no longer use the old tabs. We render the matrix into #lfoSection
+        // We need to hijack the #lfoSection container from the main HTML or TrackControls
+        // TrackControls.js currently manages #lfoSection visibility.
+        // We will render the monolith inside #lfoSection.
+        this.render();
+    }
+
+    render() {
+        const container = document.getElementById('lfoSection');
+        if (!container) return;
         
-        // Bind wheel event for sliders
-        document.body.addEventListener('wheel', (e) => {
-            if (e.target.type === 'range') {
-                e.preventDefault();
-                this.handleSliderWheel(e);
-            }
-        }, { passive: false });
+        const track = this.tracks[this.selectedTrackIndex];
+        if (!track || track.type !== 'granular') {
+            // AutomationPanel only for Granular tracks currently
+            return;
+        }
+
+        // Clear existing content (which might be the old UI)
+        container.innerHTML = '';
+
+        // Header
+        const header = document.createElement('div');
+        header.className = 'flex items-center gap-2 mb-2 px-2';
+        header.innerHTML = '<h3 class="text-xs font-bold text-neutral-400 uppercase"><i class="fas fa-wave-square mr-1"></i> Modulators</h3>';
+        container.appendChild(header);
+
+        // Scrollable Matrix Container
+        const scrollArea = document.createElement('div');
+        scrollArea.className = 'overflow-y-auto custom-scrollbar bg-[#0a0a0a] rounded border border-neutral-800 h-64'; // Fixed height for scrolling
+        
+        // The Grid
+        const grid = document.createElement('div');
+        grid.className = 'synthi-grid';
+        // Dynamic Columns: 1 Label + NUM_LFOS columns
+        grid.style.gridTemplateColumns = `70px repeat(${NUM_LFOS}, 1fr)`;
+        
+        scrollArea.appendChild(grid);
+        container.appendChild(scrollArea);
+
+        this.renderSourceRow(grid, track);
+        this.renderWaveRow(grid, track);
+        this.renderRateRow(grid, track);
+        this.renderAmtRow(grid, track);
+        this.renderClearRow(grid, track);
+        this.renderDestinations(grid, track);
+    }
+
+    renderSourceRow(grid, track) {
+        // Label
+        const lbl = document.createElement('div');
+        lbl.className = 'grid-cell sticky top-0 z-50 bg-[#181818] border-b border-neutral-700 font-bold text-[9px] text-neutral-500 justify-end pr-2';
+        lbl.innerText = 'SOURCE';
+        grid.appendChild(lbl);
+
+        // LFO Headers
+        track.lfos.forEach((lfo, i) => {
+            if (i >= NUM_LFOS) return;
+            const cell = document.createElement('div');
+            cell.className = 'grid-cell sticky top-0 z-50 bg-[#111] border-b border-neutral-700 p-0 shadow-lg';
+            
+            const isOn = lfo.amount > 0;
+            const colorClass = `lfo-color-${i % 6}`;
+            
+            const switchBtn = document.createElement('div');
+            switchBtn.className = `lfo-switch ${isOn ? 'on' : ''} ${colorClass}`;
+            switchBtn.innerHTML = `<span class="text-[10px] font-bold">L${i+1}</span>`;
+            
+            switchBtn.onclick = () => {
+                // Toggle Logic: If ON, mute (amt=0). If OFF, restore (amt=0.5 or 1).
+                // We'll use a property on LFO if available, else default.
+                if (lfo.amount > 0) {
+                    lfo._lastAmount = lfo.amount; // Hack: store prev amount on object
+                    lfo.amount = 0;
+                } else {
+                    lfo.amount = lfo._lastAmount || 0.5;
+                }
+                this.render(); // Re-render to update UI
+            };
+
+            cell.appendChild(switchBtn);
+            grid.appendChild(cell);
+        });
+    }
+
+    renderWaveRow(grid, track) {
+        // Label
+        const lbl = document.createElement('div');
+        lbl.className = 'grid-cell bg-[#161616] text-[9px] text-neutral-500 font-bold justify-end pr-2 border-b border-neutral-800';
+        lbl.style.height = '48px';
+        lbl.innerText = 'WAVE';
+        grid.appendChild(lbl);
+
+        const waves = ['sine', 'square', 'sawtooth', 'triangle', 'pulse', 'random'];
+        const icons = ['water', 'square-full', 'bolt', 'play', 'grip-lines', 'random']; // FontAwesome mapping
+
+        track.lfos.forEach((lfo, i) => {
+            if (i >= NUM_LFOS) return;
+            const cell = document.createElement('div');
+            cell.className = 'grid-cell p-0 border-b border-neutral-800';
+            cell.style.height = '48px';
+
+            const microGrid = document.createElement('div');
+            microGrid.className = 'wave-micro-grid';
+
+            waves.forEach((wave, idx) => {
+                const btn = document.createElement('div');
+                const isActive = lfo.wave === wave;
+                const activeClass = isActive ? `active lfo-color-${i % 6}` : '';
+                
+                // Special rotation for Triangle (play icon)
+                const rotateClass = wave === 'triangle' ? '-rotate-90' : '';
+                
+                btn.className = `wave-btn ${activeClass}`;
+                btn.title = wave;
+                btn.innerHTML = `<i class="fas fa-${icons[idx]} ${rotateClass}"></i>`;
+                
+                btn.onclick = () => {
+                    lfo.wave = wave;
+                    this.render();
+                };
+                microGrid.appendChild(btn);
+            });
+
+            cell.appendChild(microGrid);
+            grid.appendChild(cell);
+        });
+    }
+
+    renderRateRow(grid, track) {
+        // Label
+        const lbl = document.createElement('div');
+        lbl.className = 'grid-cell bg-[#161616] text-[9px] text-neutral-500 font-bold justify-end pr-2 border-b border-neutral-800';
+        lbl.innerText = 'RATE';
+        grid.appendChild(lbl);
+
+        track.lfos.forEach((lfo, i) => {
+            if (i >= NUM_LFOS) return;
+            const cell = document.createElement('div');
+            cell.className = 'grid-cell border-b border-neutral-800';
+            
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = 0.1; slider.max = 20; slider.step = 0.1;
+            slider.value = lfo.rate;
+            slider.className = `micro-slider slider-active lfo-color-${i % 6}`;
+            slider.title = `Rate: ${lfo.rate.toFixed(1)} Hz`;
+            
+            slider.oninput = (e) => {
+                lfo.rate = parseFloat(e.target.value);
+                slider.title = `Rate: ${lfo.rate.toFixed(1)} Hz`;
+            };
+
+            cell.appendChild(slider);
+            grid.appendChild(cell);
+        });
+    }
+
+    renderAmtRow(grid, track) {
+        // Label
+        const lbl = document.createElement('div');
+        lbl.className = 'grid-cell bg-[#161616] text-[9px] text-neutral-500 font-bold justify-end pr-2 border-b border-neutral-800';
+        lbl.innerText = 'AMT';
+        grid.appendChild(lbl);
+
+        track.lfos.forEach((lfo, i) => {
+            if (i >= NUM_LFOS) return;
+            const cell = document.createElement('div');
+            cell.className = 'grid-cell border-b border-neutral-800';
+            
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = 0; slider.max = 1; slider.step = 0.01;
+            slider.value = lfo.amount;
+            slider.className = `micro-slider slider-active lfo-color-${i % 6}`;
+            slider.title = `Amount: ${lfo.amount.toFixed(2)}`;
+            
+            slider.oninput = (e) => {
+                lfo.amount = parseFloat(e.target.value);
+                slider.title = `Amount: ${lfo.amount.toFixed(2)}`;
+                // Update header switch state if it goes 0 -> >0 or vice versa
+                // Ideally optimize this but re-rendering full UI on drag is heavy.
+                // We'll trust visual feedback of slider for now.
+            };
+            
+            // Re-render on change to update Header Switch state visually
+            slider.onchange = () => this.render();
+
+            cell.appendChild(slider);
+            grid.appendChild(cell);
+        });
+    }
+
+    renderClearRow(grid, track) {
+        const lbl = document.createElement('div');
+        lbl.className = 'grid-cell bg-[#222] text-[8px] text-neutral-400 font-bold uppercase tracking-widest justify-end pr-2 h-6';
+        lbl.innerText = 'CLEAR';
+        grid.appendChild(lbl);
+
+        track.lfos.forEach((lfo, i) => {
+            if (i >= NUM_LFOS) return;
+            const cell = document.createElement('div');
+            cell.className = 'grid-cell bg-[#222] p-0 h-6';
+            
+            const btn = document.createElement('button');
+            btn.className = 'w-full h-full flex items-center justify-center text-neutral-600 hover:text-red-500 hover:bg-[#331111] transition text-[8px]';
+            btn.title = 'Clear Column';
+            btn.innerHTML = '<i class="fas fa-trash"></i>';
+            btn.onclick = () => {
+                lfo.target = 'none';
+                this.render();
+            };
+
+            cell.appendChild(btn);
+            grid.appendChild(cell);
+        });
+    }
+
+    renderDestinations(grid, track) {
+        MODULATION_TARGETS.forEach(target => {
+            // Label
+            const lbl = document.createElement('div');
+            lbl.className = 'grid-cell bg-[#141414] text-[9px] text-neutral-400 justify-end pr-2 font-mono border-b border-neutral-800/50 hover:text-white transition';
+            lbl.innerText = target.name;
+            grid.appendChild(lbl);
+
+            // Matrix Cells
+            track.lfos.forEach((lfo, i) => {
+                if (i >= NUM_LFOS) return;
+                const cell = document.createElement('div');
+                cell.className = 'grid-cell border-b border-neutral-800/50 hover:bg-[#1a1a1a]';
+                
+                const isActive = lfo.target === target.id;
+                const activeClass = isActive ? `node-active lfo-color-${i % 6}` : '';
+                
+                const node = document.createElement('div');
+                node.className = `circuit-node ${activeClass}`;
+                node.onclick = () => {
+                    // Radio button logic per column
+                    if (lfo.target === target.id) {
+                        lfo.target = 'none'; // Toggle off
+                    } else {
+                        lfo.target = target.id;
+                    }
+                    this.render();
+                };
+
+                cell.appendChild(node);
+                grid.appendChild(cell);
+            });
+        });
     }
 }

@@ -153,3 +153,107 @@ input[type=range]::-moz-range-track {
 .knob-container span {
     color: var(--group-color, #10b981);
 }
+
+/* --- MONOLITH MATRIX STYLES --- */
+
+/* Micro Slider */
+input[type=range].micro-slider {
+    -webkit-appearance: none;
+    width: 80%;
+    height: 2px;
+    background: #444;
+    border-radius: 2px;
+    margin: 0 auto;
+    display: block;
+}
+input[type=range].micro-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #aaa;
+    margin-top: -3px;
+    box-shadow: 0 0 2px rgba(0,0,0,0.5);
+    border: none;
+}
+input[type=range].micro-slider.slider-active::-webkit-slider-thumb {
+    background: currentColor; /* Inherits from parent LFO color */
+}
+
+/* Synthi Grid Layout */
+.synthi-grid {
+    display: grid;
+    /* Grid columns will be set dynamically via inline style in JS based on NUM_LFOS */
+    background-color: #222; /* Gap color */
+    gap: 1px;
+    width: 100%;
+}
+
+.grid-cell {
+    background-color: #111;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    min-height: 24px;
+}
+
+/* Sticky Header Logic */
+.sticky-stack { position: sticky; top: 0; z-index: 50; }
+
+/* Waveform Micro Grid (2x3) */
+.wave-micro-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+    width: 100%;
+    height: 100%;
+    gap: 1px;
+    background: #222;
+}
+.wave-btn {
+    background: #151515;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+.wave-btn i { font-size: 6px; color: #555; }
+.wave-btn:hover { background: #262626; }
+.wave-btn.active { background: #333; }
+.wave-btn.active i { color: #fff; }
+
+/* Circuit Nodes */
+.circuit-node {
+    width: 8px; height: 8px;
+    background: #000;
+    border: 1px solid #333;
+    transform: rotate(45deg);
+    cursor: pointer;
+    transition: all 0.1s;
+}
+.circuit-node:hover { border-color: #666; transform: rotate(45deg) scale(1.2); }
+
+/* LFO Colors */
+.lfo-color-0 { color: #10b981; } /* Emerald */
+.lfo-color-1 { color: #3b82f6; } /* Blue */
+.lfo-color-2 { color: #a855f7; } /* Purple */
+.lfo-color-3 { color: #f59e0b; } /* Amber */
+.lfo-color-4 { color: #ef4444; } /* Red */
+.lfo-color-5 { color: #ec4899; } /* Pink */
+/* Fallback for > 6 LFOs */
+.lfo-color-default { color: #aaa; }
+
+/* Active Nodes */
+.node-active { background: currentColor !important; box-shadow: 0 0 5px currentColor; border: none; }
+
+/* Toggle Switch Style for Headers */
+.lfo-switch {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    cursor: pointer; opacity: 0.4; transition: opacity 0.2s;
+    border-bottom: 2px solid transparent;
+}
+.lfo-switch.on { opacity: 1; border-bottom-color: currentColor; background: linear-gradient(to bottom, rgba(255,255,255,0.05), transparent); }
+.lfo-switch:hover { opacity: 0.8; }

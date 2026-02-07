@@ -468,68 +468,7 @@
 
                 <!-- LFOs (Granular only or Global?) -->
                 <div id="lfoSection" class="space-y-3 pt-2 border-t border-neutral-800">
-                    <div class="flex items-center gap-2 mb-2">
-                        <h3 class="text-xs font-bold text-neutral-400 uppercase"><i class="fas fa-wave-square mr-1"></i>
-                            Modulators</h3>
-                    </div>
-
-                    <!-- LFO Tabs Container (Dynamically Generated) -->
-                    <div id="lfoTabsContainer"
-                        class="flex gap-1 bg-neutral-800 p-1 rounded overflow-x-auto custom-scrollbar">
-                        <!-- JS injects buttons here -->
-                    </div>
-
-                    <div class="bg-neutral-800/30 p-3 rounded border border-neutral-800 space-y-3">
-                        <div class="flex gap-2">
-                            <div class="flex-1">
-                                <label class="text-[10px] text-neutral-500 block mb-1">Target</label>
-                                <select id="lfoTarget"
-                                    class="w-full bg-neutral-800 text-neutral-300 text-[10px] rounded border border-neutral-700 p-1 outline-none">
-                                    <option value="none">Off</option>
-                                    <option value="position">Position</option>
-                                    <option value="sampleStart">Smp Start</option>
-                                    <option value="sampleEnd">Smp End</option>
-                                    <option value="spray">Spray</option>
-                                    <option value="density">Density</option>
-                                    <option value="grainSize">Grain Size</option>
-                                    <option value="pitch">Pitch</option>
-                                    <option value="relGrain">Rel Grain</option>
-                                    <option value="overlap">Overlap</option>
-                                    <option value="scanSpeed">Scan Speed</option>
-                                    <option value="filter">LPF</option>
-                                    <option value="hpFilter">HPF</option>
-                                    <option value="ampAttack">Amp Attack</option>
-                                    <option value="ampDecay">Amp Decay</option>
-                                    <option value="ampRelease">Amp Release</option>
-                                    <option value="edgeCrunch">Edge Crunch</option>
-                                    <option value="orbit">Orbit</option>
-                                </select>
-                            </div>
-                            <div class="flex-1">
-                                <label class="text-[10px] text-neutral-500 block mb-1">Wave</label>
-                                <select id="lfoWave"
-                                    class="w-full bg-neutral-800 text-neutral-300 text-[10px] rounded border border-neutral-700 p-1 outline-none">
-                                    <option value="sine">Sine</option>
-                                    <option value="square">Square</option>
-                                    <option value="sawtooth">Saw</option>
-                                    <option value="random">Rnd</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="knob-container">
-                                <label class="text-[10px] text-neutral-500 mb-1">Rate</label>
-                                <input type="range" id="lfoRate" min="0.1" max="20" step="0.1">
-                                <span class="text-[10px] text-emerald-500 mt-1" id="lfoRateVal">1.0</span>
-                            </div>
-                            <div class="knob-container">
-                                <label class="text-[10px] text-neutral-500 mb-1">Amount</label>
-                                <input type="range" id="lfoAmt" min="0" max="1" step="0.01">
-                                <span class="text-[10px] text-emerald-500 mt-1" id="lfoAmtVal">0.0</span>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- MONOLITH MATRIX WILL BE INJECTED HERE BY JS -->
                 </div>
 
                 <div class="text-[10px] text-neutral-600 text-center pt-4">
