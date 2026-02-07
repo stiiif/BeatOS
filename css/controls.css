@@ -46,14 +46,14 @@ input[type=range]::-moz-range-track {
 .param-grid {
     display: grid;
     grid-template-columns: 70px 1fr 45px; /* Label | Slider | Value */
-    gap: 8px 12px;
+    gap: 4px 6px;
     align-items: center;
     background-color: #171717; /* Neutral-900 */
-    border-radius: 8px;
-    padding: 16px;
+    border-radius: 0px;
+    padding: 0px;
     font-family: 'JetBrains Mono', monospace;
     box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-    border: 1px solid #262626;
+    border: 0px solid #262626;
 }
 
 .param-grid .section-header {
