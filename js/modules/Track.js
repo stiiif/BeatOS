@@ -46,10 +46,9 @@ export class Track {
             pitch: 1.0, 
             relGrain: 2.00,  
             
+            // --- NEW PARAMETERS (Sample Window) ---
             sampleStart: 0.000,
             sampleEnd: 1.000,
-            
-            scanSpeedSync: false, // New Sync Flag
             
             // --- 909 / Simple Drum Params ---
             drumType: 'kick', 

@@ -346,31 +346,7 @@ export class TrackControls {
                 if(param === 'grainSize') suffix = 's';
                 if(param === 'pitch') suffix = 'x';
                 if(param === 'overlap') suffix = 'x';
-                if(param === 'scanSpeed') {
-                    suffix = '';
-                    const btnSync = document.getElementById('btnScanSync');
-                    if(btnSync) {
-                        if (t.params.scanSpeedSync) {
-                            // Active State
-                            btnSync.classList.add('bg-emerald-600', 'text-white', 'border-emerald-500');
-                            btnSync.classList.remove('bg-neutral-800', 'text-neutral-400', 'border-neutral-600');
-                            
-                            // VISUALLY DISABLE SLIDER
-                            el.disabled = true;
-                            el.style.opacity = '0.3';
-                            el.style.cursor = 'not-allowed';
-                        } else {
-                            // Inactive State
-                            btnSync.classList.remove('bg-emerald-600', 'text-white', 'border-emerald-500');
-                            btnSync.classList.add('bg-neutral-800', 'text-neutral-400', 'border-neutral-600');
-                            
-                            // ENABLE SLIDER
-                            el.disabled = false;
-                            el.style.opacity = '1.0';
-                            el.style.cursor = 'pointer';
-                        }
-                    }
-                }
+                if(param === 'scanSpeed') suffix = '';
                 // Position, Sample Start/End default to 3 decimals
 
                 if(el.nextElementSibling) {
