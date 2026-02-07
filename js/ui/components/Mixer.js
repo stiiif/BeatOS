@@ -662,8 +662,15 @@ export class Mixer {
     createReturnStrip(busObject, index) {
         const strip = document.createElement('div');
         strip.className = 'mixer-strip group-strip'; 
-        strip.style.backgroundColor = '#2a1a2a'; 
-        strip.style.borderColor = index === 0 ? '#10b981' : '#a855f7'; 
+        
+        // --- 3. FIX: Removed glossy border, using subtle background tint instead ---
+        if (index === 0) {
+            strip.style.backgroundColor = '#1a221e'; // Subtle Emerald Tint (Very Dark)
+            strip.style.border = '1px solid #333';   // Standard border
+        } else {
+            strip.style.backgroundColor = '#221a22'; // Subtle Purple Tint (Very Dark)
+            strip.style.border = '1px solid #333';   // Standard border
+        }
 
         const header = document.createElement('div');
         header.className = 'strip-header';
