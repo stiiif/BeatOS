@@ -271,7 +271,12 @@ document.getElementById('resetParamBtn').addEventListener('click', () => {
     setTimeout(() => { btn.innerHTML = originalContent; btn.classList.remove('text-emerald-400', 'border-emerald-500'); }, 800);
 });
 
-document.querySelectorAll('.sound-gen-btn').forEach(btn => {
+// -------------------------------------------------------------------------
+// NEW GENERATOR BUTTON LOGIC (REPLACING OLD LISTENERS)
+// -------------------------------------------------------------------------
+
+// 1. GRANULAR GENERATORS (Grey Buttons)
+document.querySelectorAll('.granular-gen-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
         if (!audioEngine.getContext()) return;
         const type = e.target.dataset.type;
@@ -293,29 +298,20 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
             t.rmsMap = audioEngine.analyzeBuffer(newBuf);
             visualizer.triggerRedraw();
             
-            // Re-trigger header update to refresh type label properly using standardized logic
-            // (Previous manual textContent setting removed in favor of centralized update)
             const normalGrp = Math.floor(currentTrackIdx / TRACKS_PER_GROUP);
             const randomChokeInfo = uiManager.getRandomChokeInfo();
             const grp = randomChokeInfo.mode ? randomChokeInfo.groups[currentTrackIdx] : normalGrp;
             const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
             
-            // This ensures consistent [SYNTH] or specific name if implemented later
             uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
 
-            // Force update the label to show the specific granular type (KICK, SNR, etc.)
-            // NOTE: We update both labels to meet requirements:
-            // trackTypeLabel -> [GRANULAR] (or similar engine indicator) - actually let's stick to consistent [SYNTH] or [GRANULAR]
-            // trackNameText -> The specific sound name (KICK, SNR, etc.)
-            // The previous logic was updating trackTypeLabel with the name, let's fix it.
-            
             const typeLabel = document.getElementById('trackTypeLabel');
             const nameText = document.getElementById('trackNameText');
             
             if (typeLabel) typeLabel.textContent = `[GRANULAR]`; 
             if (nameText) nameText.textContent = type === 'texture' ? 'FM Texture' : type.toUpperCase();
             
-            // Temporary visual feedback on button
+            // Feedback
             const originalBg = e.target.style.backgroundColor;
             e.target.style.backgroundColor = '#059669';
             setTimeout(() => { e.target.style.backgroundColor = originalBg; }, 200);
@@ -323,42 +319,87 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
     });
 });
 
-document.getElementById('load909Btn').addEventListener('click', () => {
-    if (!audioEngine.getContext()) return;
-    const currentTrackIdx = uiManager.getSelectedTrackIndex();
-    const t = tracks[currentTrackIdx];
-    t.type = 'simple-drum';
-    t.customSample = null; // Clear custom sample so UI knows it's 909
-    t.params.drumType = 'kick'; t.params.drumTune = 0.5; t.params.drumDecay = 0.5;
-    updateTrackControlsVisibility();
-    uiManager.updateKnobs();
-    const bufCanvas = document.getElementById('bufferDisplay');
-    const ctx = bufCanvas.getContext('2d');
-    ctx.fillStyle = '#111'; ctx.fillRect(0, 0, bufCanvas.width, bufCanvas.height);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#f97316'; ctx.fillText("909 ENGINE ACTIVE", 10, 40);
-    
-    // FIX: Force Header Update
-    const normalGrp = Math.floor(currentTrackIdx / TRACKS_PER_GROUP);
-    const randomChokeInfo = uiManager.getRandomChokeInfo();
-    const grp = randomChokeInfo.mode ? randomChokeInfo.groups[currentTrackIdx] : normalGrp;
-    const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
-    uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
-    
-    // Explicitly set labels for initial 909 load (defaults to KICK)
-    const typeLabel = document.getElementById('trackTypeLabel');
-    const nameText = document.getElementById('trackNameText');
-    if (typeLabel) typeLabel.textContent = `[909]`;
-    if (nameText) nameText.textContent = `KICK`;
+// 2. 909 GENERATORS (Orange Buttons)
+document.querySelectorAll('.type-909-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        if (!audioEngine.getContext()) return;
+        const currentTrackIdx = uiManager.getSelectedTrackIndex();
+        const t = tracks[currentTrackIdx];
+        
+        // Logic combined from old load909Btn and drum-sel-btn
+        t.type = 'simple-drum';
+        t.customSample = null; // Clear sample to ensure UI knows it's 909
+        t.params.drumType = e.target.dataset.drum; // Set specific type
+        
+        // Defaults if not set (or resets)
+        // Note: We might want to keep tuning if already 909, but resets usually expected on type change?
+        // Let's reset for fresh sound.
+        t.params.drumTune = 0.5; 
+        t.params.drumDecay = 0.5;
+        
+        updateTrackControlsVisibility();
+        uiManager.updateKnobs();
+        
+        const bufCanvas = document.getElementById('bufferDisplay');
+        const ctx = bufCanvas.getContext('2d');
+        ctx.fillStyle = '#111'; ctx.fillRect(0, 0, bufCanvas.width, bufCanvas.height);
+        ctx.font = '10px monospace'; ctx.fillStyle = '#f97316'; ctx.fillText("909 ENGINE ACTIVE", 10, 40);
+        
+        // Update Header
+        const normalGrp = Math.floor(currentTrackIdx / TRACKS_PER_GROUP);
+        const randomChokeInfo = uiManager.getRandomChokeInfo();
+        const grp = randomChokeInfo.mode ? randomChokeInfo.groups[currentTrackIdx] : normalGrp;
+        const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
+        uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
+        
+        // Update Labels
+        const typeLabel = document.getElementById('trackTypeLabel');
+        const nameText = document.getElementById('trackNameText');
+        if (typeLabel) typeLabel.textContent = `[909]`;
+        let displayName = t.params.drumType.toUpperCase();
+        if (displayName === 'CLOSED-HAT') displayName = 'CH';
+        if (displayName === 'OPEN-HAT') displayName = 'OH';
+        if (nameText) nameText.textContent = displayName;
+        
+        // Feedback
+        const originalBg = e.target.style.backgroundColor;
+        e.target.style.backgroundColor = '#ea580c'; // Orange-600
+        setTimeout(() => { e.target.style.backgroundColor = originalBg; }, 200);
+    });
 });
 
-// Fixed: Bind to the static AUTO button instead of creating it
-const loadAutoBtn = document.getElementById('loadAutoBtn');
-if (loadAutoBtn) {
-    loadAutoBtn.addEventListener('click', () => {
+// 3. SAMPLE BUTTON (Blue - SMP)
+const btnSMP = document.getElementById('btnSMP');
+const sampleInput = document.getElementById('sampleInput');
+if (btnSMP && sampleInput) {
+    btnSMP.addEventListener('click', () => {
+        if (!tracks || tracks.length === 0 || !audioEngine.getContext()) { alert('Init Audio First'); return; }
+        sampleInput.click();
+    });
+    // Sample Input change listener is generic and remains valid
+}
+
+// 4. SOURCE BUTTON (Blue - SRC - Freesound)
+const btnSRC = document.getElementById('btnSRC');
+if (btnSRC) {
+    btnSRC.addEventListener('click', () => {
+        const currentTrackIdx = uiManager.getSelectedTrackIndex();
+        const t = tracks[currentTrackIdx];
+        if (uiManager.searchModal) {
+            let query = t.type === 'simple-drum' ? (t.params.drumType || "drum") : (t.customSample ? t.customSample.name.replace('.wav', '').replace('.mp3', '') : "drum hit");
+            uiManager.searchModal.open(t, query);
+        }
+    });
+}
+
+// 5. AUTO BUTTON (Purple - OTO)
+const btnOTO = document.getElementById('btnOTO');
+if (btnOTO) {
+    btnOTO.addEventListener('click', () => {
         const currentTrackIdx = uiManager.getSelectedTrackIndex();
         const t = tracks[currentTrackIdx];
         t.type = 'automation';
-        t.customSample = null; // Clear custom sample so UI knows it's Automation
+        t.customSample = null;
         t.steps.fill(0);
         const stepElements = uiManager.matrixStepElements[t.id];
         if (stepElements) {
@@ -370,63 +411,31 @@ if (loadAutoBtn) {
         ctx.fillStyle = '#111'; ctx.fillRect(0, 0, bufCanvas.width, bufCanvas.height);
         ctx.font = '10px monospace'; ctx.fillStyle = '#818cf8'; ctx.fillText("AUTOMATION TRACK", 10, 40);
         
-        // FIX: Force Header Update
         const normalGrp = Math.floor(currentTrackIdx / TRACKS_PER_GROUP);
         const randomChokeInfo = uiManager.getRandomChokeInfo();
         const grp = randomChokeInfo.mode ? randomChokeInfo.groups[currentTrackIdx] : normalGrp;
         const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
         uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
         
-        // Explicit labels for Auto
         const typeLabel = document.getElementById('trackTypeLabel');
         const nameText = document.getElementById('trackNameText');
         if (typeLabel) typeLabel.textContent = `[AUTO]`;
         if (nameText) nameText.textContent = `Automation`;
+        
+        // Feedback
+        const originalBg = btnOTO.style.backgroundColor;
+        btnOTO.style.backgroundColor = '#4f46e5';
+        setTimeout(() => { btnOTO.style.backgroundColor = originalBg; }, 200);
     });
 }
 
-document.querySelectorAll('.drum-sel-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        const currentTrackIdx = uiManager.getSelectedTrackIndex();
-        const t = tracks[currentTrackIdx];
-        if (t.type === 'simple-drum') {
-            t.params.drumType = e.target.dataset.drum;
-            updateTrackControlsVisibility();
-            
-            // --- FIX START: Force header update to show new drum name ---
-            const normalGrp = Math.floor(currentTrackIdx / TRACKS_PER_GROUP);
-            const randomChokeInfo = uiManager.getRandomChokeInfo();
-            const grp = randomChokeInfo.mode ? randomChokeInfo.groups[currentTrackIdx] : normalGrp;
-            const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
-            
-            uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
-            
-            // Update labels specific for 909 sub-selection
-            const typeLabel = document.getElementById('trackTypeLabel');
-            const nameText = document.getElementById('trackNameText');
-            if (typeLabel) typeLabel.textContent = `[909]`;
-            // Map internal drum type to display name
-            let displayName = t.params.drumType.toUpperCase();
-            if (displayName === 'CLOSED-HAT') displayName = 'CH';
-            if (displayName === 'OPEN-HAT') displayName = 'OH';
-            if (nameText) nameText.textContent = displayName;
-            // --- FIX END ---
-        }
-    });
-});
-
-const loadSampleBtnInline = document.getElementById('loadSampleBtnInline');
-const sampleInput = document.getElementById('sampleInput');
-if (loadSampleBtnInline && sampleInput) {
-    loadSampleBtnInline.addEventListener('click', () => {
-        if (!tracks || tracks.length === 0 || !audioEngine.getContext()) { alert('Init Audio First'); return; }
-        sampleInput.click();
-    });
+// Existing sample input listener logic (unchanged essentially, just ensuring it updates UI)
+if (sampleInput) {
     sampleInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
         const currentTrack = tracks[uiManager.getSelectedTrackIndex()];
-        const btn = loadSampleBtnInline;
+        const btn = btnSMP; // Updated reference
         const originalText = btn.innerHTML;
         try {
             currentTrack.type = 'granular';
@@ -434,7 +443,6 @@ if (loadSampleBtnInline && sampleInput) {
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; btn.disabled = true;
             await audioEngine.loadCustomSample(file, currentTrack);
             
-            // Update labels for sample load
             const typeLabel = document.getElementById('trackTypeLabel');
             const nameText = document.getElementById('trackNameText');
             if (typeLabel) typeLabel.textContent = `[SAMPLE]`;
@@ -444,8 +452,9 @@ if (loadSampleBtnInline && sampleInput) {
             }
             
             visualizer.triggerRedraw();
-            btn.innerHTML = '<i class="fas fa-check"></i>'; btn.classList.add('bg-sky-600');
-            setTimeout(() => { btn.innerHTML = originalText; btn.classList.remove('bg-sky-600'); btn.disabled = false; }, 1500);
+            btn.innerHTML = 'SMP'; // Reset text
+            btn.classList.add('bg-sky-600');
+            setTimeout(() => { btn.classList.remove('bg-sky-600'); btn.disabled = false; }, 1500);
         } catch (err) { alert('Failed: ' + err.message); btn.innerHTML = originalText; btn.disabled = false; }
         e.target.value = '';
     });

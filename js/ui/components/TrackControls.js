@@ -158,17 +158,6 @@ export class TrackControls {
                 chokeContainer.appendChild(btn);
             }
         }
-        
-        // 5. Update Search Button Context
-        const findBtn = document.getElementById('findSampleBtn');
-        if (findBtn) {
-            findBtn.onclick = () => {
-                if (this.searchModal) {
-                    let query = t.type === 'simple-drum' ? (t.params.drumType || "drum") : (t.customSample ? t.customSample.name.replace('.wav', '').replace('.mp3', '') : "drum hit");
-                    this.searchModal.open(t, query);
-                }
-            };
-        }
     }
 
     updateTrackControlsVisibility() {
@@ -205,13 +194,17 @@ export class TrackControls {
         } 
         else if (t.type === 'simple-drum') {
             if(drumControls) drumControls.classList.remove('hidden');
-            document.querySelectorAll('.drum-sel-btn').forEach(btn => {
+            // Highlighting active drum type on the new buttons (top row)
+            // Note: Since buttons are static, we might want to highlight them if we want persistent state visualization
+            // However, previous implementation handled highlighting. Let's see if we can do it.
+            // We can query selector .type-909-btn
+            document.querySelectorAll('.type-909-btn').forEach(btn => {
                 if (btn.dataset.drum === t.params.drumType) {
-                    btn.classList.replace('text-neutral-400', 'text-white');
-                    btn.classList.replace('bg-neutral-800', 'bg-orange-700');
+                    btn.classList.remove('bg-orange-900/30', 'text-orange-400', 'border-orange-900/50');
+                    btn.classList.add('bg-orange-600', 'text-white', 'border-orange-500');
                 } else {
-                    btn.classList.replace('text-white', 'text-neutral-400');
-                    btn.classList.replace('bg-orange-700', 'bg-neutral-800');
+                    btn.classList.add('bg-orange-900/30', 'text-orange-400', 'border-orange-900/50');
+                    btn.classList.remove('bg-orange-600', 'text-white', 'border-orange-500');
                 }
             });
         }
