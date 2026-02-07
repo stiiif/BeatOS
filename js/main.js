@@ -304,12 +304,16 @@ document.querySelectorAll('.sound-gen-btn').forEach(btn => {
             uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
 
             // Force update the label to show the specific granular type (KICK, SNR, etc.)
+            // NOTE: We update both labels to meet requirements:
+            // trackTypeLabel -> [GRANULAR] (or similar engine indicator) - actually let's stick to consistent [SYNTH] or [GRANULAR]
+            // trackNameText -> The specific sound name (KICK, SNR, etc.)
+            // The previous logic was updating trackTypeLabel with the name, let's fix it.
+            
             const typeLabel = document.getElementById('trackTypeLabel');
-            if (typeLabel) {
-                // Map internal types to display names if needed, or just use uppercase
-                const displayType = type === 'texture' ? 'FM' : type.toUpperCase();
-                typeLabel.textContent = `[${displayType}]`;
-            }
+            const nameText = document.getElementById('trackNameText');
+            
+            if (typeLabel) typeLabel.textContent = `[GRANULAR]`; 
+            if (nameText) nameText.textContent = type === 'texture' ? 'FM Texture' : type.toUpperCase();
             
             // Temporary visual feedback on button
             const originalBg = e.target.style.backgroundColor;
@@ -339,6 +343,12 @@ document.getElementById('load909Btn').addEventListener('click', () => {
     const grp = randomChokeInfo.mode ? randomChokeInfo.groups[currentTrackIdx] : normalGrp;
     const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
     uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
+    
+    // Explicitly set labels for initial 909 load (defaults to KICK)
+    const typeLabel = document.getElementById('trackTypeLabel');
+    const nameText = document.getElementById('trackNameText');
+    if (typeLabel) typeLabel.textContent = `[909]`;
+    if (nameText) nameText.textContent = `KICK`;
 });
 
 // Fixed: Bind to the static AUTO button instead of creating it
@@ -366,6 +376,12 @@ if (loadAutoBtn) {
         const grp = randomChokeInfo.mode ? randomChokeInfo.groups[currentTrackIdx] : normalGrp;
         const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
         uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
+        
+        // Explicit labels for Auto
+        const typeLabel = document.getElementById('trackTypeLabel');
+        const nameText = document.getElementById('trackNameText');
+        if (typeLabel) typeLabel.textContent = `[AUTO]`;
+        if (nameText) nameText.textContent = `Automation`;
     });
 }
 
@@ -384,6 +400,16 @@ document.querySelectorAll('.drum-sel-btn').forEach(btn => {
             const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
             
             uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
+            
+            // Update labels specific for 909 sub-selection
+            const typeLabel = document.getElementById('trackTypeLabel');
+            const nameText = document.getElementById('trackNameText');
+            if (typeLabel) typeLabel.textContent = `[909]`;
+            // Map internal drum type to display name
+            let displayName = t.params.drumType.toUpperCase();
+            if (displayName === 'CLOSED-HAT') displayName = 'CH';
+            if (displayName === 'OPEN-HAT') displayName = 'OH';
+            if (nameText) nameText.textContent = displayName;
             // --- FIX END ---
         }
     });
@@ -407,8 +433,16 @@ if (loadSampleBtnInline && sampleInput) {
             updateTrackControlsVisibility();
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; btn.disabled = true;
             await audioEngine.loadCustomSample(file, currentTrack);
+            
+            // Update labels for sample load
             const typeLabel = document.getElementById('trackTypeLabel');
-            if (typeLabel) { typeLabel.textContent = currentTrack.customSample.name; typeLabel.title = currentTrack.customSample.name; }
+            const nameText = document.getElementById('trackNameText');
+            if (typeLabel) typeLabel.textContent = `[SAMPLE]`;
+            if (nameText) { 
+                nameText.textContent = currentTrack.customSample.name; 
+                nameText.title = currentTrack.customSample.name; 
+            }
+            
             visualizer.triggerRedraw();
             btn.innerHTML = '<i class="fas fa-check"></i>'; btn.classList.add('bg-sky-600');
             setTimeout(() => { btn.innerHTML = originalText; btn.classList.remove('bg-sky-600'); btn.disabled = false; }, 1500);
