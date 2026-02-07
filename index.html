@@ -235,8 +235,16 @@
                             <div class="value-display">2.0x</div>
 
                             <label>Scan Spd</label>
-                            <input type="range" min="-2" max="2" step="0.01" data-param="scanSpeed" class="param-slider">
+                            <div class="flex items-center gap-1">
+                                <input type="range" min="-2" max="2" step="0.01" data-param="scanSpeed" class="param-slider">
+                                <div class="flex gap-0.5 ml-1">
+                                    <button id="resetOnBarBtn" class="w-5 h-5 bg-neutral-800 text-[8px] border border-neutral-700 rounded hover:bg-neutral-700 transition" title="Reset playhead on Step 1">B</button>
+                                    <button id="resetOnTrigBtn" class="w-5 h-5 bg-neutral-800 text-[8px] border border-neutral-700 rounded hover:bg-neutral-700 transition" title="Reset playhead on every Trig">T</button>
+                                </div>
+                            </div>
                             <div class="value-display">1.00</div>
+
+                            <label>Size</label>
 
                             <label>Size</label>
                             <input type="range" min="0.01" max="1.0" step="0.01" data-param="grainSize" class="param-slider">

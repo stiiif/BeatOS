@@ -170,22 +170,18 @@ export class Scheduler {
             });
         }
 
-        // V2: Get Velocity & Microtiming
         const velocity = track.steps[stepIndex];
         const microtimingMs = track.microtiming[stepIndex] || 0;
-        
-        // Convert ms to seconds (e.g., -5ms = -0.005s)
         const offsetSeconds = microtimingMs / 1000.0;
-        
         let actualTime = time + offsetSeconds;
         
-        // Clamp time to now if offset makes it in the past (only if negative offset > lookahead)
         const audioCtx = this.audioEngine.getContext();
         if (audioCtx && actualTime < audioCtx.currentTime) {
             actualTime = audioCtx.currentTime;
         }
 
-        this.granularSynth.scheduleNote(track, actualTime, scheduleVisualDrawCallback, velocity);
+        // Pass stepIndex to allow Step 1 reset check in worklet
+        this.granularSynth.scheduleNote(track, actualTime, scheduleVisualDrawCallback, velocity, stepIndex);
     }
 
     processAutomationTrack(track, totalSteps, time) {

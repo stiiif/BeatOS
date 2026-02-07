@@ -23,6 +23,10 @@ export class Track {
         this.chokeGroup = 0; 
         this.activeSources = new Set(); 
 
+        // New Playhead Reset Flags
+        this.resetOnBar = false;
+        this.resetOnTrig = false;
+
         this.bus = {
             input: null,
             trim: null, 
