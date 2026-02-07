@@ -14,6 +14,7 @@ import { globalBus } from './events/EventBus.js';
 // NEW IMPORTS
 import { EffectsManager } from './modules/EffectsManager.js';
 import { EffectControls } from './ui/components/EffectControls.js';
+import { TrackDetailsPanel } from './ui/components/TrackDetailsPanel.js';
 
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
@@ -25,9 +26,10 @@ const trackLibrary = new TrackLibrary();
 const uiManager = new UIManager();
 const visualizer = new Visualizer('visualizer', 'bufferDisplay', audioEngine);
 
-// New Effect Managers
+// New Components
 const effectsManager = new EffectsManager(audioEngine);
 const effectControls = new EffectControls(effectsManager);
+const trackDetailsPanel = new TrackDetailsPanel(uiManager);
 
 const layoutManager = new LayoutManager();
 
@@ -40,6 +42,7 @@ const tracks = trackManager.getTracks();
 uiManager.setTracks(tracks);
 uiManager.setTrackManager(trackManager);
 visualizer.setTracks(tracks);
+trackDetailsPanel.setTracks(tracks);
 
 scheduler.setUpdateMatrixHeadCallback((step, total) => uiManager.updateMatrixHead(step, total));
 scheduler.setRandomChokeCallback(() => uiManager.getRandomChokeInfo());
@@ -51,7 +54,10 @@ function updateTrackControlsVisibility() {
 const originalSelectTrack = uiManager.selectTrack.bind(uiManager);
 uiManager.selectTrack = (idx, cb) => {
     originalSelectTrack(idx, cb);
+    trackDetailsPanel.render(); // INJECT dynamic controls here
     updateTrackControlsVisibility();
+    uiManager.updateKnobs(); // Update knobs AFTER injection
+    uiManager.updateLfoUI();
 };
 
 function addTrack() {
@@ -60,6 +66,7 @@ function addTrack() {
         uiManager.appendTrackRow(newId, () => {
             visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex());
             visualizer.triggerRedraw();
+            trackDetailsPanel.render();
             updateTrackControlsVisibility();
         });
         visualizer.resizeCanvas();
@@ -77,6 +84,7 @@ function addGroup() {
     tracksAdded.forEach(id => uiManager.appendTrackRow(id, () => {
         visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex());
         visualizer.triggerRedraw();
+        trackDetailsPanel.render();
         updateTrackControlsVisibility();
     }));
     if (tracksAdded.length > 0) {
@@ -146,59 +154,118 @@ document.getElementById('bpmInput').addEventListener('change', e => { scheduler.
 const applyGrooveBtn = document.getElementById('applyGrooveBtn');
 if (applyGrooveBtn) applyGrooveBtn.addEventListener('click', () => uiManager.applyGroove());
 
-// Update scope button listener to cycle styles
-document.getElementById('scopeBtnWave').addEventListener('click', (e) => {
-    visualizer.setScopeMode('wave');
-    const newStyle = visualizer.cycleWaveStyle();
-    const btn = e.target;
-    const codes = { 'mirror': 'WAVE', 'neon': 'NEON', 'bars': 'BARS', 'precision': 'FINE' };
-    btn.innerText = codes[newStyle] || 'WAVE';
-    const btnSpec = document.getElementById('scopeBtnSpec');
-    btn.classList.replace('text-neutral-400', 'bg-neutral-600');
-    btn.classList.replace('hover:text-white', 'text-white');
-    btn.classList.add('rounded-sm');
-    btnSpec.classList.replace('bg-neutral-600', 'text-neutral-400');
-    btnSpec.classList.replace('text-white', 'hover:text-white');
-    btnSpec.classList.remove('rounded-sm');
-    visualizer.triggerRedraw();
-});
+// --- EVENT DELEGATION FOR DYNAMIC CONTROLS ---
+// We attach ONE listener to the container (.right-pane) or document to handle events from injected elements
 
-document.getElementById('scopeBtnSpec').addEventListener('click', (e) => {
-    visualizer.setScopeMode('spectrum');
-    const btnSpec = e.target;
-    const btnWave = document.getElementById('scopeBtnWave');
-    btnSpec.classList.replace('text-neutral-400', 'bg-neutral-600');
-    btnSpec.classList.replace('hover:text-white', 'text-white');
-    btnSpec.classList.add('rounded-sm');
-    btnWave.classList.replace('bg-neutral-600', 'text-neutral-400');
-    btnWave.classList.replace('text-white', 'hover:text-white');
-    btnWave.classList.remove('rounded-sm');
-    visualizer.triggerRedraw();
-});
-
-document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
-    const track = tracks[uiManager.getSelectedTrackIndex()];
-    if (!track || !track.buffer || track.type !== 'granular') return;
-    const btn = e.target;
-    const originalText = btn.innerText;
-    btn.innerHTML = '<i class="fas fa-scissors"></i>';
-    btn.classList.add('text-white', 'bg-red-900/80');
-    btn.classList.remove('text-red-400', 'hover:bg-red-900/50');
-    const newBuffer = audioEngine.trimBuffer(track.buffer, 0.005, true);
-    if (newBuffer) {
-        track.buffer = newBuffer;
-        if (track.customSample) {
-            track.customSample.buffer = newBuffer;
-            track.customSample.duration = newBuffer.duration;
-        }
-        track.rmsMap = audioEngine.analyzeBuffer(newBuffer);
+document.querySelector('.right-pane').addEventListener('click', (e) => {
+    // 1. SCOPE BUTTONS
+    if (e.target.id === 'scopeBtnWave') {
+        visualizer.setScopeMode('wave');
+        const newStyle = visualizer.cycleWaveStyle();
+        const btn = e.target;
+        const codes = { 'mirror': 'WAVE', 'neon': 'NEON', 'bars': 'BARS', 'precision': 'FINE' };
+        btn.innerText = codes[newStyle] || 'WAVE';
+        const btnSpec = document.getElementById('scopeBtnSpec');
+        btn.classList.replace('text-neutral-400', 'bg-neutral-600');
+        btn.classList.replace('hover:text-white', 'text-white');
+        btn.classList.add('rounded-sm');
+        btnSpec.classList.replace('bg-neutral-600', 'text-neutral-400');
+        btnSpec.classList.replace('text-white', 'hover:text-white');
+        btnSpec.classList.remove('rounded-sm');
         visualizer.triggerRedraw();
     }
-    setTimeout(() => {
-        btn.innerText = originalText;
-        btn.classList.remove('text-white', 'bg-red-900/80');
-        btn.classList.add('text-red-400', 'hover:bg-red-900/50');
-    }, 500);
+    if (e.target.id === 'scopeBtnSpec') {
+        visualizer.setScopeMode('spectrum');
+        const btnSpec = e.target;
+        const btnWave = document.getElementById('scopeBtnWave');
+        btnSpec.classList.replace('text-neutral-400', 'bg-neutral-600');
+        btnSpec.classList.replace('hover:text-white', 'text-white');
+        btnSpec.classList.add('rounded-sm');
+        btnWave.classList.replace('bg-neutral-600', 'text-neutral-400');
+        btnWave.classList.replace('text-white', 'hover:text-white');
+        btnWave.classList.remove('rounded-sm');
+        visualizer.triggerRedraw();
+    }
+
+    // 2. TRIM BUTTON
+    if (e.target.id === 'scopeBtnTrim') {
+        const track = tracks[uiManager.getSelectedTrackIndex()];
+        if (!track || !track.buffer || track.type !== 'granular') return;
+        const btn = e.target;
+        const originalText = btn.innerText;
+        btn.innerHTML = '<i class="fas fa-scissors"></i>';
+        btn.classList.add('text-white', 'bg-red-900/80');
+        btn.classList.remove('text-red-400', 'hover:bg-red-900/50');
+        const newBuffer = audioEngine.trimBuffer(track.buffer, 0.005, true);
+        if (newBuffer) {
+            track.buffer = newBuffer;
+            if (track.customSample) {
+                track.customSample.buffer = newBuffer;
+                track.customSample.duration = newBuffer.duration;
+            }
+            track.rmsMap = audioEngine.analyzeBuffer(newBuffer);
+            visualizer.triggerRedraw();
+        }
+        setTimeout(() => {
+            btn.innerText = originalText;
+            btn.classList.remove('text-white', 'bg-red-900/80');
+            btn.classList.add('text-red-400', 'hover:bg-red-900/50');
+        }, 500);
+    }
+
+    // 3. RANDOMIZE BUTTONS
+    if (e.target.id === 'randomizeBtn') {
+        const t = tracks[uiManager.getSelectedTrackIndex()];
+        if (t.type === 'granular') trackManager.randomizeTrackParams(t);
+        else { t.params.drumTune = Math.random(); t.params.drumDecay = Math.random(); }
+        uiManager.updateKnobs();
+        visualizer.triggerRedraw();
+    }
+    
+    if (e.target.id === 'randModsBtn') {
+        const t = tracks[uiManager.getSelectedTrackIndex()];
+        if (t.type === 'granular') trackManager.randomizeTrackModulators(t);
+        uiManager.updateLfoUI();
+    }
+
+    if (e.target.id === 'resetParamBtn') {
+        const t = tracks[uiManager.getSelectedTrackIndex()];
+        if (t.type === 'granular') {
+            t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
+            t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
+            t.params.edgeCrunch = 0.0; t.params.orbit = 0.0; 
+        } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
+        t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
+        t.lfos.forEach(lfo => { lfo.target = 'none'; });
+        uiManager.updateKnobs();
+        uiManager.updateLfoUI();
+        visualizer.triggerRedraw();
+        const btn = document.getElementById('resetParamBtn');
+        // Simple visual feedback only if btn exists (it might be re-rendered)
+        if(btn) {
+            // Note: re-rendering might kill this animation but that's acceptable for now
+            // Actually, we are NOT re-rendering here, just updating values.
+        }
+    }
+});
+
+// --- DELEGATION FOR INPUTS (Sliders/Selects) ---
+document.querySelector('.right-pane').addEventListener('input', (e) => {
+    // 1. PARAM SLIDERS
+    if (e.target.classList.contains('param-slider')) {
+        const t = tracks[uiManager.getSelectedTrackIndex()];
+        t.params[e.target.dataset.param] = parseFloat(e.target.value);
+        uiManager.updateKnobs(); // Updates display text
+        if (t.type === 'granular') visualizer.triggerRedraw();
+    }
+
+    // 2. AUTO SPEED SELECT
+    if (e.target.id === 'autoSpeedSelect') {
+        const t = tracks[uiManager.getSelectedTrackIndex()];
+        if(t && t.type === 'automation') {
+            t.clockDivider = parseInt(e.target.value);
+        }
+    }
 });
 
 document.getElementById('randomizeAllPatternsBtn').addEventListener('click', () => uiManager.randomizeAllPatterns());
@@ -238,44 +305,7 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
     visualizer.triggerRedraw();
 });
 
-document.getElementById('randomizeBtn').addEventListener('click', () => {
-    const t = tracks[uiManager.getSelectedTrackIndex()];
-    if (t.type === 'granular') trackManager.randomizeTrackParams(t);
-    else { t.params.drumTune = Math.random(); t.params.drumDecay = Math.random(); }
-    uiManager.updateKnobs();
-    visualizer.triggerRedraw();
-});
-
-document.getElementById('randModsBtn').addEventListener('click', () => {
-    const t = tracks[uiManager.getSelectedTrackIndex()];
-    if (t.type === 'granular') trackManager.randomizeTrackModulators(t);
-    uiManager.updateLfoUI();
-});
-
-document.getElementById('resetParamBtn').addEventListener('click', () => {
-    const t = tracks[uiManager.getSelectedTrackIndex()];
-    if (t.type === 'granular') {
-        t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
-        t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
-        t.params.edgeCrunch = 0.0; t.params.orbit = 0.0; // Reset new params
-    } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
-    t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
-    t.lfos.forEach(lfo => { lfo.target = 'none'; });
-    uiManager.updateKnobs();
-    uiManager.updateLfoUI();
-    visualizer.triggerRedraw();
-    const btn = document.getElementById('resetParamBtn');
-    const originalContent = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-check"></i>';
-    btn.classList.add('text-emerald-400', 'border-emerald-500');
-    setTimeout(() => { btn.innerHTML = originalContent; btn.classList.remove('text-emerald-400', 'border-emerald-500'); }, 800);
-});
-
-// -------------------------------------------------------------------------
-// NEW GENERATOR BUTTON LOGIC (REPLACING OLD LISTENERS)
-// -------------------------------------------------------------------------
-
-// 1. GRANULAR GENERATORS (Grey Buttons)
+// Generator Button Logic (Delegation not strictly needed as these are in fixed header, but good practice)
 document.querySelectorAll('.granular-gen-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
         if (!audioEngine.getContext()) return;
@@ -283,18 +313,19 @@ document.querySelectorAll('.granular-gen-btn').forEach(btn => {
         const currentTrackIdx = uiManager.getSelectedTrackIndex();
         const t = tracks[currentTrackIdx];
         t.type = 'granular';
+        
+        // RE-RENDER PANEL because type changed!
+        trackDetailsPanel.render();
         updateTrackControlsVisibility();
+        
         const newBuf = audioEngine.generateBufferByType(type);
         if (newBuf) {
             t.buffer = newBuf;
-            
-            // Set customSample with the name so updateCustomTrackHeader displays it
             t.customSample = {
                 name: type === 'texture' ? 'FM Texture' : type.toUpperCase(),
                 buffer: newBuf,
                 duration: newBuf.duration
             };
-            
             t.rmsMap = audioEngine.analyzeBuffer(newBuf);
             visualizer.triggerRedraw();
             
@@ -319,40 +350,30 @@ document.querySelectorAll('.granular-gen-btn').forEach(btn => {
     });
 });
 
-// 2. 909 GENERATORS (Orange Buttons)
+// 909 GENERATORS
 document.querySelectorAll('.type-909-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
         if (!audioEngine.getContext()) return;
         const currentTrackIdx = uiManager.getSelectedTrackIndex();
         const t = tracks[currentTrackIdx];
         
-        // Logic combined from old load909Btn and drum-sel-btn
         t.type = 'simple-drum';
-        t.customSample = null; // Clear sample to ensure UI knows it's 909
-        t.params.drumType = e.target.dataset.drum; // Set specific type
-        
-        // Defaults if not set (or resets)
-        // Note: We might want to keep tuning if already 909, but resets usually expected on type change?
-        // Let's reset for fresh sound.
+        t.customSample = null;
+        t.params.drumType = e.target.dataset.drum;
         t.params.drumTune = 0.5; 
         t.params.drumDecay = 0.5;
         
+        // RE-RENDER PANEL
+        trackDetailsPanel.render();
         updateTrackControlsVisibility();
-        uiManager.updateKnobs();
+        uiManager.updateKnobs(); // Update new knobs
         
-        const bufCanvas = document.getElementById('bufferDisplay');
-        const ctx = bufCanvas.getContext('2d');
-        ctx.fillStyle = '#111'; ctx.fillRect(0, 0, bufCanvas.width, bufCanvas.height);
-        ctx.font = '10px monospace'; ctx.fillStyle = '#f97316'; ctx.fillText("909 ENGINE ACTIVE", 10, 40);
-        
-        // Update Header
         const normalGrp = Math.floor(currentTrackIdx / TRACKS_PER_GROUP);
         const randomChokeInfo = uiManager.getRandomChokeInfo();
         const grp = randomChokeInfo.mode ? randomChokeInfo.groups[currentTrackIdx] : normalGrp;
         const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
         uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
         
-        // Update Labels
         const typeLabel = document.getElementById('trackTypeLabel');
         const nameText = document.getElementById('trackNameText');
         if (typeLabel) typeLabel.textContent = `[909]`;
@@ -361,38 +382,13 @@ document.querySelectorAll('.type-909-btn').forEach(btn => {
         if (displayName === 'OPEN-HAT') displayName = 'OH';
         if (nameText) nameText.textContent = displayName;
         
-        // Feedback
         const originalBg = e.target.style.backgroundColor;
-        e.target.style.backgroundColor = '#ea580c'; // Orange-600
+        e.target.style.backgroundColor = '#ea580c';
         setTimeout(() => { e.target.style.backgroundColor = originalBg; }, 200);
     });
 });
 
-// 3. SAMPLE BUTTON (Blue - SMP)
-const btnSMP = document.getElementById('btnSMP');
-const sampleInput = document.getElementById('sampleInput');
-if (btnSMP && sampleInput) {
-    btnSMP.addEventListener('click', () => {
-        if (!tracks || tracks.length === 0 || !audioEngine.getContext()) { alert('Init Audio First'); return; }
-        sampleInput.click();
-    });
-    // Sample Input change listener is generic and remains valid
-}
-
-// 4. SOURCE BUTTON (Blue - SRC - Freesound)
-const btnSRC = document.getElementById('btnSRC');
-if (btnSRC) {
-    btnSRC.addEventListener('click', () => {
-        const currentTrackIdx = uiManager.getSelectedTrackIndex();
-        const t = tracks[currentTrackIdx];
-        if (uiManager.searchModal) {
-            let query = t.type === 'simple-drum' ? (t.params.drumType || "drum") : (t.customSample ? t.customSample.name.replace('.wav', '').replace('.mp3', '') : "drum hit");
-            uiManager.searchModal.open(t, query);
-        }
-    });
-}
-
-// 5. AUTO BUTTON (Purple - OTO)
+// AUTO BUTTON
 const btnOTO = document.getElementById('btnOTO');
 if (btnOTO) {
     btnOTO.addEventListener('click', () => {
@@ -405,11 +401,10 @@ if (btnOTO) {
         if (stepElements) {
             stepElements.forEach(el => { el.className = 'step-btn'; el.classList.remove('active'); });
         }
+        
+        // RE-RENDER PANEL
+        trackDetailsPanel.render();
         updateTrackControlsVisibility();
-        const bufCanvas = document.getElementById('bufferDisplay');
-        const ctx = bufCanvas.getContext('2d');
-        ctx.fillStyle = '#111'; ctx.fillRect(0, 0, bufCanvas.width, bufCanvas.height);
-        ctx.font = '10px monospace'; ctx.fillStyle = '#818cf8'; ctx.fillText("AUTOMATION TRACK", 10, 40);
         
         const normalGrp = Math.floor(currentTrackIdx / TRACKS_PER_GROUP);
         const randomChokeInfo = uiManager.getRandomChokeInfo();
@@ -422,24 +417,49 @@ if (btnOTO) {
         if (typeLabel) typeLabel.textContent = `[AUTO]`;
         if (nameText) nameText.textContent = `Automation`;
         
-        // Feedback
         const originalBg = btnOTO.style.backgroundColor;
         btnOTO.style.backgroundColor = '#4f46e5';
         setTimeout(() => { btnOTO.style.backgroundColor = originalBg; }, 200);
     });
 }
 
-// Existing sample input listener logic (unchanged essentially, just ensuring it updates UI)
+// SAMPLE BUTTON
+const btnSMP = document.getElementById('btnSMP');
+const sampleInput = document.getElementById('sampleInput');
+if (btnSMP && sampleInput) {
+    btnSMP.addEventListener('click', () => {
+        if (!tracks || tracks.length === 0 || !audioEngine.getContext()) { alert('Init Audio First'); return; }
+        sampleInput.click();
+    });
+}
+
+// SOURCE BUTTON
+const btnSRC = document.getElementById('btnSRC');
+if (btnSRC) {
+    btnSRC.addEventListener('click', () => {
+        const currentTrackIdx = uiManager.getSelectedTrackIndex();
+        const t = tracks[currentTrackIdx];
+        if (uiManager.searchModal) {
+            let query = t.type === 'simple-drum' ? (t.params.drumType || "drum") : (t.customSample ? t.customSample.name.replace('.wav', '').replace('.mp3', '') : "drum hit");
+            uiManager.searchModal.open(t, query);
+        }
+    });
+}
+
 if (sampleInput) {
     sampleInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
         const currentTrack = tracks[uiManager.getSelectedTrackIndex()];
-        const btn = btnSMP; // Updated reference
+        const btn = btnSMP; 
         const originalText = btn.innerHTML;
         try {
             currentTrack.type = 'granular';
+            
+            // RE-RENDER PANEL
+            trackDetailsPanel.render();
             updateTrackControlsVisibility();
+            
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; btn.disabled = true;
             await audioEngine.loadCustomSample(file, currentTrack);
             
@@ -452,7 +472,7 @@ if (sampleInput) {
             }
             
             visualizer.triggerRedraw();
-            btn.innerHTML = 'SMP'; // Reset text
+            btn.innerHTML = 'SMP'; 
             btn.classList.add('bg-sky-600');
             setTimeout(() => { btn.classList.remove('bg-sky-600'); btn.disabled = false; }, 1500);
         } catch (err) { alert('Failed: ' + err.message); btn.innerHTML = originalText; btn.disabled = false; }
@@ -484,35 +504,14 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
     document.getElementById('fileInput').value = '';
 });
 
-document.querySelectorAll('.param-slider').forEach(el => {
-    el.addEventListener('input', e => {
-        const t = tracks[uiManager.getSelectedTrackIndex()];
-        t.params[e.target.dataset.param] = parseFloat(e.target.value);
-        uiManager.updateKnobs();
-        if (t.type === 'granular') visualizer.triggerRedraw();
-    });
-});
+// LFO TABS & OLD LISTENERS
+// Note: We've moved to Monolith, so .lfo-tab logic might be obsolete or managed inside AutomationPanel.js
+// However, TrackControls.js might still reference them for legacy reasons or partial updates.
+// Since AutomationPanel.js now handles the LFO UI, we don't need manual listeners here for LFO tabs.
+// The new AutomationPanel manages its own click events internally (render re-attaches them or delegation).
+// Wait, AutomationPanel.js uses direct `.onclick`. This is fine for self-contained components.
 
-document.querySelectorAll('.lfo-tab').forEach(b => {
-    b.addEventListener('click', e => { uiManager.setSelectedLfoIndex(parseInt(e.target.dataset.lfo)); uiManager.updateLfoUI(); });
-});
-
-// FIX: Wrap old LFO listeners with existence checks to prevent crashes when new UI is loaded
-const lfoTargetEl = document.getElementById('lfoTarget');
-if (lfoTargetEl) lfoTargetEl.addEventListener('change', e => { tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].target = e.target.value; });
-
-const lfoWaveEl = document.getElementById('lfoWave');
-if (lfoWaveEl) lfoWaveEl.addEventListener('change', e => { tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].wave = e.target.value; });
-
-const lfoRateEl = document.getElementById('lfoRate');
-if (lfoRateEl) lfoRateEl.addEventListener('input', e => { const v = parseFloat(e.target.value); tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].rate = v; document.getElementById('lfoRateVal').innerText = v.toFixed(1); });
-
-const lfoAmtEl = document.getElementById('lfoAmt');
-if (lfoAmtEl) lfoAmtEl.addEventListener('input', e => { const v = parseFloat(e.target.value); tracks[uiManager.getSelectedTrackIndex()].lfos[uiManager.getSelectedLfoIndex()].amount = v; document.getElementById('lfoAmtVal').innerText = v.toFixed(2); });
-
-uiManager.initUI(addTrack, addGroup, () => { visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex()); visualizer.triggerRedraw(); updateTrackControlsVisibility(); });
-window.addEventListener('resize', () => visualizer.resizeCanvas());
-visualizer.resizeCanvas();
+// ... (Track Library Listeners remain unchanged) ...
 
 document.getElementById('saveTrackBtn').addEventListener('click', () => {
     try {
@@ -572,6 +571,8 @@ function loadTrackFromLibrary(index) {
     if (trackLibrary.loadTrackInto(index, targetTrack)) {
         if (targetTrack.needsSampleReload) alert(`Note: Custom sample "${targetTrack.customSample.name}" must be reloaded manually.`);
         uiManager.updateTrackStateUI(currentTrackIdx);
+        // RE-RENDER PANEL
+        trackDetailsPanel.render();
         updateTrackControlsVisibility();
         uiManager.updateKnobs();
         uiManager.updateLfoUI();
@@ -603,6 +604,8 @@ document.getElementById('importTrackInput').addEventListener('change', (e) => {
                         currentTrack.rmsMap = audioEngine.analyzeBuffer(audioBuffer);
                     } catch (err) { console.error(err); }
                 }
+                // RE-RENDER PANEL
+                trackDetailsPanel.render();
                 updateTrackControlsVisibility();
                 uiManager.updateKnobs();
                 document.getElementById('trackLibraryModal').classList.add('hidden');
