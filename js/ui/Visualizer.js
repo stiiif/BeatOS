@@ -186,9 +186,10 @@ export class Visualizer {
             const temp = sampleStart; sampleStart = sampleEnd; sampleEnd = temp;
         }
         
-        const startIdx = Math.floor(sampleStart * data.length);
-        const endIdx = Math.floor(sampleEnd * data.length);
-        const windowLength = Math.max(1, endIdx - startIdx); 
+        // Draw the full buffer data (0 to length)
+        // Window dimming is handled in drawOverlays
+        const startIdx = 0;
+        const windowLength = data.length;
         
         switch(this.waveStyle) {
             case 'mirror': this.drawStyleMirror(ctx, data, w, h, startIdx, windowLength); break;
@@ -198,7 +199,7 @@ export class Visualizer {
             default:       this.drawStyleMirror(ctx, data, w, h, startIdx, windowLength);
         }
 
-        this.drawOverlays(ctx, t, w, h, audioCtx.currentTime, sampleStart, sampleEnd);
+        this.drawOverlays(ctx, t, w, h, audioCtx.currentTime);
     }
 
     drawStyleMirror(ctx, data, w, h, startIdx, windowLength) {
@@ -359,7 +360,7 @@ export class Visualizer {
         ctx.fillText("No Signal", 10, 40);
     }
 
-    drawOverlays(ctx, t, w, h, time, start, end) {
+    drawOverlays(ctx, t, w, h, time) {
         let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0, sampleStart:0, sampleEnd:0, scanSpeed:0 };
         
         t.lfos.forEach(lfo => {
@@ -381,32 +382,23 @@ export class Visualizer {
         let actEnd = Math.max(0, Math.min(1, (p.sampleEnd !== undefined ? p.sampleEnd : 1) + mod.sampleEnd));
         if (actStart > actEnd) { const temp = actStart; actStart = actEnd; actEnd = temp; }
         
-        const viewStart = start;
-        const viewEnd = end;
-        const viewRange = Math.max(0.0001, viewEnd - viewStart);
+        // Map absolute 0..1 to view width
+        const mapToView = (absPos) => absPos * w;
 
-        const mapToView = (absPos) => {
-            return ((absPos - viewStart) / viewRange) * w;
-        };
-
-        // --- IMPROVED SCAN SPEED VISUALIZATION ---
-        // The main thread doesn't receive the playhead update from the AudioWorklet in real-time.
-        // To show movement, we calculate a visual offset based on the current Scan Speed.
+        // --- UPDATED SCAN SPEED & POSITION VISUALIZATION ---
+        // Position is now Absolute (0-1 represents full file)
+        // Scan Speed moves the playhead across the file
         const currentScanSpeed = p.scanSpeed + mod.scanSpeed;
-        
-        // Calculate visual offset: distance = speed * time
-        // Note: This relies on the visual loop being roughly synced with audio start.
-        const visualScanOffset = (currentScanSpeed * time) % 1.0;
+        const visualScanOffset = (currentScanSpeed * time); // Offset accumulates over time
         
         const basePosition = p.position + mod.position;
-        let finalRelativePos = basePosition + visualScanOffset;
+        let absPos = basePosition + visualScanOffset;
         
-        // Wrap 0..1 for consistent visualization
-        while (finalRelativePos >= 1.0) finalRelativePos -= 1.0;
-        while (finalRelativePos < 0.0) finalRelativePos += 1.0;
+        // Wrap 0..1 for consistent visualization (Matches AudioWorklet behavior)
+        while (absPos >= 1.0) absPos -= 1.0;
+        while (absPos < 0.0) absPos += 1.0;
         
-        // Map the relative 0..1 position into the absolute sample space defined by Start/End
-        const absPos = actStart + (finalRelativePos * (actEnd - actStart));
+        // Clamp for display safety
         const finalClampedPos = Math.max(0, Math.min(1, absPos)); 
         
         const bufDur = t.buffer ? t.buffer.duration : 1;
@@ -414,16 +406,19 @@ export class Visualizer {
         const finalGrainSizeFrac = finalGrainSizeSec / bufDur;
         
         const posPx = mapToView(finalClampedPos);
-        const grainPx = Math.max(2, (finalGrainSizeFrac / viewRange) * w); 
+        const grainPx = Math.max(2, finalGrainSizeFrac * w); 
         
         const finalSpray = Math.max(0, p.spray + mod.spray);
         
-        if (Math.abs(actStart - viewStart) > 0.001 || Math.abs(actEnd - viewEnd) > 0.001) {
+        // Draw Window Overlays (Dimmed areas outside Start/End)
+        if (actStart > 0.001 || actEnd < 0.999) {
             const lfoStartPx = mapToView(actStart);
             const lfoEndPx = mapToView(actEnd);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'; // Darken outside area
             if (lfoStartPx > 0) ctx.fillRect(0, 0, lfoStartPx, h);
             if (lfoEndPx < w) ctx.fillRect(lfoEndPx, 0, w - lfoEndPx, h);
+            
             ctx.strokeStyle = 'rgba(100, 200, 255, 0.5)';
             ctx.lineWidth = 1;
             ctx.beginPath();

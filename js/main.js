@@ -487,11 +487,47 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
     document.getElementById('fileInput').value = '';
 });
 
+// --- UPDATED SLIDER LOGIC FOR CONSTRAINED WINDOW BEHAVIOR ---
 document.querySelectorAll('.param-slider').forEach(el => {
     el.addEventListener('input', e => {
         const t = tracks[uiManager.getSelectedTrackIndex()];
-        t.params[e.target.dataset.param] = parseFloat(e.target.value);
-        uiManager.updateKnobs();
+        const param = e.target.dataset.param;
+        let value = parseFloat(e.target.value);
+
+        if (param === 'sampleStart') {
+            // Constraint: Start cannot be > End
+            if (value > t.params.sampleEnd) value = t.params.sampleEnd;
+            t.params.sampleStart = value;
+            e.target.value = value; // Update slider visual if clamped
+
+            // Push Position if it falls behind Start
+            if (t.params.position < value) {
+                t.params.position = value;
+            }
+        } 
+        else if (param === 'sampleEnd') {
+            // Constraint: End cannot be < Start
+            if (value < t.params.sampleStart) value = t.params.sampleStart;
+            t.params.sampleEnd = value;
+            e.target.value = value; // Update slider visual if clamped
+
+            // Push Position if it goes beyond End
+            if (t.params.position > value) {
+                t.params.position = value;
+            }
+        } 
+        else if (param === 'position') {
+            // Constraint: Position must be within Start/End
+            if (value < t.params.sampleStart) value = t.params.sampleStart;
+            if (value > t.params.sampleEnd) value = t.params.sampleEnd;
+            t.params.position = value;
+            e.target.value = value; // Update slider visual
+        } 
+        else {
+            t.params[param] = value;
+        }
+
+        uiManager.updateKnobs(); // Updates all knobs, including position/start/end if they were pushed
         if (t.type === 'granular') visualizer.triggerRedraw();
     });
 });
