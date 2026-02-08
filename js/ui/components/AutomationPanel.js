@@ -237,8 +237,8 @@ export class AutomationPanel {
         if (lfo.sync) {
             grossVal.innerText = LFO.SYNC_RATES[lfo.syncRateIndex].label;
         } else {
-            // Unsynced Gross: Show integer part or main part
-            grossVal.innerText = lfo.rate.toFixed(1) + 'Hz';
+            // Unsynced Gross: Show integer part
+            grossVal.innerText = Math.floor(lfo.rate) + 'Hz';
         }
         
         // 3. Fine Value Display (FIXED: Show numeric offset for unsynced)
@@ -253,12 +253,7 @@ export class AutomationPanel {
             else if (type === 'septuplet') { fineVal.innerText = '+S'; fineVal.style.color = '#fbbf24'; }
             else { fineVal.innerText = '•'; fineVal.style.color = '#444'; }
         } else {
-            // Display fine fractional part
-            // Calculate fine part (e.g., 1.25 -> +0.25)
-            // But since rate can be any float, we should just show the fractional part for visual feedback
-            // or perhaps the delta from the nearest integer?
-            // "finetune field must displayed the actual finetuned value"
-            // Let's show the full precise value or just the decimals
+            // Unsynced Fine: Show fractional part (the +offset)
             const finePart = (lfo.rate % 1).toFixed(3).substring(1); 
             fineVal.innerText = (finePart === '.000' ? '' : '+') + finePart; 
         }
@@ -306,13 +301,16 @@ export class AutomationPanel {
             gross.onchange = () => this.render();
         } else {
             // Hz Gross
-            gross.min = 0.1; gross.max = 20; gross.step = 0.1;
-            gross.value = lfo.rate;
+            const intPart = Math.floor(lfo.rate);
+            gross.min = 0; gross.max = 20; gross.step = 1;
+            gross.value = intPart;
+            
             gross.oninput = (e) => {
-                lfo.rate = parseFloat(e.target.value);
+                const newInt = parseInt(e.target.value);
+                // Preserve decimal part from lfo.rate
+                const currentDec = lfo.rate % 1;
+                lfo.rate = newInt + currentDec;
             };
-            // FIX: If we re-render on Gross change, fine slider range shifts. 
-            // This is acceptable for Gross slider as it defines the "window".
             gross.onchange = () => this.render();
         }
 
@@ -322,6 +320,9 @@ export class AutomationPanel {
         fine.className = 'micro-slider';
         
         if (lfo.sync) {
+            // Relative stepping for SYNC
+            // Slider range is small window [-3, +3] around center 0? No.
+            // Let's make it span the entire index range so it moves independently.
             fine.min = 0; 
             fine.max = LFO.SYNC_RATES.length - 1;
             fine.step = 1;
@@ -332,68 +333,18 @@ export class AutomationPanel {
             };
             fine.onchange = () => this.render();
         } else {
-            // Hz Fine
-            // FIX: Ensure range is stable during drag, but centered on current value
-            // To prevent snapping back to center visually, the value must match the range center?
-            // No, the value IS `lfo.rate`.
-            // The range is `[lfo.rate - 0.5, lfo.rate + 0.5]`.
-            // If I drag, `lfo.rate` changes. If I re-render, the range moves, keeping the knob centered.
-            // If I DON'T re-render on input, the range stays fixed, and the knob moves. This is standard slider behavior.
-            // The issue "finetune sliders always goes back to middle position" suggests re-rendering happens on input?
-            // No, I only call `this.render()` on `onchange` (mouse release).
-            //
-            // If `gross` slider or something else triggers a re-render, then the fine slider range resets.
-            // The `gross` slider's `oninput` does NOT trigger render in my code above, only `onchange`.
-            //
-            // However, maybe `oninput` of fine slider is triggering something external?
-            // Or maybe the user *wants* the slider to stay where it is relative to the *absolute scale*?
-            //
-            // If the fine slider maps to `lfo.rate`, and the range is small around it, it acts like a window.
-            // When you drag, `lfo.rate` updates. The visual slider handle moves.
-            // When you release, `render()` is called. The range re-centers around the NEW `lfo.rate`.
-            // This causes the handle to jump to center.
-            // This is the "Endless Encoder / Pitch Wheel" behavior you dislike.
-            //
-            // **Correction:** To make it act like a normal slider, it needs a FIXED range relative to the *Gross* selection?
-            // But Gross is continuous float for Hz.
-            //
-            // Solution: 
-            // 1. **Gross Slider** controls the Integer part (or coarse step).
-            // 2. **Fine Slider** controls the Decimal part (0.0 to 1.0).
-            // Then `rate = floor(rate) + fine_value`.
-            //
-            // This decouples them. Gross snaps to integers. Fine fills the gap.
-            //
-            // Let's implement this for Unsynced Mode:
-            // Rate = IntPart + DecimalPart
+            // Hz Fine (Decimal Part)
+            const decPart = lfo.rate % 1;
+            fine.min = 0.0; fine.max = 0.999; fine.step = 0.001;
+            fine.value = decPart;
             
-            const intPart = Math.floor(lfo.rate);
-            const decPart = lfo.rate - intPart;
-
-            // Gross: 0 to 20, step 1
-            if (!lfo.sync) {
-                gross.min = 0; gross.max = 20; gross.step = 1;
-                gross.value = intPart;
-                
-                gross.oninput = (e) => {
-                    const newInt = parseInt(e.target.value);
-                    // Preserve decimal part
-                    lfo.rate = newInt + (lfo.rate % 1);
-                    // Don't render, just update internal state
-                };
-                gross.onchange = () => this.render();
-
-                // Fine: 0.0 to 0.999
-                fine.min = 0.0; fine.max = 0.999; fine.step = 0.001;
-                fine.value = decPart;
-                
-                fine.oninput = (e) => {
-                    const newDec = parseFloat(e.target.value);
-                    // Preserve integer part
-                    lfo.rate = Math.floor(lfo.rate) + newDec;
-                };
-                fine.onchange = () => this.render();
-            }
+            fine.oninput = (e) => {
+                const newDec = parseFloat(e.target.value);
+                // Preserve integer part from lfo.rate
+                const currentInt = Math.floor(lfo.rate);
+                lfo.rate = currentInt + newDec;
+            };
+            fine.onchange = () => this.render();
         }
 
         stack.appendChild(gross);
