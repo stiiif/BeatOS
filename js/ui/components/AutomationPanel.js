@@ -141,7 +141,7 @@ export class AutomationPanel {
         track.lfos.forEach((lfo, i) => {
             if (i >= NUM_LFOS) return;
             const colorClass = this.lfoColors[i % 3] || 'c-amber';
-            this.createSyncCell(grid, lfo, colorClass);
+            this.createSyncCell(grid, lfo, i, colorClass);
         });
 
         // 4. RATE ROW (Dual Sliders)
@@ -154,7 +154,7 @@ export class AutomationPanel {
         track.lfos.forEach((lfo, i) => {
             if (i >= NUM_LFOS) return;
             const colorClass = this.lfoColors[i % 3] || 'c-amber';
-            this.createRateCell(grid, lfo, colorClass);
+            this.createRateCell(grid, lfo, i, colorClass);
         });
 
         // 5. AMOUNT ROW
@@ -215,7 +215,7 @@ export class AutomationPanel {
         contentWrapper.appendChild(monolith);
     }
 
-    createSyncCell(grid, lfo, colorClass) {
+    createSyncCell(grid, lfo, index, colorClass) {
         const cell = document.createElement('div');
         cell.className = `grid-cell p-0 ${colorClass}`;
         
@@ -231,9 +231,10 @@ export class AutomationPanel {
             this.render();
         };
         
-        // 2. Gross Value Display
+        // 2. Gross Value Display (with ID for live update)
         const grossVal = document.createElement('div');
         grossVal.className = 'sync-val';
+        grossVal.id = `lfo-gross-val-${index}`;
         if (lfo.sync) {
             grossVal.innerText = LFO.SYNC_RATES[lfo.syncRateIndex].label;
         } else {
@@ -241,9 +242,10 @@ export class AutomationPanel {
             grossVal.innerText = Math.floor(lfo.rate) + 'Hz';
         }
         
-        // 3. Fine Value Display (FIXED: Show numeric offset for unsynced)
+        // 3. Fine Value Display (with ID for live update)
         const fineVal = document.createElement('div');
         fineVal.className = 'sync-val';
+        fineVal.id = `lfo-fine-val-${index}`;
         fineVal.style.fontSize = "10px";
         if (lfo.sync) {
             const type = LFO.SYNC_RATES[lfo.syncRateIndex].type;
@@ -265,7 +267,7 @@ export class AutomationPanel {
         grid.appendChild(cell);
     }
 
-    createRateCell(grid, lfo, colorClass) {
+    createRateCell(grid, lfo, index, colorClass) {
         const cell = document.createElement('div');
         cell.className = `grid-cell ${colorClass}`;
         
@@ -277,82 +279,61 @@ export class AutomationPanel {
         gross.type = 'range';
         gross.className = 'micro-slider';
         
+        // Helper to find closest straight index
+        const findClosestStraight = (idx) => {
+            let minDist = Infinity;
+            let closest = idx;
+            for(let i=0; i<LFO.SYNC_RATES.length; i++) {
+                if (LFO.SYNC_RATES[i].type === 'straight') {
+                    const dist = Math.abs(i - idx);
+                    if (dist < minDist) { minDist = dist; closest = i; }
+                }
+            }
+            return closest;
+        };
+
+        // Update helpers
+        const updateGrossDisplay = () => {
+            const el = document.getElementById(`lfo-gross-val-${index}`);
+            if (el) {
+                if (lfo.sync) el.innerText = LFO.SYNC_RATES[lfo.syncRateIndex].label;
+                else el.innerText = Math.floor(lfo.rate) + 'Hz';
+            }
+        };
+
+        const updateFineDisplay = () => {
+            const el = document.getElementById(`lfo-fine-val-${index}`);
+            if (el) {
+                if (lfo.sync) {
+                    const type = LFO.SYNC_RATES[lfo.syncRateIndex].type;
+                    if (type === 'triplet') { el.innerText = '+T'; el.style.color = '#60a5fa'; }
+                    else if (type === 'dotted') { el.innerText = '+D'; el.style.color = '#f472b6'; }
+                    else if (type === 'quintuplet') { el.innerText = '+Q'; el.style.color = '#a78bfa'; }
+                    else if (type === 'septuplet') { el.innerText = '+S'; el.style.color = '#fbbf24'; }
+                    else { el.innerText = '•'; el.style.color = '#444'; }
+                } else {
+                    const finePart = (lfo.rate % 1).toFixed(3).substring(1); 
+                    el.innerText = (finePart === '.000' ? '' : '+') + finePart; 
+                }
+            }
+        };
+
         if (lfo.sync) {
             gross.min = 0; 
             gross.max = LFO.SYNC_RATES.length - 1; 
             gross.step = 1;
-            // IMPORTANT FIX: Don't just set to current index, find nearest Anchor.
-            // This slider only jumps between Straight notes.
-            // If current is "1/4 Triplet", slider should be at "1/4".
-            // We need a helper to find nearest Anchor index.
-            // But if we do that, the slider handle might jump if we moved Fine slider?
-            // Actually, "The gross slider position and the finetune slider position must be separated".
-            // This implies Gross Slider controls the "Base" index, and Fine controls the "Offset".
-            // However, we only store `syncRateIndex`.
-            //
-            // Let's implement: 
-            // Gross Slider = Base Anchor Index.
-            // Fine Slider = Relative Offset from that Anchor?
-            //
-            // Or simpler: Gross Slider controls index directly but SNAPS to Anchors.
-            // Fine Slider controls index directly but increments by 1.
-            //
-            // Issue: If Gross is at "1/4" (Index 17) and Fine moves to "1/4T" (Index 19),
-            // does Gross slider move? User says: "moving any of the 2 sliders also moves the other slider to the same position!! ... not good."
-            //
-            // Solution: We need visual separation.
-            // The Gross Slider value should reflect the *nearest Anchor* of the current index.
-            // The Fine Slider value should reflect the *relative offset* or just the current index?
-            // If Fine Slider reflects current index, it will jump when Gross moves.
-            // User wants them separated "like for the un-synced sliders".
-            // In un-synced, I implemented: Gross=IntPart, Fine=DecPart.
-            //
-            // Let's adapt that to Sync:
-            // Sync Index can be decomposed into: AnchorIndex + Offset.
-            // Gross Slider controls AnchorIndex.
-            // Fine Slider controls Offset.
-            
-            // 1. Find current Anchor (Nearest Straight note <= current index?)
-            // LFO.SYNC_RATES isn't strictly structured.
-            // Let's find the nearest "straight" type index.
-            let anchorIdx = lfo.syncRateIndex;
-            // Search for nearest 'straight'
-            // Actually, we can just scan the array.
-            // Let's find the straight note that is closest? Or strictly below?
-            // Let's assume Anchors are the primary divisions.
-            // Let's just find the closest straight note index to display on Gross slider.
-            
-            // Helper to find closest straight index
-            const findClosestStraight = (idx) => {
-                let minDist = Infinity;
-                let closest = idx;
-                for(let i=0; i<LFO.SYNC_RATES.length; i++) {
-                    if (LFO.SYNC_RATES[i].type === 'straight') {
-                        const dist = Math.abs(i - idx);
-                        if (dist < minDist) { minDist = dist; closest = i; }
-                    }
-                }
-                return closest;
-            };
             
             const currentAnchor = findClosestStraight(lfo.syncRateIndex);
-            
             gross.value = currentAnchor;
             
             gross.oninput = (e) => {
                 let targetIdx = parseInt(e.target.value);
-                // Snap input to nearest straight (slider steps are 1, but we enforce logic)
                 const newAnchor = findClosestStraight(targetIdx);
-                
-                // Preserve the "Offset" (difference between old anchor and old actual)
-                // e.g. if we were at 1/4T (Anchor+2), and move to 1/8, we want 1/8T?
-                // Or just jump to the new Anchor straight? Usually Gross sets the base.
-                // Let's just set to the new Anchor.
                 lfo.syncRateIndex = newAnchor;
                 
-                // Don't render, just update value. Render happens on change.
-                // Actually if we don't render, fine slider won't update? 
-                // User wants them separated.
+                // Live Update Display
+                updateGrossDisplay();
+                updateFineDisplay(); // Fine display might change if anchor changes type? Usually no, but safe.
             };
             gross.onchange = () => this.render();
         } else {
@@ -365,6 +346,9 @@ export class AutomationPanel {
                 const newInt = parseInt(e.target.value);
                 const currentDec = lfo.rate % 1;
                 lfo.rate = newInt + currentDec;
+                
+                // Live Update
+                updateGrossDisplay();
             };
             gross.onchange = () => this.render();
         }
@@ -375,30 +359,7 @@ export class AutomationPanel {
         fine.className = 'micro-slider';
         
         if (lfo.sync) {
-            // Synced Fine: Control relative offset from current Anchor?
-            // "finetune slider must allow me to choose from 3 bars to 7 bars" (from previous convo)
-            // This implies a window around the gross selection.
-            
-            // Let's define the window: +/- 2 indices from current? 
-            // Or +/- 4 indices?
-            // Let's use [-5, +5] range relative to the *Anchor* defined by the Gross slider.
-            // This means Fine Slider Value 0 = Anchor.
-            
-            // Re-calculate anchor
-            const findClosestStraight = (idx) => {
-                let minDist = Infinity;
-                let closest = idx;
-                for(let i=0; i<LFO.SYNC_RATES.length; i++) {
-                    if (LFO.SYNC_RATES[i].type === 'straight') {
-                        const dist = Math.abs(i - idx);
-                        if (dist < minDist) { minDist = dist; closest = i; }
-                    }
-                }
-                return closest;
-            };
             const currentAnchor = findClosestStraight(lfo.syncRateIndex);
-            
-            // Calculate current offset
             const currentOffset = lfo.syncRateIndex - currentAnchor;
             
             fine.min = -5;
@@ -408,13 +369,17 @@ export class AutomationPanel {
             
             fine.oninput = (e) => {
                 const offset = parseInt(e.target.value);
-                // New index = Anchor + Offset
                 let newIndex = currentAnchor + offset;
                 // Boundary check
                 if (newIndex < 0) newIndex = 0;
                 if (newIndex >= LFO.SYNC_RATES.length) newIndex = LFO.SYNC_RATES.length - 1;
                 
                 lfo.syncRateIndex = newIndex;
+                
+                // Live Update
+                // Updating syncRateIndex affects the Label displayed in GrossVal
+                updateGrossDisplay(); 
+                updateFineDisplay();
             };
             fine.onchange = () => this.render();
         } else {
@@ -427,6 +392,9 @@ export class AutomationPanel {
                 const newDec = parseFloat(e.target.value);
                 const currentInt = Math.floor(lfo.rate);
                 lfo.rate = currentInt + newDec;
+                
+                // Live Update
+                updateFineDisplay();
             };
             fine.onchange = () => this.render();
         }
