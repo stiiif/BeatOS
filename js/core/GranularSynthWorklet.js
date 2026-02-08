@@ -65,10 +65,7 @@ export class GranularSynthWorklet {
         if (!this.isInitialized) await this.init();
         const trackId = track.id;
         
-        if (!track.buffer) {
-            console.warn(`[GranularSynthWorklet] Track ${trackId} has no buffer to load.`);
-            return;
-        }
+        if (!track.buffer) return;
 
         // Check against our local version tracker
         const lastKnownBuffer = this.bufferVersionMap.get(trackId);
@@ -83,8 +80,6 @@ export class GranularSynthWorklet {
             
             const channelData = track.buffer.getChannelData(0);
             const bufferCopy = new Float32Array(channelData);
-            
-            console.log(`[GranularSynthWorklet] SENDING BUFFER: Track=${trackId}, Length=${bufferCopy.length} samples`);
             
             this.workletNode.port.postMessage({
                 type: 'setBuffer',
@@ -183,8 +178,6 @@ export class GranularSynthWorklet {
             default: gainMult = 0.75;
         }
 
-        console.log(`[GranularSynthWorklet] NOTE TRIGGERED: Track=${track.id}, Type=${track.type}, Gain=${gainMult}`);
-
         this.workletNode.port.postMessage({
             type: 'noteOn',
             data: {
@@ -262,11 +255,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const { type, data } = e.data;
             switch(type) {
                 case 'noteOn': this.handleNoteOn(data); break;
-                case 'setBuffer': 
-                    const tId = Number(data.trackId);
-                    console.log("[AudioWorklet] RECEIVED BUFFER: Track=" + tId + ", Samples=" + data.buffer.length);
-                    this.trackBuffers.set(tId, data.buffer); 
-                    break;
+                case 'setBuffer': this.trackBuffers.set(Number(data.trackId), data.buffer); break;
                 case 'stopAll': this.stopAllVoices(); this.activeNotes = []; break;
                 case 'stopTrack': this.stopTrack(Number(data.trackId)); break;
                 case 'setMaxGrains': this.safetyLimit = data.max; break;
@@ -304,6 +293,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const frameCount = outputs[0][0].length;
         const now = currentTime;
         
+        // Zero all outputs first
         for (let o = 0; o < outputs.length; o++) {
             if (outputs[o]) {
                 for (let c = 0; c < outputs[o].length; c++) {
@@ -347,6 +337,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const voice = this.voices[vIdx];
             const trackOut = outputs[voice.trackId];
             
+            // Critical Safety: Check for missing/empty buffers
             if (!trackOut || !voice.buffer || voice.bufferLength < 2) { 
                 this.killVoice(i); 
                 continue; 
@@ -369,12 +360,14 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 
                 let rPos = start + (ph * pitch);
                 
+                // Wrap Logic for reading
                 while (rPos >= bufLen) rPos -= bufLen;
                 while (rPos < 0) rPos += bufLen;
                 
                 let idx = rPos | 0;
                 let frac = rPos - idx;
                 
+                // Dirty Mode / Edge Crunch Logic
                 if (!voice.cleanMode && voice.edgeCrunch > 0) {
                     let maxOverflow = 1.0 + (voice.edgeCrunch * voice.edgeCrunch * voice.edgeCrunch * bufLen);
                     if (frac < 0) frac = Math.max(frac, -maxOverflow);
@@ -400,6 +393,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
         }
 
+        // --- 3. SOFT CLIPPER ---
         for (let o = 0; o < outputs.length; o++) {
             if (!outputs[o]) continue;
             const outL = outputs[o][0];
@@ -435,16 +429,8 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     }
 
     spawnGrain(note) {
-        const bufId = Number(note.trackId);
-        const buf = this.trackBuffers.get(bufId);
-        
-        if(!buf || buf.length < 2) {
-            // DIAGNOSTIC: Only log once per trigger if buffer is missing
-            if (note.phase === 0) {
-                 console.error("[AudioWorklet] MISSING BUFFER FOR TRACK: " + bufId);
-            }
-            return;
-        }
+        const buf = this.trackBuffers.get(Number(note.trackId));
+        if(!buf || buf.length < 2) return;
         
         let v = null;
         for(let i=0; i<this.MAX_VOICES; i++) {
