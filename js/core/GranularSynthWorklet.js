@@ -82,16 +82,17 @@ export class GranularSynthWorklet {
             
             // Get the raw Float32 data
             const channelData = track.buffer.getChannelData(0);
+            
             // We must copy the data because Transferables empty the original array on the main thread
             const bufferCopy = new Float32Array(channelData);
             
             // Send to Worklet Processor
             this.workletNode.port.postMessage({
                 type: 'setBuffer',
-                data: { trackId, buffer: bufferCopy }
+                data: { trackId: Number(trackId), buffer: bufferCopy }
             }, [bufferCopy.buffer]); // Transfer ownership for zero-copy speed
             
-            console.log(`[GranularSynthWorklet] Buffer synchronized for Track ${trackId}`);
+            console.log(`[GranularSynthWorklet] Buffer synchronized for Track ${trackId} (${bufferCopy.length} samples)`);
             
             resolve();
             this.pendingLoads.delete(trackId);
@@ -190,7 +191,7 @@ export class GranularSynthWorklet {
         this.workletNode.port.postMessage({
             type: 'noteOn',
             data: {
-                trackId: track.id,
+                trackId: Number(track.id),
                 time: time,
                 duration: (p.relGrain || 0.4) + mod.relGrain,
                 stepIndex: stepIndex,
@@ -264,9 +265,9 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const { type, data } = e.data;
             switch(type) {
                 case 'noteOn': this.handleNoteOn(data); break;
-                case 'setBuffer': this.trackBuffers.set(data.trackId, data.buffer); break;
+                case 'setBuffer': this.trackBuffers.set(Number(data.trackId), data.buffer); break;
                 case 'stopAll': this.stopAllVoices(); this.activeNotes = []; break;
-                case 'stopTrack': this.stopTrack(data.trackId); break;
+                case 'stopTrack': this.stopTrack(Number(data.trackId)); break;
                 case 'setMaxGrains': this.safetyLimit = data.max; break;
             }
         };
@@ -280,7 +281,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     }
 
     handleNoteOn(data) {
-        const trackId = data.trackId;
+        const trackId = Number(data.trackId);
         const params = data.params;
         
         if (params.resetOnTrig) {
@@ -303,8 +304,8 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const now = currentTime;
         
         for (let o = 0; o < outputs.length; o++) {
-            if (outputs[o][0]) outputs[o][0].fill(0);
-            if (outputs[o][1]) outputs[o][1].fill(0);
+            if (outputs[o] && outputs[o][0]) outputs[o][0].fill(0);
+            if (outputs[o] && outputs[o][1]) outputs[o][1].fill(0);
         }
 
         for (let i = this.activeNotes.length - 1; i >= 0; i--) {
@@ -340,7 +341,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const vIdx = this.activeVoiceIndices[i];
             const voice = this.voices[vIdx];
             const trackOut = outputs[voice.trackId];
-            if (!trackOut) { this.killVoice(i); continue; }
+            if (!trackOut || !voice.buffer || voice.bufferLength === 0) { this.killVoice(i); continue; }
             
             const L = trackOut[0], R = trackOut[1];
             const buf = voice.buffer, bufLen = voice.bufferLength;
@@ -348,9 +349,8 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const start = voice.position * bufLen;
             const baseAmp = voice.velocity;
             
-            const trackScale = voice.cleanMode 
-                ? (1.0 / Math.max(1, this.activeVoiceIndices.length)) 
-                : (1.0 / (1.0 + (this.activeVoiceIndices.length * 0.15)));
+            const activeCount = Math.max(1, this.activeVoiceIndices.length);
+            const trackScale = voice.cleanMode ? (1.0 / activeCount) : (1.0 / (1.0 + (activeCount * 0.15)));
 
             let ph = voice.phase, amp = voice.releaseAmp, rel = voice.releasing;
 
@@ -387,26 +387,31 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 const s2 = buf[idx2] || 0;
                 
                 const sample = s1 + frac * (s2 - s1);
-                const winIdx = (ph * invGL) | 0;
+                const winIdx = Math.min(this.LUT_SIZE - 1, (ph * invGL) | 0);
                 const win = this.windowLUT[winIdx] || 0;
                 
                 const val = sample * win * baseAmp * amp * trackScale;
                 
-                L[j] += val; R[j] += val;
+                // Prevent NaN Poisoning
+                if (!isNaN(val)) {
+                    L[j] += val; 
+                    if (R) R[j] += val;
+                }
                 ph++;
             }
             voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
         }
 
+        // Soft Clipper (Prevent Output NaN)
         for (let o = 0; o < outputs.length; o++) {
             const outL = outputs[o][0];
             const outR = outputs[o][1];
             if (!outL) continue;
             for (let j = 0; j < frameCount; j++) {
                 const sL = outL[j];
-                const sR = outR[j];
-                outputs[o][0][j] = sL / (1.0 + Math.abs(sL));
-                outputs[o][1][j] = sR / (1.0 + Math.abs(sR));
+                const sR = outR[j] || 0;
+                outputs[o][0][j] = isNaN(sL) ? 0 : sL / (1.0 + Math.abs(sL));
+                if (outR) outputs[o][1][j] = isNaN(sR) ? 0 : sR / (1.0 + Math.abs(sR));
             }
         }
 
@@ -430,8 +435,8 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     }
 
     spawnGrain(note) {
-        const buf = this.trackBuffers.get(note.trackId);
-        if(!buf) return;
+        const buf = this.trackBuffers.get(Number(note.trackId));
+        if(!buf || buf.length === 0) return;
         let v = null;
         for(let i=0; i<this.MAX_VOICES; i++) if(!this.voices[i].active) { v = this.voices[i]; this.activeVoiceIndices.push(i); break; }
         if(!v) return; 
@@ -455,7 +460,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         v.position = Math.max(0, Math.min(1, pos)); 
         v.phase = 0;
         v.grainLength = Math.max(128, Math.floor((note.params.grainSize||0.1) * sampleRate));
-        v.invGrainLength = 4095 / v.grainLength;
+        v.invGrainLength = (this.LUT_SIZE - 1) / v.grainLength;
         v.pitch = note.params.pitch||1; v.velocity = note.params.velocity||1;
         v.releasing = false; v.releaseAmp = 1.0;
         v.cleanMode = note.params.cleanMode;
