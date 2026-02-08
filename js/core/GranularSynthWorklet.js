@@ -1,5 +1,6 @@
 // Granular SynthWorklet - Fixed Silence on Manual Sample Load
 import { MAX_TRACKS } from '../utils/constants.js';
+import { GranularLogic } from '../utils/GranularLogic.js'; // NEW IMPORT
 
 export class GranularSynthWorklet {
     constructor(audioEngine) {
@@ -178,24 +179,26 @@ export class GranularSynthWorklet {
             default: gainMult = 0.75;
         }
 
-        // --- EFFECTIVE WINDOW CLAMPING LOGIC (Matching Visualizer) ---
-        // 1. Calculate effective start/end with modulation
-        let actStart = Math.max(0, Math.min(1, (p.sampleStart || 0) + mod.sampleStart));
-        let actEnd = Math.max(0, Math.min(1, (p.sampleEnd !== undefined ? p.sampleEnd : 1) + mod.sampleEnd));
+        // --- USE SHARED LOGIC ---
+        // We pass 'time' as 0 here because the Worklet processor handles the continuous
+        // 'scanSpeed' internally relative to the time it was triggered.
+        // However, if we want the "Start Position" to be correct based on GLOBAL time (like visualizer),
+        // we should pass 'time'.
+        // BUT, the Worklet logic adds 'this.trackPlayheads[note.trackId]' which accumulates independently.
+        // To avoid double-adding scan speed, we calculate the STATIC clamped position here (time=0)
+        // and let the Worklet add the movement.
+        // WAIT: The Visualizer adds `visualScanOffset`. The Worklet adds `trackPlayheads`.
+        // `trackPlayheads` accumulates `scanSpeed * dt`.
+        // If we send `absPos` with `time` offset here, and Worklet adds `trackPlayheads`, we double count.
+        //
+        // CORRECT APPROACH:
+        // We use GranularLogic to calculate the "Anchor Position" (clamped to window).
+        // We set `time` to 0 so we don't add the scan offset here.
+        // The Worklet adds the scan offset.
+        //
+        // This ensures the STARTING point is clamped.
         
-        // 2. Ensure Start <= End
-        if (actStart > actEnd) { const temp = actStart; actStart = actEnd; actEnd = temp; }
-
-        // 3. Calculate effective absolute position
-        let absPos = p.position + mod.position;
-
-        // 4. Clamp Position to effective Window
-        // This ensures LFOs moving start/end "push" the position in audio too
-        if (absPos < actStart) absPos = actStart;
-        if (absPos > actEnd) absPos = actEnd;
-
-        // 5. Final safety bounds
-        absPos = Math.max(0, Math.min(1, absPos));
+        const { absPos } = GranularLogic.calculateEffectivePosition(p, mod, 0);
 
         this.workletNode.port.postMessage({
             type: 'noteOn',
@@ -205,7 +208,7 @@ export class GranularSynthWorklet {
                 duration: (p.relGrain || 0.4) + mod.relGrain,
                 stepIndex: stepIndex,
                 params: {
-                    position: absPos, // Send clamped absolute position
+                    position: absPos, // Send clamped anchor position
                     scanSpeed: p.scanSpeed + mod.scanSpeed,
                     density: Math.max(1, (p.density || 20) + mod.density),
                     grainSize: Math.max(0.005, (p.grainSize || 0.1) + mod.grainSize),

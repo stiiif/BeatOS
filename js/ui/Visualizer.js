@@ -1,5 +1,6 @@
 // Visualizer Module
 import { globalBus } from '../events/EventBus.js';
+import { GranularLogic } from '../utils/GranularLogic.js'; // NEW IMPORT
 
 export class Visualizer {
     constructor(canvasId, bufferCanvasId, audioEngine) {
@@ -179,12 +180,6 @@ export class Visualizer {
         }
 
         const data = t.buffer.getChannelData(0);
-        let sampleStart = t.params.sampleStart || 0;
-        let sampleEnd = t.params.sampleEnd !== undefined ? t.params.sampleEnd : 1;
-        
-        if (sampleStart > sampleEnd) {
-            const temp = sampleStart; sampleStart = sampleEnd; sampleEnd = temp;
-        }
         
         // Draw the full buffer data (0 to length)
         // Window dimming is handled in drawOverlays
@@ -378,44 +373,16 @@ export class Visualizer {
 
         const p = t.params;
         
-        let actStart = Math.max(0, Math.min(1, (p.sampleStart || 0) + mod.sampleStart));
-        let actEnd = Math.max(0, Math.min(1, (p.sampleEnd !== undefined ? p.sampleEnd : 1) + mod.sampleEnd));
-        if (actStart > actEnd) { const temp = actStart; actStart = actEnd; actEnd = temp; }
+        // --- USE SHARED LOGIC ---
+        const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time);
         
-        // Map absolute 0..1 to view width
-        const mapToView = (absPos) => absPos * w;
-
-        // --- UPDATED SCAN SPEED & POSITION VISUALIZATION ---
-        // Position is now Absolute (0-1 represents full file)
-        // Scan Speed moves the playhead across the file
-        const currentScanSpeed = p.scanSpeed + mod.scanSpeed;
-        const visualScanOffset = (currentScanSpeed * time); // Offset accumulates over time
-        
-        const basePosition = p.position + mod.position;
-        let absPos = basePosition + visualScanOffset;
-        
-        // Wrap 0..1 for consistent visualization (Matches AudioWorklet behavior)
-        while (absPos >= 1.0) absPos -= 1.0;
-        while (absPos < 0.0) absPos += 1.0;
-        
-        // Clamp logic applied to modulated values as well:
-        // Position must be within current (potentially modulated) Start/End points.
-        // If the modulated window shifts away from position, position gets pushed.
-        
-        // Ensure absPos stays within the ACTIVE (modulated) window
-        // If Start moves past Position, Position becomes Start.
-        if (absPos < actStart) absPos = actStart;
-        // If End moves before Position, Position becomes End.
-        if (absPos > actEnd) absPos = actEnd;
-
-        // Clamp for display safety (0-1 bounds)
-        const finalClampedPos = Math.max(0, Math.min(1, absPos)); 
+        const mapToView = (pos) => pos * w;
         
         const bufDur = t.buffer ? t.buffer.duration : 1;
         const finalGrainSizeSec = Math.max(0.01, p.grainSize + mod.grainSize);
         const finalGrainSizeFrac = finalGrainSizeSec / bufDur;
         
-        const posPx = mapToView(finalClampedPos);
+        const posPx = mapToView(absPos);
         const grainPx = Math.max(2, finalGrainSizeFrac * w); 
         
         const finalSpray = Math.max(0, p.spray + mod.spray);
@@ -438,8 +405,8 @@ export class Visualizer {
         }
 
         if (finalSpray > 0) {
-            const sprayLeftAbs = Math.max(0, finalClampedPos - finalSpray);
-            const sprayRightAbs = Math.min(1, finalClampedPos + finalSpray);
+            const sprayLeftAbs = Math.max(0, absPos - finalSpray);
+            const sprayRightAbs = Math.min(1, absPos + finalSpray);
             const sprayLeftPx = mapToView(sprayLeftAbs);
             const sprayRightPx = mapToView(sprayRightAbs);
             ctx.fillStyle = 'rgba(234, 179, 8, 0.15)';
