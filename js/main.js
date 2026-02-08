@@ -487,8 +487,9 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
     document.getElementById('fileInput').value = '';
 });
 
-// --- UPDATED SLIDER LOGIC FOR CONSTRAINED WINDOW BEHAVIOR ---
+// --- UPDATED SLIDER LOGIC FOR CONSTRAINED WINDOW BEHAVIOR & MOUSE WHEEL ---
 document.querySelectorAll('.param-slider').forEach(el => {
+    // 1. Standard Input Event (Drag)
     el.addEventListener('input', e => {
         const t = tracks[uiManager.getSelectedTrackIndex()];
         const param = e.target.dataset.param;
@@ -530,6 +531,64 @@ document.querySelectorAll('.param-slider').forEach(el => {
         uiManager.updateKnobs(); // Updates all knobs, including position/start/end if they were pushed
         if (t.type === 'granular') visualizer.triggerRedraw();
     });
+
+    // 2. Mouse Wheel Fine-Tuning Event
+    el.addEventListener('wheel', e => {
+        e.preventDefault();
+        const t = tracks[uiManager.getSelectedTrackIndex()];
+        const param = el.dataset.param;
+        const step = parseFloat(el.step) || 0.01;
+        const fineStep = step / 10;
+        
+        // Scroll down (positive deltaY) -> decrease value, Scroll up -> increase value
+        const delta = e.deltaY > 0 ? -1 : 1; 
+        
+        let newValue = parseFloat(el.value) + (delta * fineStep);
+        
+        // Clamp to min/max
+        const min = parseFloat(el.min);
+        const max = parseFloat(el.max);
+        newValue = Math.max(min, Math.min(max, newValue));
+        
+        // Logic for constraints (mirrored from input event)
+        if (param === 'sampleStart') {
+             if (newValue > t.params.sampleEnd) newValue = t.params.sampleEnd;
+             t.params.sampleStart = newValue;
+             if (t.params.position < newValue) t.params.position = newValue;
+        } else if (param === 'sampleEnd') {
+             if (newValue < t.params.sampleStart) newValue = t.params.sampleStart;
+             t.params.sampleEnd = newValue;
+             if (t.params.position > newValue) t.params.position = newValue;
+        } else if (param === 'position') {
+             if (newValue < t.params.sampleStart) newValue = t.params.sampleStart;
+             if (newValue > t.params.sampleEnd) newValue = t.params.sampleEnd;
+             t.params.position = newValue;
+        } else {
+             t.params[param] = newValue;
+        }
+        
+        el.value = newValue; // Update visual slider
+        
+        uiManager.updateKnobs();
+        if (t.type === 'granular') visualizer.triggerRedraw();
+        
+    }, { passive: false });
+});
+
+// Listener for Value Displays to proxy wheel events to sliders
+document.querySelectorAll('.value-display').forEach(displayEl => {
+    displayEl.addEventListener('wheel', e => {
+        e.preventDefault();
+        const inputEl = displayEl.previousElementSibling; 
+        if (inputEl && inputEl.classList.contains('param-slider')) {
+             const newEvent = new WheelEvent('wheel', {
+                 deltaY: e.deltaY,
+                 bubbles: false,
+                 cancelable: true
+             });
+             inputEl.dispatchEvent(newEvent);
+        }
+    }, { passive: false });
 });
 
 document.querySelectorAll('.lfo-tab').forEach(b => {
