@@ -267,10 +267,13 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const trackId = data.trackId;
         const params = data.params;
         
+        // FIX: Playhead accumulator logic
+        // trackPlayheads now represents the SCAN OFFSET, not absolute position.
+        // This allows 'position' param (Slider) to work immediately.
         if (params.resetOnTrig) {
-            this.trackPlayheads[trackId] = params.position;
+            this.trackPlayheads[trackId] = 0;
         } else if (params.resetOnBar && data.stepIndex === 0) {
-            this.trackPlayheads[trackId] = params.position;
+            this.trackPlayheads[trackId] = 0;
         }
 
         this.activeNotes.push({
@@ -424,8 +427,12 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                     break;
                 }
             }
-            this.trackPlayheads[tId] = (this.trackPlayheads[tId] + (targetSpeed * (frameCount / sampleRate))) % 1.0;
-            if (this.trackPlayheads[tId] < 0) this.trackPlayheads[tId] += 1.0;
+            // FIX: Playhead is now an offset accumulator
+            this.trackPlayheads[tId] += (targetSpeed * (frameCount / sampleRate));
+            
+            // Keep offset within reason (looping is handled in spawnGrain)
+            if (this.trackPlayheads[tId] > 1.0) this.trackPlayheads[tId] -= 1.0;
+            if (this.trackPlayheads[tId] < -1.0) this.trackPlayheads[tId] += 1.0;
         }
     }
 
@@ -436,7 +443,12 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         for(let i=0; i<this.MAX_VOICES; i++) if(!this.voices[i].active) { v = this.voices[i]; this.activeVoiceIndices.push(i); break; }
         if(!v) return; 
         
-        let pos = this.trackPlayheads[note.trackId];
+        // FIX: Combine Base Position (Slider) + Scan Offset (Accumulator)
+        let pos = note.params.position + this.trackPlayheads[note.trackId];
+        
+        // Wrap Logic 0..1
+        while (pos >= 1.0) pos -= 1.0;
+        while (pos < 0.0) pos += 1.0;
         
         // --- ORBIT (Scan Jitter) Logic ---
         if (note.params.orbit > 0) {
@@ -455,6 +467,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         
         v.active = true; v.trackId = note.trackId; v.buffer = buf; v.bufferLength = buf.length;
         
+        // Final clamp just in case spray pushed it way out
         v.position = Math.max(0, Math.min(1, pos)); 
         
         v.phase = 0;
