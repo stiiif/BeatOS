@@ -398,7 +398,17 @@ export class Visualizer {
         while (absPos >= 1.0) absPos -= 1.0;
         while (absPos < 0.0) absPos += 1.0;
         
-        // Clamp for display safety
+        // Clamp logic applied to modulated values as well:
+        // Position must be within current (potentially modulated) Start/End points.
+        // If the modulated window shifts away from position, position gets pushed.
+        
+        // Ensure absPos stays within the ACTIVE (modulated) window
+        // If Start moves past Position, Position becomes Start.
+        if (absPos < actStart) absPos = actStart;
+        // If End moves before Position, Position becomes End.
+        if (absPos > actEnd) absPos = actEnd;
+
+        // Clamp for display safety (0-1 bounds)
         const finalClampedPos = Math.max(0, Math.min(1, absPos)); 
         
         const bufDur = t.buffer ? t.buffer.duration : 1;
