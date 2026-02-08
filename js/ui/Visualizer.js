@@ -37,6 +37,9 @@ export class Visualizer {
         
         // Cache track canvases to avoid getElementById in the loop
         this.canvasCache = new Map();
+        
+        // Track the last trigger time per track to handle "Reset on Trig" visualization
+        this.lastTriggerTimes = new Map();
     }
 
     setTracks(tracks) {
@@ -68,6 +71,8 @@ export class Visualizer {
 
     scheduleVisualDraw(time, trackId) {
         this.drawQueue.push({time, trackId});
+        // Store trigger time for reset logic
+        this.lastTriggerTimes.set(trackId, time);
     }
 
     startLoop() {
@@ -374,13 +379,14 @@ export class Visualizer {
         const p = t.params;
         
         // --- HANDLE VISUALIZER RESET LOGIC ---
+        // Calculate dynamic scan time based on the last trigger event
         let scanTime = time;
         if (t.resetOnTrig) {
-            // When Reset on Trig is active, the grain start position is static (Anchor)
-            // The motion happens *during* the grain playback, which we can't easily visualize 
-            // as a single line without knowing the exact trigger time. 
-            // Showing the static Anchor is the most honest representation of the "Start Point".
-            scanTime = 0; 
+            // Get the last trigger time for this track
+            const lastTrigger = this.lastTriggerTimes.get(t.id) || 0;
+            // The effective scan time is the duration since the last trigger
+            // This allows the playhead to "move" from the reset point (0) forward
+            scanTime = Math.max(0, time - lastTrigger);
         }
 
         // --- USE SHARED LOGIC ---
