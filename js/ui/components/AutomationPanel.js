@@ -252,7 +252,9 @@ export class AutomationPanel {
             else if (type === 'septuplet') { fineVal.innerText = '+S'; fineVal.style.color = '#fbbf24'; }
             else { fineVal.innerText = '•'; fineVal.style.color = '#444'; }
         } else {
-            fineVal.innerText = 'FINE';
+            // FIX: Display fractional part for fine tuning
+            const finePart = (lfo.rate % 1).toFixed(2).substring(1);
+            fineVal.innerText = (finePart === '.00' ? '' : '+') + finePart; 
         }
 
         content.appendChild(btn);
@@ -323,14 +325,20 @@ export class AutomationPanel {
             fine.onchange = () => this.render();
         } else {
             // Hz Fine
+            // FIX: Set range relative to current value to allow continuous adjustment without snapping back
+            // The range creates a "window" around the current value
             fine.min = lfo.rate - 0.5;
             fine.max = lfo.rate + 0.5;
             fine.step = 0.001;
             fine.value = lfo.rate;
             
             fine.oninput = (e) => {
+                // Update the LFO rate directly
                 lfo.rate = parseFloat(e.target.value);
+                // Note: We don't call render() here to avoid resetting the slider (which would snap back to center)
+                // The visual update happens via the gross slider binding or final render
             };
+            // Only re-render when user releases to update the "window"
             fine.onchange = () => this.render();
         }
 
