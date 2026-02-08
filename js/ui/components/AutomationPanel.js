@@ -281,22 +281,78 @@ export class AutomationPanel {
             gross.min = 0; 
             gross.max = LFO.SYNC_RATES.length - 1; 
             gross.step = 1;
-            gross.value = lfo.syncRateIndex;
+            // IMPORTANT FIX: Don't just set to current index, find nearest Anchor.
+            // This slider only jumps between Straight notes.
+            // If current is "1/4 Triplet", slider should be at "1/4".
+            // We need a helper to find nearest Anchor index.
+            // But if we do that, the slider handle might jump if we moved Fine slider?
+            // Actually, "The gross slider position and the finetune slider position must be separated".
+            // This implies Gross Slider controls the "Base" index, and Fine controls the "Offset".
+            // However, we only store `syncRateIndex`.
+            //
+            // Let's implement: 
+            // Gross Slider = Base Anchor Index.
+            // Fine Slider = Relative Offset from that Anchor?
+            //
+            // Or simpler: Gross Slider controls index directly but SNAPS to Anchors.
+            // Fine Slider controls index directly but increments by 1.
+            //
+            // Issue: If Gross is at "1/4" (Index 17) and Fine moves to "1/4T" (Index 19),
+            // does Gross slider move? User says: "moving any of the 2 sliders also moves the other slider to the same position!! ... not good."
+            //
+            // Solution: We need visual separation.
+            // The Gross Slider value should reflect the *nearest Anchor* of the current index.
+            // The Fine Slider value should reflect the *relative offset* or just the current index?
+            // If Fine Slider reflects current index, it will jump when Gross moves.
+            // User wants them separated "like for the un-synced sliders".
+            // In un-synced, I implemented: Gross=IntPart, Fine=DecPart.
+            //
+            // Let's adapt that to Sync:
+            // Sync Index can be decomposed into: AnchorIndex + Offset.
+            // Gross Slider controls AnchorIndex.
+            // Fine Slider controls Offset.
+            
+            // 1. Find current Anchor (Nearest Straight note <= current index?)
+            // LFO.SYNC_RATES isn't strictly structured.
+            // Let's find the nearest "straight" type index.
+            let anchorIdx = lfo.syncRateIndex;
+            // Search for nearest 'straight'
+            // Actually, we can just scan the array.
+            // Let's find the straight note that is closest? Or strictly below?
+            // Let's assume Anchors are the primary divisions.
+            // Let's just find the closest straight note index to display on Gross slider.
+            
+            // Helper to find closest straight index
+            const findClosestStraight = (idx) => {
+                let minDist = Infinity;
+                let closest = idx;
+                for(let i=0; i<LFO.SYNC_RATES.length; i++) {
+                    if (LFO.SYNC_RATES[i].type === 'straight') {
+                        const dist = Math.abs(i - idx);
+                        if (dist < minDist) { minDist = dist; closest = i; }
+                    }
+                }
+                return closest;
+            };
+            
+            const currentAnchor = findClosestStraight(lfo.syncRateIndex);
+            
+            gross.value = currentAnchor;
             
             gross.oninput = (e) => {
                 let targetIdx = parseInt(e.target.value);
-                // Snap to nearest 'straight' type
-                let found = -1;
-                let range = 6; 
-                if (LFO.SYNC_RATES[targetIdx].type === 'straight') found = targetIdx;
-                else {
-                    for(let i=1; i<=range; i++) {
-                        if(LFO.SYNC_RATES[targetIdx-i] && LFO.SYNC_RATES[targetIdx-i].type === 'straight') { found = targetIdx-i; break; }
-                        if(LFO.SYNC_RATES[targetIdx+i] && LFO.SYNC_RATES[targetIdx+i].type === 'straight') { found = targetIdx+i; break; }
-                    }
-                }
-                if(found !== -1) lfo.syncRateIndex = found;
-                else lfo.syncRateIndex = targetIdx;
+                // Snap input to nearest straight (slider steps are 1, but we enforce logic)
+                const newAnchor = findClosestStraight(targetIdx);
+                
+                // Preserve the "Offset" (difference between old anchor and old actual)
+                // e.g. if we were at 1/4T (Anchor+2), and move to 1/8, we want 1/8T?
+                // Or just jump to the new Anchor straight? Usually Gross sets the base.
+                // Let's just set to the new Anchor.
+                lfo.syncRateIndex = newAnchor;
+                
+                // Don't render, just update value. Render happens on change.
+                // Actually if we don't render, fine slider won't update? 
+                // User wants them separated.
             };
             gross.onchange = () => this.render();
         } else {
@@ -307,7 +363,6 @@ export class AutomationPanel {
             
             gross.oninput = (e) => {
                 const newInt = parseInt(e.target.value);
-                // Preserve decimal part from lfo.rate
                 const currentDec = lfo.rate % 1;
                 lfo.rate = newInt + currentDec;
             };
@@ -320,27 +375,56 @@ export class AutomationPanel {
         fine.className = 'micro-slider';
         
         if (lfo.sync) {
-            // Relative stepping for SYNC
-            // Slider range is small window [-3, +3] around center 0? No.
-            // Let's make it span the entire index range so it moves independently.
-            fine.min = 0; 
-            fine.max = LFO.SYNC_RATES.length - 1;
+            // Synced Fine: Control relative offset from current Anchor?
+            // "finetune slider must allow me to choose from 3 bars to 7 bars" (from previous convo)
+            // This implies a window around the gross selection.
+            
+            // Let's define the window: +/- 2 indices from current? 
+            // Or +/- 4 indices?
+            // Let's use [-5, +5] range relative to the *Anchor* defined by the Gross slider.
+            // This means Fine Slider Value 0 = Anchor.
+            
+            // Re-calculate anchor
+            const findClosestStraight = (idx) => {
+                let minDist = Infinity;
+                let closest = idx;
+                for(let i=0; i<LFO.SYNC_RATES.length; i++) {
+                    if (LFO.SYNC_RATES[i].type === 'straight') {
+                        const dist = Math.abs(i - idx);
+                        if (dist < minDist) { minDist = dist; closest = i; }
+                    }
+                }
+                return closest;
+            };
+            const currentAnchor = findClosestStraight(lfo.syncRateIndex);
+            
+            // Calculate current offset
+            const currentOffset = lfo.syncRateIndex - currentAnchor;
+            
+            fine.min = -5;
+            fine.max = 5;
             fine.step = 1;
-            fine.value = lfo.syncRateIndex;
+            fine.value = currentOffset;
             
             fine.oninput = (e) => {
-                lfo.syncRateIndex = parseInt(e.target.value);
+                const offset = parseInt(e.target.value);
+                // New index = Anchor + Offset
+                let newIndex = currentAnchor + offset;
+                // Boundary check
+                if (newIndex < 0) newIndex = 0;
+                if (newIndex >= LFO.SYNC_RATES.length) newIndex = LFO.SYNC_RATES.length - 1;
+                
+                lfo.syncRateIndex = newIndex;
             };
             fine.onchange = () => this.render();
         } else {
-            // Hz Fine (Decimal Part)
+            // Hz Fine
             const decPart = lfo.rate % 1;
             fine.min = 0.0; fine.max = 0.999; fine.step = 0.001;
             fine.value = decPart;
             
             fine.oninput = (e) => {
                 const newDec = parseFloat(e.target.value);
-                // Preserve integer part from lfo.rate
                 const currentInt = Math.floor(lfo.rate);
                 lfo.rate = currentInt + newDec;
             };
