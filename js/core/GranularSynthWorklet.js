@@ -298,8 +298,12 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const note = this.activeNotes[i];
             if (now > note.startTime + note.duration) { this.activeNotes.splice(i, 1); continue; }
             if (now >= note.startTime) {
-                let interval = 1 / Math.max(1, note.params.density || 20);
-                if (note.params.overlap > 0) interval = (note.params.grainSize||0.1) / Math.max(0.1, note.params.overlap);
+                // FIX: Use density as the primary interval source
+                let interval = 1 / Math.max(0.1, note.params.density || 20);
+                
+                // REMOVED OVERLAP OVERRIDE
+                // if (note.params.overlap > 0) interval = (note.params.grainSize||0.1) / Math.max(0.1, note.params.overlap);
+                
                 let spawnLimit = 3;
                 while (note.nextGrainTime < now + (frameCount / sampleRate) && spawnLimit > 0) {
                     if (note.nextGrainTime >= now) {
