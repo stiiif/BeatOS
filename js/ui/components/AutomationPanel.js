@@ -1,6 +1,6 @@
 // js/ui/components/AutomationPanel.js
 import { NUM_LFOS, MODULATION_TARGETS } from '../../utils/constants.js';
-import { LFO } from '../../modules/LFO.js'; // Import LFO to access constants
+import { LFO } from '../../modules/LFO.js'; 
 
 export class AutomationPanel {
     constructor() {
@@ -76,9 +76,8 @@ export class AutomationPanel {
 
         track.lfos.forEach((lfo, i) => {
             if (i >= NUM_LFOS) return;
-            const cell = document.createElement('div');
-            // Use our predefined color palette, fallback if >3 LFOs
             const colorClass = this.lfoColors[i % 3] || 'c-amber';
+            const cell = document.createElement('div');
             cell.className = `grid-cell ${colorClass}`;
             
             const btn = document.createElement('div');
@@ -133,15 +132,36 @@ export class AutomationPanel {
             grid.appendChild(cell);
         });
 
-        // 3. RATE ROW - Use LFO.PARAM_DEFS
-        const rateDef = LFO.PARAM_DEFS.rate;
-        this.createSliderRow(grid, 'RATE', track.lfos, (lfo) => lfo.rate, (lfo, val) => lfo.rate = val, rateDef.min, rateDef.max, rateDef.step);
+        // 3. SYNC ROW (New)
+        const lblSync = document.createElement('div');
+        lblSync.className = 'grid-cell label-cell border-t border-neutral-800';
+        lblSync.innerText = 'SYNC';
+        grid.appendChild(lblSync);
+        
+        track.lfos.forEach((lfo, i) => {
+            if (i >= NUM_LFOS) return;
+            const colorClass = this.lfoColors[i % 3] || 'c-amber';
+            this.createSyncCell(grid, lfo, colorClass);
+        });
 
-        // 4. AMOUNT ROW - Use LFO.PARAM_DEFS
+        // 4. RATE ROW (Dual Sliders)
+        const lblRate = document.createElement('div');
+        lblRate.className = 'grid-cell label-cell';
+        lblRate.style.height = '40px'; 
+        lblRate.innerText = 'RATE';
+        grid.appendChild(lblRate);
+        
+        track.lfos.forEach((lfo, i) => {
+            if (i >= NUM_LFOS) return;
+            const colorClass = this.lfoColors[i % 3] || 'c-amber';
+            this.createRateCell(grid, lfo, colorClass);
+        });
+
+        // 5. AMOUNT ROW
         const amtDef = LFO.PARAM_DEFS.amount;
-        this.createSliderRow(grid, 'AMOUNT', track.lfos, (lfo) => lfo.amount, (lfo, val) => lfo.amount = val, amtDef.min, amtDef.max, amtDef.step);
+        this.createSingleSliderRow(grid, 'AMOUNT', track.lfos, (lfo) => lfo.amount, (lfo, val) => lfo.amount = val, amtDef.min, amtDef.max, amtDef.step);
 
-        // 5. CLEAR ROW
+        // 6. CLEAR ROW
         const lblClear = document.createElement('div');
         lblClear.className = 'grid-cell label-cell bg-[#222] text-[7px] h-6';
         lblClear.innerText = 'CLEAR';
@@ -159,7 +179,7 @@ export class AutomationPanel {
             grid.appendChild(cell);
         });
 
-        // 6. DESTINATIONS
+        // 7. DESTINATIONS
         MODULATION_TARGETS.forEach(target => {
             const lbl = document.createElement('div');
             lbl.className = 'grid-cell label-cell border-t border-neutral-800';
@@ -172,7 +192,6 @@ export class AutomationPanel {
                 const cell = document.createElement('div');
                 cell.className = `grid-cell border-t border-neutral-800 ${colorClass}`;
                 
-                // Use array check for multiple targets
                 const isActive = lfo.targets.includes(target.id);
                 
                 const node = document.createElement('div');
@@ -196,7 +215,132 @@ export class AutomationPanel {
         contentWrapper.appendChild(monolith);
     }
 
-    createSliderRow(grid, label, lfos, getter, setter, min, max, step) {
+    createSyncCell(grid, lfo, colorClass) {
+        const cell = document.createElement('div');
+        cell.className = `grid-cell p-0 ${colorClass}`;
+        
+        const content = document.createElement('div');
+        content.className = 'sync-cell-content';
+        
+        // 1. Sync Button
+        const btn = document.createElement('div');
+        btn.className = `sync-btn ${lfo.sync ? 'active' : ''}`;
+        btn.innerText = 'SYNC';
+        btn.onclick = () => {
+            lfo.sync = !lfo.sync;
+            this.render();
+        };
+        
+        // 2. Gross Value Display
+        const grossVal = document.createElement('div');
+        grossVal.className = 'sync-val';
+        if (lfo.sync) {
+            grossVal.innerText = LFO.SYNC_RATES[lfo.syncRateIndex].label;
+        } else {
+            grossVal.innerText = lfo.rate.toFixed(1) + 'Hz';
+        }
+        
+        // 3. Fine Value Display
+        const fineVal = document.createElement('div');
+        fineVal.className = 'sync-val';
+        fineVal.style.fontSize = "6px";
+        if (lfo.sync) {
+            const type = LFO.SYNC_RATES[lfo.syncRateIndex].type;
+            if (type === 'triplet') { fineVal.innerText = '+T'; fineVal.style.color = '#60a5fa'; }
+            else if (type === 'dotted') { fineVal.innerText = '+D'; fineVal.style.color = '#f472b6'; }
+            else if (type === 'quintuplet') { fineVal.innerText = '+Q'; fineVal.style.color = '#a78bfa'; }
+            else if (type === 'septuplet') { fineVal.innerText = '+S'; fineVal.style.color = '#fbbf24'; }
+            else { fineVal.innerText = '•'; fineVal.style.color = '#444'; }
+        } else {
+            fineVal.innerText = 'FINE';
+        }
+
+        content.appendChild(btn);
+        content.appendChild(grossVal);
+        content.appendChild(fineVal);
+        cell.appendChild(content);
+        grid.appendChild(cell);
+    }
+
+    createRateCell(grid, lfo, colorClass) {
+        const cell = document.createElement('div');
+        cell.className = `grid-cell ${colorClass}`;
+        
+        const stack = document.createElement('div');
+        stack.className = 'rate-cell-stack';
+        
+        // --- 1. GROSS SLIDER ---
+        const gross = document.createElement('input');
+        gross.type = 'range';
+        gross.className = 'micro-slider';
+        
+        if (lfo.sync) {
+            gross.min = 0; 
+            gross.max = LFO.SYNC_RATES.length - 1; 
+            gross.step = 1;
+            gross.value = lfo.syncRateIndex;
+            
+            gross.oninput = (e) => {
+                let targetIdx = parseInt(e.target.value);
+                // Snap to nearest 'straight' type
+                let found = -1;
+                let range = 6; 
+                if (LFO.SYNC_RATES[targetIdx].type === 'straight') found = targetIdx;
+                else {
+                    for(let i=1; i<=range; i++) {
+                        if(LFO.SYNC_RATES[targetIdx-i] && LFO.SYNC_RATES[targetIdx-i].type === 'straight') { found = targetIdx-i; break; }
+                        if(LFO.SYNC_RATES[targetIdx+i] && LFO.SYNC_RATES[targetIdx+i].type === 'straight') { found = targetIdx+i; break; }
+                    }
+                }
+                if(found !== -1) lfo.syncRateIndex = found;
+                else lfo.syncRateIndex = targetIdx;
+            };
+            gross.onchange = () => this.render();
+        } else {
+            // Hz Gross
+            gross.min = 0.1; gross.max = 20; gross.step = 0.1;
+            gross.value = lfo.rate;
+            gross.oninput = (e) => {
+                lfo.rate = parseFloat(e.target.value);
+            };
+            gross.onchange = () => this.render();
+        }
+
+        // --- 2. FINE SLIDER ---
+        const fine = document.createElement('input');
+        fine.type = 'range';
+        fine.className = 'micro-slider';
+        
+        if (lfo.sync) {
+            fine.min = 0; 
+            fine.max = LFO.SYNC_RATES.length - 1;
+            fine.step = 1;
+            fine.value = lfo.syncRateIndex;
+            
+            fine.oninput = (e) => {
+                lfo.syncRateIndex = parseInt(e.target.value);
+            };
+            fine.onchange = () => this.render();
+        } else {
+            // Hz Fine
+            fine.min = lfo.rate - 0.5;
+            fine.max = lfo.rate + 0.5;
+            fine.step = 0.001;
+            fine.value = lfo.rate;
+            
+            fine.oninput = (e) => {
+                lfo.rate = parseFloat(e.target.value);
+            };
+            fine.onchange = () => this.render();
+        }
+
+        stack.appendChild(gross);
+        stack.appendChild(fine);
+        cell.appendChild(stack);
+        grid.appendChild(cell);
+    }
+
+    createSingleSliderRow(grid, label, lfos, getter, setter, min, max, step) {
         const lbl = document.createElement('div');
         lbl.className = 'grid-cell label-cell';
         lbl.innerText = label;
@@ -213,7 +357,7 @@ export class AutomationPanel {
             input.className = 'micro-slider';
             input.min = min; input.max = max; input.step = step;
             input.value = getter(lfo);
-            input.title = getter(lfo).toFixed(step < 0.01 ? 3 : 2); // Add tooltip with precise value
+            input.title = getter(lfo).toFixed(step < 0.01 ? 3 : 2);
             
             input.oninput = (e) => {
                 setter(lfo, parseFloat(e.target.value));
