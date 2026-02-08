@@ -1,4 +1,6 @@
 // js/ui/components/EffectControls.js
+import { LFO } from '../../modules/LFO.js'; // Import LFO definitions
+
 export class EffectControls {
     constructor(effectsManager) {
         this.manager = effectsManager;
@@ -152,11 +154,13 @@ export class EffectControls {
             grid.appendChild(cell);
         });
 
-        // -- ROW: RATE --
-        this.createSliderRow(grid, 'RATE', state.lfos, config.lfoColors, (lfo) => lfo.rate, (i, val) => this.manager.setLfoParam(fxId, i, 'rate', val), 0.1, 20, 0.1);
+        // -- ROW: RATE -- (Use LFO constants)
+        const rateDef = LFO.PARAM_DEFS.rate;
+        this.createSliderRow(grid, 'RATE', state.lfos, config.lfoColors, (lfo) => lfo.rate, (i, val) => this.manager.setLfoParam(fxId, i, 'rate', val), rateDef.min, rateDef.max, rateDef.step);
 
-        // -- ROW: AMOUNT --
-        this.createSliderRow(grid, 'AMOUNT', state.lfos, config.lfoColors, (lfo) => lfo.amount, (i, val) => this.manager.setLfoParam(fxId, i, 'amount', val), 0, 1, 0.01);
+        // -- ROW: AMOUNT -- (Use LFO constants)
+        const amtDef = LFO.PARAM_DEFS.amount;
+        this.createSliderRow(grid, 'AMOUNT', state.lfos, config.lfoColors, (lfo) => lfo.amount, (i, val) => this.manager.setLfoParam(fxId, i, 'amount', val), amtDef.min, amtDef.max, amtDef.step);
 
         // -- ROW: CLEAR --
         const lblClear = document.createElement('div');
@@ -205,8 +209,12 @@ export class EffectControls {
             input.className = 'micro-slider';
             input.min = min; input.max = max; input.step = step;
             input.value = getter(lfo);
+            input.title = getter(lfo).toFixed(step < 0.01 ? 3 : 2); // Tooltip
             
-            input.oninput = (e) => setter(i, parseFloat(e.target.value));
+            input.oninput = (e) => {
+                setter(i, parseFloat(e.target.value));
+                input.title = parseFloat(e.target.value).toFixed(step < 0.01 ? 3 : 2);
+            }
             // Trigger re-render on change to update Amount switch state if needed
             input.onchange = () => this.render();
 

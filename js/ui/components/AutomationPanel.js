@@ -1,5 +1,6 @@
 // js/ui/components/AutomationPanel.js
 import { NUM_LFOS, MODULATION_TARGETS } from '../../utils/constants.js';
+import { LFO } from '../../modules/LFO.js'; // Import LFO to access constants
 
 export class AutomationPanel {
     constructor() {
@@ -132,11 +133,13 @@ export class AutomationPanel {
             grid.appendChild(cell);
         });
 
-        // 3. RATE ROW
-        this.createSliderRow(grid, 'RATE', track.lfos, (lfo) => lfo.rate, (lfo, val) => lfo.rate = val, 0.1, 20, 0.1);
+        // 3. RATE ROW - Use LFO.PARAM_DEFS
+        const rateDef = LFO.PARAM_DEFS.rate;
+        this.createSliderRow(grid, 'RATE', track.lfos, (lfo) => lfo.rate, (lfo, val) => lfo.rate = val, rateDef.min, rateDef.max, rateDef.step);
 
-        // 4. AMOUNT ROW
-        this.createSliderRow(grid, 'AMOUNT', track.lfos, (lfo) => lfo.amount, (lfo, val) => lfo.amount = val, 0, 1, 0.01);
+        // 4. AMOUNT ROW - Use LFO.PARAM_DEFS
+        const amtDef = LFO.PARAM_DEFS.amount;
+        this.createSliderRow(grid, 'AMOUNT', track.lfos, (lfo) => lfo.amount, (lfo, val) => lfo.amount = val, amtDef.min, amtDef.max, amtDef.step);
 
         // 5. CLEAR ROW
         const lblClear = document.createElement('div');
@@ -210,8 +213,12 @@ export class AutomationPanel {
             input.className = 'micro-slider';
             input.min = min; input.max = max; input.step = step;
             input.value = getter(lfo);
+            input.title = getter(lfo).toFixed(step < 0.01 ? 3 : 2); // Add tooltip with precise value
             
-            input.oninput = (e) => setter(lfo, parseFloat(e.target.value));
+            input.oninput = (e) => {
+                setter(lfo, parseFloat(e.target.value));
+                input.title = parseFloat(e.target.value).toFixed(step < 0.01 ? 3 : 2);
+            };
             input.onchange = () => this.render();
 
             cell.appendChild(input);
