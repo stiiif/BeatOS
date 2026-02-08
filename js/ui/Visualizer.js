@@ -373,8 +373,18 @@ export class Visualizer {
 
         const p = t.params;
         
+        // --- HANDLE VISUALIZER RESET LOGIC ---
+        let scanTime = time;
+        if (t.resetOnTrig) {
+            // When Reset on Trig is active, the grain start position is static (Anchor)
+            // The motion happens *during* the grain playback, which we can't easily visualize 
+            // as a single line without knowing the exact trigger time. 
+            // Showing the static Anchor is the most honest representation of the "Start Point".
+            scanTime = 0; 
+        }
+
         // --- USE SHARED LOGIC ---
-        const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time);
+        const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time, scanTime);
         
         const mapToView = (pos) => pos * w;
         

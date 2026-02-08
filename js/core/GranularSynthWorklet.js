@@ -58,12 +58,17 @@ export class GranularSynthWorklet {
         return this.initPromise;
     }
 
+    /**
+     * Ensures the audio data is sent to the DSP thread.
+     * Uses a fallback reference check to catch manual "SMP" button loads.
+     */
     async ensureBufferLoaded(track) {
         if (!this.isInitialized) await this.init();
         const trackId = track.id;
         
         if (!track.buffer) return;
 
+        // Check against our local version tracker
         const lastKnownBuffer = this.bufferVersionMap.get(trackId);
         if (lastKnownBuffer === track.buffer) {
             return; 
@@ -100,6 +105,7 @@ export class GranularSynthWorklet {
         track.lfos.forEach(lfo => {
             if (lfo.amount === 0) return;
             const v = lfo.getValue(now);
+            
             if (lfo.targets && lfo.targets.length > 0) {
                 lfo.targets.forEach(target => {
                     if (target === 'filter') mod.filter += v * 5000; 
@@ -173,9 +179,15 @@ export class GranularSynthWorklet {
             default: gainMult = 0.75;
         }
 
+        // --- HANDLE SCAN RESET LOGIC ---
+        let scanTime = time;
+        if (track.resetOnTrig) {
+            scanTime = 0; // Reset scan offset to 0 for this note
+        }
+        
         // Calculate Window Bounds and Initial Position using Shared Logic
         // We pass 'time' to get the current scan offset for the initial grain
-        const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time);
+        const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time, scanTime);
 
         this.workletNode.port.postMessage({
             type: 'noteOn',
@@ -245,13 +257,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         this.activeNotes = [];
         this.trackBuffers = new Map();
         
-        // trackPlayheads now tracks LOCAL offset relative to the trigger time, 
-        // effectively resetting per note if we wanted, or we could keep global.
-        // But to respect the window passed in 'noteOn', we'll calculate inside spawn.
-        // Actually, we need to track accumulation for continuity.
-        // Let's store the accumulated time-offset per track.
-        this.trackScanOffsets = new Float32Array(32); 
-        
         this.lastReportedCount = 0;
         this._rngState = 0xCAFEBABE;
 
@@ -282,25 +287,13 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     }
 
     handleNoteOn(data) {
-        const trackId = Number(data.trackId);
-        const params = data.params;
-        
-        if (params.resetOnTrig) {
-            this.trackScanOffsets[trackId] = 0;
-        } else if (params.resetOnBar && data.stepIndex === 0) {
-            this.trackScanOffsets[trackId] = 0;
-        }
-
-        // We receive the precise start position (already clamped) from Main Thread
-        // We will add subsequent scan offsets to this base.
         this.activeNotes.push({
-            trackId: trackId, 
+            trackId: Number(data.trackId), 
             startTime: data.time, 
             duration: data.duration,
-            params: params, 
+            params: data.params, 
             nextGrainTime: data.time,
-            // Capture the base position calculated by GranularLogic
-            basePosition: params.position 
+            basePosition: data.params.position 
         });
     }
 
@@ -339,9 +332,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             this.lastReportedCount = this.activeVoiceIndices.length;
             this.port.postMessage({ type: 'grainCount', count: this.lastReportedCount });
         }
-
-        // Advance scan offsets
-        this.updateScanOffsets(frameCount);
 
         if (this.activeVoiceIndices.length === 0) return true;
 
@@ -422,28 +412,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         return true;
     }
 
-    updateScanOffsets(frameCount) {
-        // Calculate dt once
-        const dt = frameCount / sampleRate;
-        
-        // Iterate active notes to find which tracks need advancing
-        // Optimization: Use a Set to avoid double-updating for overlapping notes on same track
-        // But simpler: just iterate tracks 0-31 if we have active notes? 
-        // We need 'scanSpeed' from parameters.
-        // Let's iterate active notes and update their track's offset.
-        // Note: If multiple notes on one track have different scanSpeeds (e.g. LFO changed), 
-        // it gets messy. We'll use the latest note's scanSpeed.
-        
-        const updatedTracks = new Set();
-        for (let i = this.activeNotes.length - 1; i >= 0; i--) {
-            const note = this.activeNotes[i];
-            if (!updatedTracks.has(note.trackId)) {
-                this.trackScanOffsets[note.trackId] += (note.params.scanSpeed * dt);
-                updatedTracks.add(note.trackId);
-            }
-        }
-    }
-
     spawnGrain(note) {
         const buf = this.trackBuffers.get(Number(note.trackId));
         if(!buf || buf.length < 2) return;
@@ -463,32 +431,14 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         let pos = note.basePosition;
         
         // 2. Add accumulated scan offset
-        // Note: trackScanOffsets accumulates continuously.
-        // We assume 'note.basePosition' already includes the scan offset *at trigger time*.
-        // So we should add only the delta? 
-        // GranularLogic sent 'absPos' which INCLUDED 'scanSpeed * time'.
-        // If 'trackScanOffsets' is accumulating 'scanSpeed * dt', it is effectively tracking
-        // 'scanSpeed * (now - start)'.
-        // BUT, we set 'note.basePosition' to the GLOBAL absPos at start.
-        // We only want to add the movement SINCE the note started.
-        // 
-        // Simplified approach for robustness: 
-        // We rely on the fact that GranularLogic provided a valid start point.
-        // We simply need to move it forward.
-        // But 'trackScanOffsets' is global per track. 
-        //
-        // Let's use a simpler accumulation for the note's movement:
-        // We'll trust that 'scanSpeed' is constant per note event.
-        // The movement is just (now - startTime) * scanSpeed.
-        
         const timeSinceStart = currentTime - note.startTime;
         const movement = note.params.scanSpeed * timeSinceStart;
         
         pos += movement;
         
         // 3. Apply Window Wrapping (Matches GranularLogic.js)
-        const wStart = note.params.windowStart; // Passed from Main Thread
-        const wEnd = note.params.windowEnd;     // Passed from Main Thread
+        const wStart = note.params.windowStart;
+        const wEnd = note.params.windowEnd;
         const wSize = wEnd - wStart;
         
         if (wSize > 0.0001) {
@@ -500,10 +450,9 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             pos = wStart;
         }
         
-        // 4. Orbit / Spray (Local jitter)
+        // 4. Orbit / Spray
         if (note.params.orbit > 0) {
             pos += (this.random() - 0.5) * note.params.orbit;
-            // Wrap orbit locally within window if possible, or clamp
             if (pos < wStart) pos += wSize;
             if (pos > wEnd) pos -= wSize;
         } else {
