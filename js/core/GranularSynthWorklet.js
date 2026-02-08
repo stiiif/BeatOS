@@ -178,6 +178,25 @@ export class GranularSynthWorklet {
             default: gainMult = 0.75;
         }
 
+        // --- EFFECTIVE WINDOW CLAMPING LOGIC (Matching Visualizer) ---
+        // 1. Calculate effective start/end with modulation
+        let actStart = Math.max(0, Math.min(1, (p.sampleStart || 0) + mod.sampleStart));
+        let actEnd = Math.max(0, Math.min(1, (p.sampleEnd !== undefined ? p.sampleEnd : 1) + mod.sampleEnd));
+        
+        // 2. Ensure Start <= End
+        if (actStart > actEnd) { const temp = actStart; actStart = actEnd; actEnd = temp; }
+
+        // 3. Calculate effective absolute position
+        let absPos = p.position + mod.position;
+
+        // 4. Clamp Position to effective Window
+        // This ensures LFOs moving start/end "push" the position in audio too
+        if (absPos < actStart) absPos = actStart;
+        if (absPos > actEnd) absPos = actEnd;
+
+        // 5. Final safety bounds
+        absPos = Math.max(0, Math.min(1, absPos));
+
         this.workletNode.port.postMessage({
             type: 'noteOn',
             data: {
@@ -186,7 +205,7 @@ export class GranularSynthWorklet {
                 duration: (p.relGrain || 0.4) + mod.relGrain,
                 stepIndex: stepIndex,
                 params: {
-                    position: p.position + mod.position, 
+                    position: absPos, // Send clamped absolute position
                     scanSpeed: p.scanSpeed + mod.scanSpeed,
                     density: Math.max(1, (p.density || 20) + mod.density),
                     grainSize: Math.max(0.005, (p.grainSize || 0.1) + mod.grainSize),
