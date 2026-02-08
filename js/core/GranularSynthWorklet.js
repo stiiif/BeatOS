@@ -1,4 +1,4 @@
-// Granular SynthWorklet - Fixed DISTORT BUG and Global FX Parameter Mapping
+// Granular SynthWorklet - Fixed Silence on Manual Sample Load
 import { MAX_TRACKS } from '../utils/constants.js';
 
 export class GranularSynthWorklet {
@@ -9,11 +9,11 @@ export class GranularSynthWorklet {
         this.initPromise = null;
         this.activeGrains = 0;
         
+        // Use a WeakMap to track which buffer is currently loaded in the worklet for each track
         this.trackBufferCache = new WeakMap();
         this.pendingLoads = new Map();
     }
 
-    // ... (rest of init and ensureBufferLoaded is unchanged) ...
     async init() {
         if (this.isInitialized) return;
         if (this.initPromise) return this.initPromise;
@@ -39,7 +39,6 @@ export class GranularSynthWorklet {
                     processorOptions: {}
                 });
                 
-                // Set up message listener to receive grain count updates from the processor
                 this.workletNode.port.onmessage = (event) => {
                     if (event.data.type === 'grainCount') {
                         this.activeGrains = event.data.count;
@@ -48,7 +47,7 @@ export class GranularSynthWorklet {
 
                 this.workletNode.connectedTracks = new Set();
                 this.isInitialized = true;
-                console.log('[GranularSynthWorklet] ✅ High-Density DSP Fix Applied');
+                console.log('[GranularSynthWorklet] ✅ Engine Ready');
             } catch (error) {
                 console.error('[GranularSynthWorklet] Initialization failed:', error);
                 throw error;
@@ -58,26 +57,48 @@ export class GranularSynthWorklet {
         return this.initPromise;
     }
 
+    /**
+     * CRITICAL FIX: Ensures the audio data is sent to the DSP thread.
+     * If the buffer in the Track object doesn't match our cache, we re-send it.
+     */
     async ensureBufferLoaded(track) {
         if (!this.isInitialized) await this.init();
         const trackId = track.id;
-        const cachedBuffer = this.trackBufferCache.get(track);
-        if (cachedBuffer && cachedBuffer === track.buffer) return;
+        
+        // If track has no buffer, there's nothing to load
         if (!track.buffer) return;
+
+        // Check if this EXACT buffer instance is already known to the worklet
+        const cachedBuffer = this.trackBufferCache.get(track);
+        if (cachedBuffer === track.buffer) {
+            return; // Already synchronized
+        }
+
+        // If a load for this track is already in progress, wait for it
         if (this.pendingLoads.has(trackId)) return this.pendingLoads.get(trackId);
         
         const loadPromise = new Promise((resolve) => {
             this.pendingLoads.set(trackId, resolve);
+            
+            // Get the raw Float32 data
             const channelData = track.buffer.getChannelData(0);
+            // We must copy the data because Transferables empty the original array on the main thread
             const bufferCopy = new Float32Array(channelData);
+            
+            // Send to Worklet Processor
             this.workletNode.port.postMessage({
                 type: 'setBuffer',
                 data: { trackId, buffer: bufferCopy }
-            }, [bufferCopy.buffer]);
+            }, [bufferCopy.buffer]); // Transfer ownership for zero-copy speed
+            
+            console.log(`[GranularSynthWorklet] Buffer synchronized for Track ${trackId}`);
+            
             resolve();
             this.pendingLoads.delete(trackId);
         });
+
         await loadPromise;
+        // Update cache with the new buffer reference
         this.trackBufferCache.set(track, track.buffer);
     }
 
@@ -92,7 +113,6 @@ export class GranularSynthWorklet {
             if (lfo.amount === 0) return;
             const v = lfo.getValue(now);
             
-            // Support for Multiple Targets
             if (lfo.targets && lfo.targets.length > 0) {
                 lfo.targets.forEach(target => {
                     if (target === 'filter') mod.filter += v * 5000; 
@@ -101,7 +121,6 @@ export class GranularSynthWorklet {
                     if (target === 'pan') mod.pan += v;
                 });
             } else if (lfo.target) {
-                // Legacy support
                 if (lfo.target === 'filter') mod.filter += v * 5000; 
                 if (lfo.target === 'hpFilter') mod.hpFilter += v * 2000; 
                 if (lfo.target === 'volume') mod.volume += v * 0.5;
@@ -137,6 +156,7 @@ export class GranularSynthWorklet {
         if (!this.isInitialized) await this.init();
         if (!this.audioEngine.getContext() || !track.buffer || !track.bus) return;
 
+        // FORCE BUFFER CHECK: Ensure the worklet has the current track.buffer
         await this.ensureBufferLoaded(track);
 
         if (!this.workletNode.connectedTracks.has(track.id)) {
@@ -149,14 +169,11 @@ export class GranularSynthWorklet {
         let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0, relGrain:0, edgeCrunch: 0, orbit: 0 };
         track.lfos.forEach(lfo => {
             const v = lfo.getValue(time);
-            
-            // Support multiple targets
             if (lfo.targets && lfo.targets.length > 0) {
                 lfo.targets.forEach(target => {
                     if(mod[target] !== undefined) mod[target] += v;
                 });
             } else if (lfo.target && mod[lfo.target] !== undefined) {
-                // Legacy support
                 mod[lfo.target] += v;
             }
         });
@@ -178,8 +195,8 @@ export class GranularSynthWorklet {
                 duration: (p.relGrain || 0.4) + mod.relGrain,
                 stepIndex: stepIndex,
                 params: {
-                    position: p.position + mod.position, // Applied position modulation here
-                    scanSpeed: p.scanSpeed + mod.scanSpeed, // Applied scanSpeed modulation
+                    position: p.position + mod.position, 
+                    scanSpeed: p.scanSpeed + mod.scanSpeed,
                     density: Math.max(1, (p.density || 20) + mod.density),
                     grainSize: Math.max(0.005, (p.grainSize || 0.1) + mod.grainSize),
                     overlap: Math.max(0, (p.overlap || 0) + mod.overlap),
@@ -222,7 +239,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
         this.MAX_VOICES = 64;
-        this.safetyLimit = 400; // Default limit
+        this.safetyLimit = 400; 
         this.voices = Array(this.MAX_VOICES).fill(null).map((_, id) => ({
             id, active: false, buffer: null, bufferLength: 0,
             position: 0, phase: 0, grainLength: 0, pitch: 1.0, velocity: 1.0,
@@ -235,7 +252,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         this.trackPlayheads = new Float32Array(32); 
         this.lastReportedCount = 0;
 
-        // XorShift State for Orbit Jitter
         this._rngState = 0xCAFEBABE;
 
         this.LUT_SIZE = 4096;
@@ -267,9 +283,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const trackId = data.trackId;
         const params = data.params;
         
-        // FIX: Playhead accumulator logic
-        // trackPlayheads now represents the SCAN OFFSET, not absolute position.
-        // This allows 'position' param (Slider) to work immediately.
         if (params.resetOnTrig) {
             this.trackPlayheads[trackId] = 0;
         } else if (params.resetOnBar && data.stepIndex === 0) {
@@ -298,16 +311,11 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const note = this.activeNotes[i];
             if (now > note.startTime + note.duration) { this.activeNotes.splice(i, 1); continue; }
             if (now >= note.startTime) {
-                // FIX: Use density as the primary interval source
                 let interval = 1 / Math.max(0.1, note.params.density || 20);
-                
-                // REMOVED OVERLAP OVERRIDE
-                // if (note.params.overlap > 0) interval = (note.params.grainSize||0.1) / Math.max(0.1, note.params.overlap);
                 
                 let spawnLimit = 3;
                 while (note.nextGrainTime < now + (frameCount / sampleRate) && spawnLimit > 0) {
                     if (note.nextGrainTime >= now) {
-                        // Check safety limit before spawning
                         if (this.activeVoiceIndices.length < this.MAX_VOICES) {
                             this.spawnGrain(note);
                         }
@@ -318,7 +326,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             }
         }
 
-        // Send active grain count back to main thread periodically
         if (this.activeVoiceIndices.length !== this.lastReportedCount) {
             this.lastReportedCount = this.activeVoiceIndices.length;
             this.port.postMessage({ type: 'grainCount', count: this.lastReportedCount });
@@ -355,43 +362,28 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 let idx, frac;
 
                 if (voice.cleanMode) {
-                    // --- CLEAN MODE FIX: Safe float wrapping ---
                     while (rPos >= bufLen) rPos -= bufLen;
                     while (rPos < 0) rPos += bufLen;
                     idx = rPos | 0;
                     frac = rPos - idx;
                 } else {
-                    // --- DIRTY MODE + EDGE CRUNCH ---
                     idx = rPos | 0;
-                    
-                    // Wrap index
                     if (idx >= bufLen) idx %= bufLen;
                     if (idx < 0) idx = (idx % bufLen + bufLen) % bufLen;
-                    
-                    // Raw buggy fraction
-                    let rawFrac = rPos - idx;
-                    
                     let safeFrac = rPos - Math.floor(rPos); 
                     
                     if (voice.edgeCrunch > 0) {
+                        let rawFrac = rPos - idx;
                         let maxOverflow = 1.0 + (voice.edgeCrunch * voice.edgeCrunch * voice.edgeCrunch * bufLen);
-                        
-                        if (rawFrac < 0) {
-                             frac = Math.max(rawFrac, -maxOverflow);
-                        } else {
-                             frac = Math.min(rawFrac, maxOverflow);
-                        }
-                        
+                        frac = rawFrac < 0 ? Math.max(rawFrac, -maxOverflow) : Math.min(rawFrac, maxOverflow);
                         if (voice.edgeCrunch < 0.001) frac = safeFrac;
-                        
                     } else {
                         frac = safeFrac; 
                     }
                 }
                 
                 const s1 = buf[idx] || 0;
-                let idx2 = idx + 1;
-                if (idx2 >= bufLen) idx2 = 0;
+                let idx2 = (idx + 1) % bufLen;
                 const s2 = buf[idx2] || 0;
                 
                 const sample = s1 + frac * (s2 - s1);
@@ -431,10 +423,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                     break;
                 }
             }
-            // FIX: Playhead is now an offset accumulator
             this.trackPlayheads[tId] += (targetSpeed * (frameCount / sampleRate));
-            
-            // Keep offset within reason (looping is handled in spawnGrain)
             if (this.trackPlayheads[tId] > 1.0) this.trackPlayheads[tId] -= 1.0;
             if (this.trackPlayheads[tId] < -1.0) this.trackPlayheads[tId] += 1.0;
         }
@@ -447,41 +436,29 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         for(let i=0; i<this.MAX_VOICES; i++) if(!this.voices[i].active) { v = this.voices[i]; this.activeVoiceIndices.push(i); break; }
         if(!v) return; 
         
-        // FIX: Combine Base Position (Slider) + Scan Offset (Accumulator)
         let pos = note.params.position + this.trackPlayheads[note.trackId];
-        
-        // Wrap Logic 0..1
         while (pos >= 1.0) pos -= 1.0;
         while (pos < 0.0) pos += 1.0;
         
-        // --- ORBIT (Scan Jitter) Logic ---
         if (note.params.orbit > 0) {
-            // Apply jitter to the read position BEFORE it is assigned to the voice
             const jitter = (this.random() - 0.5) * note.params.orbit;
             pos += jitter;
-            
             if (pos < 0) pos += 1.0;
             if (pos > 1) pos -= 1.0;
         } else {
-            // Original tiny jitter
             pos += (this.random() * 0.0001); 
         }
 
         if(note.params.spray > 0) pos += (this.random()*2-1)*note.params.spray;
         
         v.active = true; v.trackId = note.trackId; v.buffer = buf; v.bufferLength = buf.length;
-        
-        // Final clamp just in case spray pushed it way out
         v.position = Math.max(0, Math.min(1, pos)); 
-        
         v.phase = 0;
         v.grainLength = Math.max(128, Math.floor((note.params.grainSize||0.1) * sampleRate));
         v.invGrainLength = 4095 / v.grainLength;
         v.pitch = note.params.pitch||1; v.velocity = note.params.velocity||1;
         v.releasing = false; v.releaseAmp = 1.0;
         v.cleanMode = note.params.cleanMode;
-        
-        // Pass new parameters to voice
         v.edgeCrunch = note.params.edgeCrunch;
         v.orbit = note.params.orbit;
     }
