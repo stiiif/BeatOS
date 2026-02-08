@@ -9,8 +9,8 @@ export class GranularSynthWorklet {
         this.initPromise = null;
         this.activeGrains = 0;
         
-        // Use a WeakMap to track which buffer is currently loaded in the worklet for each track
-        this.trackBufferCache = new WeakMap();
+        // Track buffer identity to detect changes manually
+        this.bufferVersionMap = new Map(); 
         this.pendingLoads = new Map();
     }
 
@@ -47,7 +47,7 @@ export class GranularSynthWorklet {
 
                 this.workletNode.connectedTracks = new Set();
                 this.isInitialized = true;
-                console.log('[GranularSynthWorklet] ✅ Engine Ready');
+                console.log('[GranularSynthWorklet] ✅ DSP Engine Ready');
             } catch (error) {
                 console.error('[GranularSynthWorklet] Initialization failed:', error);
                 throw error;
@@ -58,49 +58,40 @@ export class GranularSynthWorklet {
     }
 
     /**
-     * CRITICAL FIX: Ensures the audio data is sent to the DSP thread.
-     * If the buffer in the Track object doesn't match our cache, we re-send it.
+     * Ensures the audio data is sent to the DSP thread.
+     * Uses a fallback reference check to catch manual "SMP" button loads.
      */
     async ensureBufferLoaded(track) {
         if (!this.isInitialized) await this.init();
         const trackId = track.id;
         
-        // If track has no buffer, there's nothing to load
         if (!track.buffer) return;
 
-        // Check if this EXACT buffer instance is already known to the worklet
-        const cachedBuffer = this.trackBufferCache.get(track);
-        if (cachedBuffer === track.buffer) {
-            return; // Already synchronized
+        // Check against our local version tracker
+        const lastKnownBuffer = this.bufferVersionMap.get(trackId);
+        if (lastKnownBuffer === track.buffer) {
+            return; 
         }
 
-        // If a load for this track is already in progress, wait for it
         if (this.pendingLoads.has(trackId)) return this.pendingLoads.get(trackId);
         
         const loadPromise = new Promise((resolve) => {
             this.pendingLoads.set(trackId, resolve);
             
-            // Get the raw Float32 data
             const channelData = track.buffer.getChannelData(0);
-            
-            // We must copy the data because Transferables empty the original array on the main thread
             const bufferCopy = new Float32Array(channelData);
             
-            // Send to Worklet Processor
             this.workletNode.port.postMessage({
                 type: 'setBuffer',
                 data: { trackId: Number(trackId), buffer: bufferCopy }
-            }, [bufferCopy.buffer]); // Transfer ownership for zero-copy speed
-            
-            console.log(`[GranularSynthWorklet] Buffer synchronized for Track ${trackId} (${bufferCopy.length} samples)`);
+            }, [bufferCopy.buffer]); 
             
             resolve();
             this.pendingLoads.delete(trackId);
         });
 
         await loadPromise;
-        // Update cache with the new buffer reference
-        this.trackBufferCache.set(track, track.buffer);
+        this.bufferVersionMap.set(trackId, track.buffer);
     }
 
     syncTrackBusParams(track, time = null) {
@@ -157,7 +148,6 @@ export class GranularSynthWorklet {
         if (!this.isInitialized) await this.init();
         if (!this.audioEngine.getContext() || !track.buffer || !track.bus) return;
 
-        // FORCE BUFFER CHECK: Ensure the worklet has the current track.buffer
         await this.ensureBufferLoaded(track);
 
         if (!this.workletNode.connectedTracks.has(track.id)) {
@@ -204,9 +194,9 @@ export class GranularSynthWorklet {
                     pitch: Math.max(0.01, (p.pitch || 1.0) + mod.pitch),
                     velocity: gainMult,
                     spray: Math.max(0, (p.spray || 0) + mod.spray),
-                    resetOnBar: track.resetOnBar,
-                    resetOnTrig: track.resetOnTrig,
-                    cleanMode: track.cleanMode,
+                    resetOnBar: !!track.resetOnBar,
+                    resetOnTrig: !!track.resetOnTrig,
+                    cleanMode: !!track.cleanMode,
                     edgeCrunch: Math.max(0, Math.min(1, (p.edgeCrunch || 0) + mod.edgeCrunch)),
                     orbit: Math.max(0, Math.min(1, (p.orbit || 0) + mod.orbit))
                 }
@@ -303,18 +293,22 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const frameCount = outputs[0][0].length;
         const now = currentTime;
         
+        // Zero all outputs first
         for (let o = 0; o < outputs.length; o++) {
-            if (outputs[o] && outputs[o][0]) outputs[o][0].fill(0);
-            if (outputs[o] && outputs[o][1]) outputs[o][1].fill(0);
+            if (outputs[o]) {
+                for (let c = 0; c < outputs[o].length; c++) {
+                    outputs[o][c].fill(0);
+                }
+            }
         }
 
+        // --- 1. SCHEDULER ---
         for (let i = this.activeNotes.length - 1; i >= 0; i--) {
             const note = this.activeNotes[i];
             if (now > note.startTime + note.duration) { this.activeNotes.splice(i, 1); continue; }
             if (now >= note.startTime) {
                 let interval = 1 / Math.max(0.1, note.params.density || 20);
-                
-                let spawnLimit = 3;
+                let spawnLimit = 5;
                 while (note.nextGrainTime < now + (frameCount / sampleRate) && spawnLimit > 0) {
                     if (note.nextGrainTime >= now) {
                         if (this.activeVoiceIndices.length < this.MAX_VOICES) {
@@ -337,11 +331,17 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             return true;
         }
 
+        // --- 2. DSP LOOP ---
         for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
             const vIdx = this.activeVoiceIndices[i];
             const voice = this.voices[vIdx];
             const trackOut = outputs[voice.trackId];
-            if (!trackOut || !voice.buffer || voice.bufferLength === 0) { this.killVoice(i); continue; }
+            
+            // Critical Safety: Check for missing/empty buffers
+            if (!trackOut || !voice.buffer || voice.bufferLength < 2) { 
+                this.killVoice(i); 
+                continue; 
+            }
             
             const L = trackOut[0], R = trackOut[1];
             const buf = voice.buffer, bufLen = voice.bufferLength;
@@ -359,31 +359,23 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 if (ph >= gLen) { this.killVoice(i); break; }
                 
                 let rPos = start + (ph * pitch);
-                let idx, frac;
-
-                if (voice.cleanMode) {
-                    while (rPos >= bufLen) rPos -= bufLen;
-                    while (rPos < 0) rPos += bufLen;
-                    idx = rPos | 0;
-                    frac = rPos - idx;
-                } else {
-                    idx = rPos | 0;
-                    if (idx >= bufLen) idx %= bufLen;
-                    if (idx < 0) idx = (idx % bufLen + bufLen) % bufLen;
-                    let safeFrac = rPos - Math.floor(rPos); 
-                    
-                    if (voice.edgeCrunch > 0) {
-                        let rawFrac = rPos - idx;
-                        let maxOverflow = 1.0 + (voice.edgeCrunch * voice.edgeCrunch * voice.edgeCrunch * bufLen);
-                        frac = rawFrac < 0 ? Math.max(rawFrac, -maxOverflow) : Math.min(rawFrac, maxOverflow);
-                        if (voice.edgeCrunch < 0.001) frac = safeFrac;
-                    } else {
-                        frac = safeFrac; 
-                    }
-                }
                 
+                // Wrap Logic for reading
+                while (rPos >= bufLen) rPos -= bufLen;
+                while (rPos < 0) rPos += bufLen;
+                
+                let idx = rPos | 0;
+                let frac = rPos - idx;
+                
+                // Dirty Mode / Edge Crunch Logic
+                if (!voice.cleanMode && voice.edgeCrunch > 0) {
+                    let maxOverflow = 1.0 + (voice.edgeCrunch * voice.edgeCrunch * voice.edgeCrunch * bufLen);
+                    if (frac < 0) frac = Math.max(frac, -maxOverflow);
+                    else frac = Math.min(frac, maxOverflow);
+                }
+
                 const s1 = buf[idx] || 0;
-                let idx2 = (idx + 1) % bufLen;
+                const idx2 = (idx + 1) % bufLen;
                 const s2 = buf[idx2] || 0;
                 
                 const sample = s1 + frac * (s2 - s1);
@@ -392,7 +384,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 
                 const val = sample * win * baseAmp * amp * trackScale;
                 
-                // Prevent NaN Poisoning
                 if (!isNaN(val)) {
                     L[j] += val; 
                     if (R) R[j] += val;
@@ -402,16 +393,19 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
         }
 
-        // Soft Clipper (Prevent Output NaN)
+        // --- 3. SOFT CLIPPER ---
         for (let o = 0; o < outputs.length; o++) {
+            if (!outputs[o]) continue;
             const outL = outputs[o][0];
             const outR = outputs[o][1];
             if (!outL) continue;
             for (let j = 0; j < frameCount; j++) {
                 const sL = outL[j];
-                const sR = outR[j] || 0;
                 outputs[o][0][j] = isNaN(sL) ? 0 : sL / (1.0 + Math.abs(sL));
-                if (outR) outputs[o][1][j] = isNaN(sR) ? 0 : sR / (1.0 + Math.abs(sR));
+                if (outR) {
+                    const sR = outR[j];
+                    outputs[o][1][j] = isNaN(sR) ? 0 : sR / (1.0 + Math.abs(sR));
+                }
             }
         }
 
@@ -436,9 +430,16 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
 
     spawnGrain(note) {
         const buf = this.trackBuffers.get(Number(note.trackId));
-        if(!buf || buf.length === 0) return;
+        if(!buf || buf.length < 2) return;
+        
         let v = null;
-        for(let i=0; i<this.MAX_VOICES; i++) if(!this.voices[i].active) { v = this.voices[i]; this.activeVoiceIndices.push(i); break; }
+        for(let i=0; i<this.MAX_VOICES; i++) {
+            if(!this.voices[i].active) { 
+                v = this.voices[i]; 
+                this.activeVoiceIndices.push(i); 
+                break; 
+            }
+        }
         if(!v) return; 
         
         let pos = note.params.position + this.trackPlayheads[note.trackId];
@@ -446,8 +447,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         while (pos < 0.0) pos += 1.0;
         
         if (note.params.orbit > 0) {
-            const jitter = (this.random() - 0.5) * note.params.orbit;
-            pos += jitter;
+            pos += (this.random() - 0.5) * note.params.orbit;
             if (pos < 0) pos += 1.0;
             if (pos > 1) pos -= 1.0;
         } else {
@@ -456,24 +456,36 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
 
         if(note.params.spray > 0) pos += (this.random()*2-1)*note.params.spray;
         
-        v.active = true; v.trackId = note.trackId; v.buffer = buf; v.bufferLength = buf.length;
+        v.active = true; 
+        v.trackId = note.trackId; 
+        v.buffer = buf; 
+        v.bufferLength = buf.length;
         v.position = Math.max(0, Math.min(1, pos)); 
         v.phase = 0;
         v.grainLength = Math.max(128, Math.floor((note.params.grainSize||0.1) * sampleRate));
         v.invGrainLength = (this.LUT_SIZE - 1) / v.grainLength;
-        v.pitch = note.params.pitch||1; v.velocity = note.params.velocity||1;
-        v.releasing = false; v.releaseAmp = 1.0;
-        v.cleanMode = note.params.cleanMode;
-        v.edgeCrunch = note.params.edgeCrunch;
-        v.orbit = note.params.orbit;
+        v.pitch = note.params.pitch||1; 
+        v.velocity = note.params.velocity||1;
+        v.releasing = false; 
+        v.releaseAmp = 1.0;
+        v.cleanMode = !!note.params.cleanMode;
+        v.edgeCrunch = note.params.edgeCrunch || 0;
+        v.orbit = note.params.orbit || 0;
     }
+    
     killVoice(idx) {
         const vIdx = this.activeVoiceIndices[idx];
         this.voices[vIdx].active = false;
         const last = this.activeVoiceIndices.pop();
         if (idx < this.activeVoiceIndices.length) this.activeVoiceIndices[idx] = last;
     }
-    stopAllVoices() { for(let i=0; i<this.activeVoiceIndices.length; i++) this.voices[this.activeVoiceIndices[i]].releasing = true; }
+    
+    stopAllVoices() { 
+        for(let i=0; i<this.activeVoiceIndices.length; i++) {
+            this.voices[this.activeVoiceIndices[i]].releasing = true; 
+        }
+    }
+    
     stopTrack(id) { 
         for(let i=0; i<this.activeVoiceIndices.length; i++) {
             const v = this.voices[this.activeVoiceIndices[i]];
