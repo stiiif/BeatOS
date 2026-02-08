@@ -40,7 +40,7 @@ export class Visualizer {
         
         // Track triggers and bar starts
         this.lastTriggerTimes = new Map();
-        this.lastBarStartTimes = new Map(); // NEW
+        this.lastBarStartTimes = new Map(); 
     }
 
     setTracks(tracks) {
@@ -192,10 +192,35 @@ export class Visualizer {
 
         const data = t.buffer.getChannelData(0);
         
-        // Draw the full buffer data (0 to length)
-        // Window dimming is handled in drawOverlays
-        const startIdx = 0;
-        const windowLength = data.length;
+        // --- ZOOM LOGIC ---
+        // Determine the "active window" based on parameters only (unmodulated)
+        // This makes the zoom stable, so it doesn't jitter with LFOs.
+        // Or should it follow modulation? 
+        // "changing start and end parameters... display it as a zoom in zoom out"
+        // implies the base parameter change drives the zoom.
+        // LFOs should animate the playhead within this zoomed view, OR move the view if we want "following" camera.
+        // Standard UX: View is defined by knobs (Start/End).
+        
+        let viewStart = t.params.sampleStart || 0;
+        let viewEnd = t.params.sampleEnd !== undefined ? t.params.sampleEnd : 1;
+        
+        if (viewStart > viewEnd) {
+            const temp = viewStart; viewStart = viewEnd; viewEnd = temp;
+        }
+        
+        // Safety clamp
+        viewStart = Math.max(0, Math.min(1, viewStart));
+        viewEnd = Math.max(0, Math.min(1, viewEnd));
+        
+        // Ensure minimum view width to avoid division by zero or extreme zoom
+        if (viewEnd - viewStart < 0.001) viewEnd = viewStart + 0.001;
+
+        // Calculate data indices for this window
+        const startIdx = Math.floor(viewStart * data.length);
+        const endIdx = Math.floor(viewEnd * data.length);
+        const windowLength = endIdx - startIdx;
+        
+        // Only draw the data within the window, mapped to full canvas width
         
         switch(this.waveStyle) {
             case 'mirror': this.drawStyleMirror(ctx, data, w, h, startIdx, windowLength); break;
@@ -205,11 +230,12 @@ export class Visualizer {
             default:       this.drawStyleMirror(ctx, data, w, h, startIdx, windowLength);
         }
 
-        this.drawOverlays(ctx, t, w, h, audioCtx.currentTime);
+        this.drawOverlays(ctx, t, w, h, audioCtx.currentTime, viewStart, viewEnd);
     }
 
     drawStyleMirror(ctx, data, w, h, startIdx, windowLength) {
-        const step = Math.max(1, Math.ceil(windowLength / w));
+        // Step size relative to the visible window length, not full buffer
+        const step = Math.max(1, windowLength / w); 
         const amp = h / 2;
         const mid = h / 2;
 
@@ -224,18 +250,21 @@ export class Visualizer {
         for (let i = 0; i < w; i++) {
             let min = 1.0;
             let max = -1.0;
-            const chunkStart = startIdx + (i * step);
+            // Map pixel i to data index
+            const chunkStart = Math.floor(startIdx + (i * step));
             if (chunkStart >= data.length) break;
-            const innerStep = step > 50 ? Math.floor(step / 10) : 1;
-            for (let j = 0; j < step; j += innerStep) {
-                const idx = chunkStart + j;
-                if (idx < data.length) {
-                    const datum = data[idx];
-                    if (datum < min) min = datum;
-                    if (datum > max) max = datum;
-                }
+            
+            // Sub-sampling for performance if step is large
+            const innerStep = Math.max(1, Math.floor(step / 10)); 
+            const chunkEnd = Math.min(data.length, Math.floor(chunkStart + step));
+            
+            for (let j = chunkStart; j < chunkEnd; j += innerStep) {
+                const datum = data[j];
+                if (datum < min) min = datum;
+                if (datum > max) max = datum;
             }
-            if (max < min) { max = 0.01; min = -0.01; }
+            if (max < min) { max = 0.01; min = -0.01; } // Flatline case
+            
             const y1 = mid + (min * amp * 0.9);
             const y2 = mid + (max * amp * 0.9);
             ctx.rect(i, y1, 1, Math.max(1, y2 - y1));
@@ -244,7 +273,7 @@ export class Visualizer {
     }
 
     drawStyleNeon(ctx, data, w, h, startIdx, windowLength) {
-        const step = Math.max(1, Math.ceil(windowLength / w));
+        const step = Math.max(1, windowLength / w);
         const amp = h / 2;
         const mid = h / 2;
 
@@ -257,16 +286,16 @@ export class Visualizer {
 
         for (let i = 0; i < w; i++) {
             let val = 0;
-            const chunkStart = startIdx + (i * step);
+            const chunkStart = Math.floor(startIdx + (i * step));
             if (chunkStart >= data.length) break;
+            
             let count = 0;
-            const innerStep = step > 50 ? Math.floor(step / 10) : 1;
-            for (let j = 0; j < step; j += innerStep) {
-                const idx = chunkStart + j;
-                if (idx < data.length) {
-                    val += data[idx];
-                    count++;
-                }
+            const innerStep = Math.max(1, Math.floor(step / 10));
+            const chunkEnd = Math.min(data.length, Math.floor(chunkStart + step));
+
+            for (let j = chunkStart; j < chunkEnd; j += innerStep) {
+                val += data[j];
+                count++;
             }
             if (count > 0) val /= count;
             const y = mid - (val * amp * 0.9);
@@ -288,17 +317,17 @@ export class Visualizer {
 
         for (let i = 0; i < totalBars; i++) {
             let rms = 0;
-            const chunkStart = startIdx + (i * step);
+            const chunkStart = Math.floor(startIdx + (i * step));
             if (chunkStart >= data.length) break;
+            
             let count = 0;
-            const innerStep = step > 50 ? Math.floor(step / 10) : 1;
-            for (let j = 0; j < step; j += innerStep) {
-                const idx = chunkStart + j;
-                if (idx < data.length) {
-                    const s = data[idx];
-                    rms += s * s;
-                    count++;
-                }
+            const innerStep = Math.max(1, Math.floor(step / 10));
+            const chunkEnd = Math.min(data.length, Math.floor(chunkStart + step));
+
+            for (let j = chunkStart; j < chunkEnd; j += innerStep) {
+                const s = data[j];
+                rms += s * s;
+                count++;
             }
             if (count > 0) rms = Math.sqrt(rms / count);
             const height = Math.max(2, rms * h * 1.5); 
@@ -311,14 +340,14 @@ export class Visualizer {
     }
 
     drawStylePrecision(ctx, data, w, h, startIdx, windowLength) {
-        const step = Math.max(1, Math.ceil(windowLength / w));
+        const step = Math.max(1, windowLength / w);
         const amp = h / 2;
         const mid = h / 2;
         ctx.strokeStyle = 'rgba(255,255,255,0.9)';
         ctx.lineWidth = 0.5;
         ctx.beginPath();
         for (let i = 0; i < w; i++) {
-            const idx = startIdx + (i * step);
+            const idx = Math.floor(startIdx + (i * step));
             if (idx >= data.length) break;
             const raw = data[idx];
             const y = mid - (raw * amp * 0.95);
@@ -366,7 +395,7 @@ export class Visualizer {
         ctx.fillText("No Signal", 10, 40);
     }
 
-    drawOverlays(ctx, t, w, h, time) {
+    drawOverlays(ctx, t, w, h, time, viewStart, viewEnd) {
         let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0, sampleStart:0, sampleEnd:0, scanSpeed:0 };
         
         t.lfos.forEach(lfo => {
@@ -385,59 +414,70 @@ export class Visualizer {
         const p = t.params;
         
         // --- HANDLE VISUALIZER RESET LOGIC ---
-        // Calculate dynamic scan time based on the last trigger event
         let scanTime = time;
         if (t.resetOnTrig) {
-            // Get the last trigger time for this track
             const lastTrigger = this.lastTriggerTimes.get(t.id) || 0;
-            // The effective scan time is the duration since the last trigger
-            // This allows the playhead to "move" from the reset point (0) forward
             scanTime = Math.max(0, time - lastTrigger);
         } else if (t.resetOnBar) {
-            // NEW: Logic for Reset on Bar visualization
             const lastBarStart = this.lastBarStartTimes.get(t.id) || 0;
-            // Use time relative to bar start.
-            // If play has just started and we haven't hit a bar start yet, this might be large,
-            // but effectively it means continuous play.
             scanTime = Math.max(0, time - lastBarStart);
         }
 
         // --- USE SHARED LOGIC ---
         const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time, scanTime);
         
-        const mapToView = (pos) => pos * w;
+        // --- MAP TO ZOOMED VIEW ---
+        const viewRange = viewEnd - viewStart;
+        if (viewRange < 0.000001) return; // Divide by zero safety
+
+        const mapToView = (absolutePos) => {
+            // Calculate relative position within the view (0..1)
+            const relative = (absolutePos - viewStart) / viewRange;
+            // Map to pixels
+            return relative * w;
+        };
+
+        const posPx = mapToView(absPos);
         
+        // Grain size also needs to scale with zoom
         const bufDur = t.buffer ? t.buffer.duration : 1;
         const finalGrainSizeSec = Math.max(0.01, p.grainSize + mod.grainSize);
         const finalGrainSizeFrac = finalGrainSizeSec / bufDur;
-        
-        const posPx = mapToView(absPos);
-        const grainPx = Math.max(2, finalGrainSizeFrac * w); 
+        // Scale grain width by zoom factor (1 / viewRange)
+        const grainPx = Math.max(2, (finalGrainSizeFrac / viewRange) * w); 
         
         const finalSpray = Math.max(0, p.spray + mod.spray);
         
-        // Draw Window Overlays (Dimmed areas outside Start/End)
-        if (actStart > 0.001 || actEnd < 0.999) {
-            const lfoStartPx = mapToView(actStart);
-            const lfoEndPx = mapToView(actEnd);
-            
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'; // Darken outside area
-            if (lfoStartPx > 0) ctx.fillRect(0, 0, lfoStartPx, h);
-            if (lfoEndPx < w) ctx.fillRect(lfoEndPx, 0, w - lfoEndPx, h);
-            
-            ctx.strokeStyle = 'rgba(100, 200, 255, 0.5)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            if (lfoStartPx > 0 && lfoStartPx < w) { ctx.moveTo(lfoStartPx, 0); ctx.lineTo(lfoStartPx, h); }
-            if (lfoEndPx > 0 && lfoEndPx < w) { ctx.moveTo(lfoEndPx, 0); ctx.lineTo(lfoEndPx, h); }
-            ctx.stroke();
-        }
+        // Draw Window Overlays (Dimmed areas outside Start/End *within* the view)
+        // Since the view IS the Start/End (mostly), this primarily shows LFO modulation of start/end boundaries
+        // relative to the static knob settings.
+        
+        // Map effective (modulated) boundaries to the view (static knob settings)
+        const lfoStartPx = mapToView(actStart);
+        const lfoEndPx = mapToView(actEnd);
+        
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'; // Darken areas
+        
+        // Left side dimming
+        if (lfoStartPx > 0) ctx.fillRect(0, 0, lfoStartPx, h);
+        // Right side dimming
+        if (lfoEndPx < w) ctx.fillRect(lfoEndPx, 0, w - lfoEndPx, h);
+        
+        // Boundary lines
+        ctx.strokeStyle = 'rgba(100, 200, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (lfoStartPx > -w && lfoStartPx < 2*w) { ctx.moveTo(lfoStartPx, 0); ctx.lineTo(lfoStartPx, h); }
+        if (lfoEndPx > -w && lfoEndPx < 2*w) { ctx.moveTo(lfoEndPx, 0); ctx.lineTo(lfoEndPx, h); }
+        ctx.stroke();
 
+        // Spray visualization
         if (finalSpray > 0) {
             const sprayLeftAbs = Math.max(0, absPos - finalSpray);
             const sprayRightAbs = Math.min(1, absPos + finalSpray);
             const sprayLeftPx = mapToView(sprayLeftAbs);
             const sprayRightPx = mapToView(sprayRightAbs);
+            
             ctx.fillStyle = 'rgba(234, 179, 8, 0.15)';
             const sX = Math.max(0, sprayLeftPx);
             const sW = Math.min(w, sprayRightPx) - sX;
@@ -472,7 +512,9 @@ export class Visualizer {
             ctx.fillRect(Math.max(0, posPx - grainPx/2), h - densityHeight, grainPx, 2);
         }
 
-        if (posPx >= 0 && posPx <= w) {
+        // Draw Playhead
+        // Check if playhead is within view
+        if (posPx >= -5 && posPx <= w + 5) {
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
             ctx.lineWidth = 1;
             ctx.beginPath();
