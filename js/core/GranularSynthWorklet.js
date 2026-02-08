@@ -179,7 +179,7 @@ export class GranularSynthWorklet {
                 stepIndex: stepIndex,
                 params: {
                     position: p.position + mod.position, // Applied position modulation here
-                    scanSpeed: p.scanSpeed,
+                    scanSpeed: p.scanSpeed + mod.scanSpeed, // Applied scanSpeed modulation
                     density: Math.max(1, (p.density || 20) + mod.density),
                     grainSize: Math.max(0.005, (p.grainSize || 0.1) + mod.grainSize),
                     overlap: Math.max(0, (p.overlap || 0) + mod.overlap),
