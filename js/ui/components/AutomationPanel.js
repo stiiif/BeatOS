@@ -244,7 +244,7 @@ export class AutomationPanel {
         // 3. Fine Value Display (FIXED: Show numeric offset for unsynced)
         const fineVal = document.createElement('div');
         fineVal.className = 'sync-val';
-        fineVal.style.fontSize = "6px";
+        fineVal.style.fontSize = "10px";
         if (lfo.sync) {
             const type = LFO.SYNC_RATES[lfo.syncRateIndex].type;
             if (type === 'triplet') { fineVal.innerText = '+T'; fineVal.style.color = '#60a5fa'; }
