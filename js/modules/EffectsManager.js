@@ -8,6 +8,8 @@ export class EffectsManager {
             this.createEffectState(1)  // FX 2
         ];
         
+        this.currentBpm = 120; // Default
+        
         // Store live modulated values for UI visualization
         // Structure: [FX_ID][TARGET_INDEX]
         // 13 targets: P1..Mix (4) + LFO1(3) + LFO2(3) + LFO3(3)
@@ -15,6 +17,10 @@ export class EffectsManager {
             new Float32Array(13),
             new Float32Array(13)
         ];
+    }
+    
+    setBpm(bpm) {
+        this.currentBpm = parseFloat(bpm);
     }
 
     createEffectState(id) {
@@ -35,7 +41,8 @@ export class EffectsManager {
     update(time) {
         this.effects.forEach((fx, fxIndex) => {
             // 1. Calculate Source Values
-            const lfoValues = fx.lfos.map(lfo => lfo.getValue(time));
+            // Pass currentBpm to LFO.getValue for sync
+            const lfoValues = fx.lfos.map(lfo => lfo.getValue(time, this.currentBpm));
             
             // 2. Initialize Modulators Accumulator (13 targets)
             let modulations = new Float32Array(13);
@@ -73,6 +80,9 @@ export class EffectsManager {
 
                 // Rate Modulation
                 // Visual only for now as LFO.js doesn't support complex FM
+                // For synced LFOs, modulating Rate in Hz is ambiguous.
+                // We'll modulate the underlying Hz value, but if synced, it might glitch.
+                // For now, assume rate mod works best on unsynced LFOs.
                 let baseRate = lfo.rate; 
                 let effRate = baseRate + (modulations[targetBase] * 10); 
                 effRate = Math.max(0.1, Math.min(20, effRate));
@@ -102,6 +112,8 @@ export class EffectsManager {
             if (param === 'wave') lfo.wave = value;
             if (param === 'rate') lfo.rate = value;
             if (param === 'amount') lfo.amount = value;
+            if (param === 'sync') lfo.sync = value;
+            if (param === 'syncRateIndex') lfo.syncRateIndex = value;
         }
     }
 

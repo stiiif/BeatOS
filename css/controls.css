@@ -317,6 +317,61 @@ input[type=range].micro-slider::-webkit-slider-thumb {
     cursor: pointer;
 }
 
+/* --- NEW STYLES FOR SYNC/RATE ROW --- */
+
+.sync-cell-content {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+.sync-btn {
+    width: 33.33%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 7px;
+    font-weight: bold;
+    cursor: pointer;
+    border-right: 1px solid #222;
+    color: #555;
+    background: #111;
+    transition: all 0.1s;
+}
+.sync-btn:hover { color: #888; }
+.sync-btn.active {
+    background-color: #333;
+    color: #fff;
+    text-shadow: 0 0 2px currentColor;
+}
+/* Ensure dynamic color inherits correctly when active */
+.c-blue .sync-btn.active { background: #172554; } 
+.c-purple .sync-btn.active { background: #581c87; }
+.c-amber .sync-btn.active { background: #78350f; }
+
+.sync-val {
+    width: 33.33%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 7px;
+    border-right: 1px solid #222;
+    color: #aaa;
+    background: #0f0f0f;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.sync-val:last-child { border-right: none; }
+
+.rate-cell-stack {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    width: 100%;
+    padding: 4px 0;
+}
+
 /* Color Utilities */
 .c-emerald { color: #10b981; }
 .c-blue { color: #3b82f6; }

@@ -114,6 +114,7 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     }
 
     // Render Effects UI
+    effectsManager.setBpm(scheduler.getBPM()); // SYNC BPM ON START
     effectControls.render();
     startEffectsLoop();
 
@@ -143,7 +144,12 @@ document.getElementById('stopBtn').addEventListener('click', () => {
 });
 
 // ... rest of event listeners ...
-document.getElementById('bpmInput').addEventListener('change', e => { scheduler.setBPM(e.target.value); });
+document.getElementById('bpmInput').addEventListener('change', e => { 
+    const bpm = e.target.value;
+    scheduler.setBPM(bpm); 
+    effectsManager.setBpm(bpm); // Update Effects BPM on change
+});
+
 const applyGrooveBtn = document.getElementById('applyGrooveBtn');
 if (applyGrooveBtn) applyGrooveBtn.addEventListener('click', () => uiManager.applyGroove());
 
