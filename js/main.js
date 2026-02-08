@@ -538,12 +538,16 @@ document.querySelectorAll('.param-slider').forEach(el => {
         const t = tracks[uiManager.getSelectedTrackIndex()];
         const param = el.dataset.param;
         const step = parseFloat(el.step) || 0.01;
-        const fineStep = step / 10;
+        // USE THE ACTUAL STEP (0.001) INSTEAD OF /10 TO AVOID SNAPPING ISSUES
+        const fineStep = step; 
         
         // Scroll down (positive deltaY) -> decrease value, Scroll up -> increase value
         const delta = e.deltaY > 0 ? -1 : 1; 
         
-        let newValue = parseFloat(el.value) + (delta * fineStep);
+        // READ FROM PARAMS DIRECTLY (High Precision)
+        let currentValue = t.params[param];
+        
+        let newValue = currentValue + (delta * fineStep);
         
         // Clamp to min/max
         const min = parseFloat(el.min);
@@ -567,7 +571,7 @@ document.querySelectorAll('.param-slider').forEach(el => {
              t.params[param] = newValue;
         }
         
-        el.value = newValue; // Update visual slider
+        el.value = newValue; // Update visual slider (might snap, but internal params are precise)
         
         uiManager.updateKnobs();
         if (t.type === 'granular') visualizer.triggerRedraw();
