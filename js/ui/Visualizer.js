@@ -360,7 +360,7 @@ export class Visualizer {
     }
 
     drawOverlays(ctx, t, w, h, time, start, end) {
-        let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0, sampleStart:0, sampleEnd:0 };
+        let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0, sampleStart:0, sampleEnd:0, scanSpeed:0 };
         
         t.lfos.forEach(lfo => {
             if (lfo.amount > 0) {
@@ -389,13 +389,17 @@ export class Visualizer {
             return ((absPos - viewStart) / viewRange) * w;
         };
 
-        // --- BUG FIX: COMBINE SLIDER + LFO + SCAN OFFSET ---
-        // Mirroring logic in GranularSynthWorklet.js:
-        // let pos = note.params.position + this.trackPlayheads[note.trackId];
+        // --- IMPROVED SCAN SPEED VISUALIZATION ---
+        // The main thread doesn't receive the playhead update from the AudioWorklet in real-time.
+        // To show movement, we calculate a visual offset based on the current Scan Speed.
+        const currentScanSpeed = p.scanSpeed + mod.scanSpeed;
+        
+        // Calculate visual offset: distance = speed * time
+        // Note: This relies on the visual loop being roughly synced with audio start.
+        const visualScanOffset = (currentScanSpeed * time) % 1.0;
         
         const basePosition = p.position + mod.position;
-        const scanOffset = t.playhead; // t.playhead represents the SCAN OFFSET accumulator
-        let finalRelativePos = basePosition + scanOffset;
+        let finalRelativePos = basePosition + visualScanOffset;
         
         // Wrap 0..1 for consistent visualization
         while (finalRelativePos >= 1.0) finalRelativePos -= 1.0;
