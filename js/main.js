@@ -130,7 +130,8 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
 document.getElementById('playBtn').addEventListener('click', () => {
     if (!audioEngine.getContext()) return;
     if (!scheduler.getIsPlaying()) {
-        scheduler.start((time, trackId) => visualizer.scheduleVisualDraw(time, trackId));
+        // Updated callback to pass stepIndex
+        scheduler.start((time, trackId, stepIndex) => visualizer.scheduleVisualDraw(time, trackId, stepIndex));
         document.getElementById('playBtn').classList.add('text-emerald-500');
     }
 });

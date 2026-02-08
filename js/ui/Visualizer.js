@@ -38,8 +38,9 @@ export class Visualizer {
         // Cache track canvases to avoid getElementById in the loop
         this.canvasCache = new Map();
         
-        // Track the last trigger time per track to handle "Reset on Trig" visualization
+        // Track triggers and bar starts
         this.lastTriggerTimes = new Map();
+        this.lastBarStartTimes = new Map(); // NEW
     }
 
     setTracks(tracks) {
@@ -69,10 +70,15 @@ export class Visualizer {
         }
     }
 
-    scheduleVisualDraw(time, trackId) {
+    scheduleVisualDraw(time, trackId, stepIndex = -1) {
         this.drawQueue.push({time, trackId});
         // Store trigger time for reset logic
         this.lastTriggerTimes.set(trackId, time);
+        
+        // If stepIndex is 0 (first step of bar), track bar start
+        if (stepIndex === 0) {
+            this.lastBarStartTimes.set(trackId, time);
+        }
     }
 
     startLoop() {
@@ -387,6 +393,13 @@ export class Visualizer {
             // The effective scan time is the duration since the last trigger
             // This allows the playhead to "move" from the reset point (0) forward
             scanTime = Math.max(0, time - lastTrigger);
+        } else if (t.resetOnBar) {
+            // NEW: Logic for Reset on Bar visualization
+            const lastBarStart = this.lastBarStartTimes.get(t.id) || 0;
+            // Use time relative to bar start.
+            // If play has just started and we haven't hit a bar start yet, this might be large,
+            // but effectively it means continuous play.
+            scanTime = Math.max(0, time - lastBarStart);
         }
 
         // --- USE SHARED LOGIC ---

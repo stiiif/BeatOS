@@ -13,6 +13,9 @@ export class GranularSynthWorklet {
         // Track buffer identity to detect changes manually
         this.bufferVersionMap = new Map(); 
         this.pendingLoads = new Map();
+        
+        // Track last bar start time for Reset On Bar logic
+        this.lastBarStartTimes = new Map();
     }
 
     async init() {
@@ -58,17 +61,12 @@ export class GranularSynthWorklet {
         return this.initPromise;
     }
 
-    /**
-     * Ensures the audio data is sent to the DSP thread.
-     * Uses a fallback reference check to catch manual "SMP" button loads.
-     */
     async ensureBufferLoaded(track) {
         if (!this.isInitialized) await this.init();
         const trackId = track.id;
         
         if (!track.buffer) return;
 
-        // Check against our local version tracker
         const lastKnownBuffer = this.bufferVersionMap.get(trackId);
         if (lastKnownBuffer === track.buffer) {
             return; 
@@ -105,7 +103,6 @@ export class GranularSynthWorklet {
         track.lfos.forEach(lfo => {
             if (lfo.amount === 0) return;
             const v = lfo.getValue(now);
-            
             if (lfo.targets && lfo.targets.length > 0) {
                 lfo.targets.forEach(target => {
                     if (target === 'filter') mod.filter += v * 5000; 
@@ -142,7 +139,7 @@ export class GranularSynthWorklet {
     async scheduleNote(track, time, scheduleVisualDrawCallback, velocityLevel = 2, stepIndex = 0) {
         if (track.type === 'simple-drum') {
             this.audioEngine.triggerDrum(track, time, velocityLevel);
-            scheduleVisualDrawCallback(time, track.id);
+            scheduleVisualDrawCallback(time, track.id, stepIndex);
             return;
         }
 
@@ -180,13 +177,22 @@ export class GranularSynthWorklet {
         }
 
         // --- HANDLE SCAN RESET LOGIC ---
+        
+        // 1. Update Bar Start if applicable
+        if (stepIndex === 0) {
+            this.lastBarStartTimes.set(track.id, time);
+        }
+
+        // 2. Determine effective Scan Time
         let scanTime = time;
         if (track.resetOnTrig) {
             scanTime = 0; // Reset scan offset to 0 for this note
+        } else if (track.resetOnBar) {
+            const barStart = this.lastBarStartTimes.get(track.id) || time;
+            scanTime = Math.max(0, time - barStart);
         }
         
-        // Calculate Window Bounds and Initial Position using Shared Logic
-        // We pass 'time' to get the current scan offset for the initial grain
+        // 3. Calculate Effective Position
         const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time, scanTime);
 
         this.workletNode.port.postMessage({
@@ -198,7 +204,9 @@ export class GranularSynthWorklet {
                 stepIndex: stepIndex,
                 params: {
                     position: absPos,
-                    // We pass the RAW scan speed so the DSP can continue the motion
+                    // We pass the RAW scan speed so the DSP can continue the motion.
+                    // IMPORTANT: The DSP `spawnGrain` uses `timeSinceStart * scanSpeed` from the `absPos` anchor.
+                    // This creates the correct motion relative to the reset point.
                     scanSpeed: p.scanSpeed + mod.scanSpeed,
                     // Pass the calculated boundaries to confine the scan
                     windowStart: actStart,
@@ -219,7 +227,8 @@ export class GranularSynthWorklet {
             }
         });
 
-        scheduleVisualDrawCallback(time, track.id);
+        // Pass stepIndex to visualizer
+        scheduleVisualDrawCallback(time, track.id, stepIndex);
     }
     
     stopAll() {
