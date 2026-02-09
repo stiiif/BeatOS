@@ -1,4 +1,4 @@
-// Granular SynthWorklet - Fixed WASM initialization, state tracking, and stop logic
+// Granular SynthWorklet - Fixed Silence on Manual Sample Load
 import { MAX_TRACKS } from '../utils/constants.js';
 import { GranularLogic } from '../utils/GranularLogic.js';
 
@@ -7,6 +7,8 @@ export class GranularSynthWorklet {
         this.audioEngine = audioEngine;
         this.workletNode = null;
         this.isInitialized = false;
+        this.initPromise = null;
+        this.activeGrains = 0;
         
         // Track buffer identity to detect changes manually
         this.bufferVersionMap = new Map(); 
@@ -14,57 +16,49 @@ export class GranularSynthWorklet {
         
         // Track last bar start time for Reset On Bar logic
         this.lastBarStartTimes = new Map();
-        
-        this.activeGrains = 0;
     }
 
     async init() {
         if (this.isInitialized) return;
+        if (this.initPromise) return this.initPromise;
         
-        const audioCtx = this.audioEngine.getContext();
-        if (!audioCtx) throw new Error('AudioContext not available');
-        
-        try {
-            // 1. Fetch and compile WASM on the main thread
-            const response = await fetch('build/release.wasm');
-            const buffer = await response.arrayBuffer();
-            const wasmModule = await WebAssembly.compile(buffer);
-
-            // 2. Load the AudioWorklet module
-            const workletCode = this.getWorkletCode();
-            const blob = new Blob([workletCode], { type: 'application/javascript' });
-            const url = URL.createObjectURL(blob);
-            await audioCtx.audioWorklet.addModule(url);
-            URL.revokeObjectURL(url);
-
-            // 3. Create the node
-            const outputChannelCounts = new Array(MAX_TRACKS).fill(2); 
-            this.workletNode = new AudioWorkletNode(audioCtx, 'beatos-granular-processor', {
-                numberOfInputs: 0,
-                numberOfOutputs: MAX_TRACKS,
-                outputChannelCount: outputChannelCounts,
-                processorOptions: {}
-            });
+        this.initPromise = (async () => {
+            const audioCtx = this.audioEngine.getContext();
+            if (!audioCtx) throw new Error('AudioContext not available');
             
-            // 4. Send the compiled WASM module to the Worklet
-            this.workletNode.port.postMessage({
-                type: 'init-wasm',
-                data: { module: wasmModule }
-            });
+            try {
+                const workletCode = this.getWorkletCode();
+                const blob = new Blob([workletCode], { type: 'application/javascript' });
+                const blobURL = URL.createObjectURL(blob);
+                
+                await audioCtx.audioWorklet.addModule(blobURL);
+                URL.revokeObjectURL(blobURL);
+                
+                const outputChannelCounts = new Array(MAX_TRACKS).fill(2); 
 
-            this.workletNode.port.onmessage = (event) => {
-                if (event.data.type === 'grainCount') {
-                    this.activeGrains = event.data.count;
-                }
-            };
+                this.workletNode = new AudioWorkletNode(audioCtx, 'beatos-granular-processor', {
+                    numberOfInputs: 0,
+                    numberOfOutputs: MAX_TRACKS,
+                    outputChannelCount: outputChannelCounts,
+                    processorOptions: {}
+                });
+                
+                this.workletNode.port.onmessage = (event) => {
+                    if (event.data.type === 'grainCount') {
+                        this.activeGrains = event.data.count;
+                    }
+                };
 
-            this.workletNode.connectedTracks = new Set();
-            this.isInitialized = true;
-            console.log("[BeatOS] WASM DSP Engine Initialized");
-        } catch (error) {
-            console.error('[GranularSynthWorklet] Initialization failed:', error);
-            throw error;
-        }
+                this.workletNode.connectedTracks = new Set();
+                this.isInitialized = true;
+                console.log('[GranularSynthWorklet] ✅ DSP Engine Ready');
+            } catch (error) {
+                console.error('[GranularSynthWorklet] Initialization failed:', error);
+                throw error;
+            }
+        })();
+        
+        return this.initPromise;
     }
 
     async ensureBufferLoaded(track) {
@@ -182,18 +176,23 @@ export class GranularSynthWorklet {
             default: gainMult = 0.75;
         }
 
+        // --- HANDLE SCAN RESET LOGIC ---
+        
+        // 1. Update Bar Start if applicable
         if (stepIndex === 0) {
             this.lastBarStartTimes.set(track.id, time);
         }
 
+        // 2. Determine effective Scan Time
         let scanTime = time;
         if (track.resetOnTrig) {
-            scanTime = 0;
+            scanTime = 0; // Reset scan offset to 0 for this note
         } else if (track.resetOnBar) {
             const barStart = this.lastBarStartTimes.get(track.id) || time;
             scanTime = Math.max(0, time - barStart);
         }
         
+        // 3. Calculate Effective Position
         const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time, scanTime);
 
         this.workletNode.port.postMessage({
@@ -205,9 +204,14 @@ export class GranularSynthWorklet {
                 stepIndex: stepIndex,
                 params: {
                     position: absPos,
+                    // We pass the RAW scan speed so the DSP can continue the motion.
+                    // IMPORTANT: The DSP `spawnGrain` uses `timeSinceStart * scanSpeed` from the `absPos` anchor.
+                    // This creates the correct motion relative to the reset point.
                     scanSpeed: p.scanSpeed + mod.scanSpeed,
+                    // Pass the calculated boundaries to confine the scan
                     windowStart: actStart,
                     windowEnd: actEnd,
+                    
                     density: Math.max(1, (p.density || 20) + mod.density),
                     grainSize: Math.max(0.005, (p.grainSize || 0.1) + mod.grainSize),
                     overlap: Math.max(0, (p.overlap || 0) + mod.overlap),
@@ -223,21 +227,13 @@ export class GranularSynthWorklet {
             }
         });
 
+        // Pass stepIndex to visualizer
         scheduleVisualDrawCallback(time, track.id, stepIndex);
     }
     
     stopAll() {
         if (this.workletNode) this.workletNode.port.postMessage({ type: 'stopAll' });
         this.activeGrains = 0;
-    }
-
-    stopTrack(trackId) {
-        if (this.workletNode) {
-            this.workletNode.port.postMessage({
-                type: 'stopTrack',
-                data: { trackId: Number(trackId) }
-            });
-        }
     }
     
     getActiveGrainCount() { 
@@ -258,8 +254,8 @@ export class GranularSynthWorklet {
 class BeatOSGranularProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        this.wasm = null;
         this.MAX_VOICES = 64;
+        this.safetyLimit = 400; 
         this.voices = Array(this.MAX_VOICES).fill(null).map((_, id) => ({
             id, active: false, buffer: null, bufferLength: 0,
             position: 0, phase: 0, grainLength: 0, pitch: 1.0, velocity: 1.0,
@@ -269,56 +265,60 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         this.activeVoiceIndices = [];
         this.activeNotes = [];
         this.trackBuffers = new Map();
+        
+        this.lastReportedCount = 0;
         this._rngState = 0xCAFEBABE;
+
         this.LUT_SIZE = 4096;
         this.windowLUT = new Float32Array(this.LUT_SIZE);
         for(let i=0; i<this.LUT_SIZE; i++) {
             const phase = i/(this.LUT_SIZE-1);
             this.windowLUT[i] = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * phase));
         }
-        this.port.onmessage = async (e) => {
+        
+        this.port.onmessage = (e) => {
             const { type, data } = e.data;
             switch(type) {
-                case 'init-wasm': 
-                    const instance = await WebAssembly.instantiate(data.module, {});
-                    this.wasm = instance.exports;
-                    break;
                 case 'noteOn': this.handleNoteOn(data); break;
                 case 'setBuffer': this.trackBuffers.set(Number(data.trackId), data.buffer); break;
-                case 'stopAll': this.stopAllVoices(); break;
-                case 'stopTrack': this.stopTrack(data.trackId); break;
+                case 'stopAll': this.stopAllVoices(); this.activeNotes = []; break;
+                case 'stopTrack': this.stopTrack(Number(data.trackId)); break;
                 case 'setMaxGrains': this.safetyLimit = data.max; break;
             }
         };
     }
+
     random() {
         this._rngState ^= this._rngState << 13;
         this._rngState ^= this._rngState >>> 17;
         this._rngState ^= this._rngState << 5;
         return (this._rngState >>> 0) / 4294967296;
     }
+
     handleNoteOn(data) {
-        this.activeNotes = this.activeNotes || [];
         this.activeNotes.push({
-            trackId: Number(data.trackId), startTime: data.time, duration: data.duration,
-            params: data.params, nextGrainTime: data.time, basePosition: data.params.position 
+            trackId: Number(data.trackId), 
+            startTime: data.time, 
+            duration: data.duration,
+            params: data.params, 
+            nextGrainTime: data.time,
+            basePosition: data.params.position 
         });
     }
+
     process(inputs, outputs, parameters) {
-        // Essential: Zero-fill all outputs to avoid adding to "garbage" memory
+        const frameCount = outputs[0][0].length;
+        const now = currentTime;
+        
         for (let o = 0; o < outputs.length; o++) {
-            const out = outputs[o];
-            for (let c = 0; c < out.length; c++) {
-                out[c].fill(0);
+            if (outputs[o]) {
+                for (let c = 0; c < outputs[o].length; c++) {
+                    outputs[o][c].fill(0);
+                }
             }
         }
 
-        if (!this.wasm) return true;
-        
-        const frameCount = outputs[0][0].length;
-        const now = currentTime;
-
-        // 1. SCHEDULER
+        // --- 1. SCHEDULER ---
         for (let i = this.activeNotes.length - 1; i >= 0; i--) {
             const note = this.activeNotes[i];
             if (now > note.startTime + note.duration) { this.activeNotes.splice(i, 1); continue; }
@@ -326,8 +326,10 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 let interval = 1 / Math.max(0.1, note.params.density || 20);
                 let spawnLimit = 5;
                 while (note.nextGrainTime < now + (frameCount / sampleRate) && spawnLimit > 0) {
-                    if (note.nextGrainTime >= now && this.activeVoiceIndices.length < this.MAX_VOICES) {
-                        this.spawnGrain(note);
+                    if (note.nextGrainTime >= now) {
+                        if (this.activeVoiceIndices.length < this.MAX_VOICES) {
+                            this.spawnGrain(note);
+                        }
                     }
                     note.nextGrainTime += interval;
                     spawnLimit--;
@@ -335,20 +337,32 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             }
         }
 
+        if (this.activeVoiceIndices.length !== this.lastReportedCount) {
+            this.lastReportedCount = this.activeVoiceIndices.length;
+            this.port.postMessage({ type: 'grainCount', count: this.lastReportedCount });
+        }
+
         if (this.activeVoiceIndices.length === 0) return true;
 
-        // 2. DSP LOOP
+        // --- 2. DSP LOOP ---
         for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
             const vIdx = this.activeVoiceIndices[i];
             const voice = this.voices[vIdx];
             const trackOut = outputs[voice.trackId];
             
-            if (!trackOut) { this.killVoice(i); continue; }
+            if (!trackOut || !voice.buffer || voice.bufferLength < 2) { 
+                this.killVoice(i); 
+                continue; 
+            }
             
             const L = trackOut[0], R = trackOut[1];
             const buf = voice.buffer, bufLen = voice.bufferLength;
             const pitch = voice.pitch, gLen = voice.grainLength, invGL = voice.invGrainLength;
             const start = voice.position * bufLen;
+            const baseAmp = voice.velocity;
+            
+            const activeCount = Math.max(1, this.activeVoiceIndices.length);
+            const trackScale = voice.cleanMode ? (1.0 / activeCount) : (1.0 / (1.0 + (activeCount * 0.15)));
 
             let ph = voice.phase, amp = voice.releaseAmp, rel = voice.releasing;
 
@@ -362,63 +376,139 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 
                 let idx = rPos | 0;
                 let frac = rPos - idx;
+                
+                if (!voice.cleanMode && voice.edgeCrunch > 0) {
+                    let maxOverflow = 1.0 + (voice.edgeCrunch * voice.edgeCrunch * voice.edgeCrunch * bufLen);
+                    if (frac < 0) frac = Math.max(frac, -maxOverflow);
+                    else frac = Math.min(frac, maxOverflow);
+                }
 
-                const y1 = buf[idx] || 0;
-                const y0 = buf[(idx - 1 + bufLen) % bufLen] || 0;
-                const y2 = buf[(idx + 1) % bufLen] || 0;
-                const y3 = buf[(idx + 2) % bufLen] || 0;
-
-                const sample = this.wasm.interpolateCubic(y0, y1, y2, y3, frac);
-
+                const s1 = buf[idx] || 0;
+                const idx2 = (idx + 1) % bufLen;
+                const s2 = buf[idx2] || 0;
+                
+                const sample = s1 + frac * (s2 - s1);
                 const winIdx = Math.min(this.LUT_SIZE - 1, (ph * invGL) | 0);
-                const win = this.windowLUT[winIdx];
-                const val = sample * win * voice.velocity * amp;
-
-                L[j] += val; if (R) R[j] += val;
+                const win = this.windowLUT[winIdx] || 0;
+                
+                const val = sample * win * baseAmp * amp * trackScale;
+                
+                if (!isNaN(val)) {
+                    L[j] += val; 
+                    if (R) R[j] += val;
+                }
                 ph++;
             }
             voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
         }
 
+        // --- 3. SOFT CLIPPER ---
+        for (let o = 0; o < outputs.length; o++) {
+            if (!outputs[o]) continue;
+            const outL = outputs[o][0];
+            const outR = outputs[o][1];
+            if (!outL) continue;
+            for (let j = 0; j < frameCount; j++) {
+                const sL = outL[j];
+                outputs[o][0][j] = isNaN(sL) ? 0 : sL / (1.0 + Math.abs(sL));
+                if (outR) {
+                    const sR = outR[j];
+                    outputs[o][1][j] = isNaN(sR) ? 0 : sR / (1.0 + Math.abs(sR));
+                }
+            }
+        }
+
         return true;
     }
+
     spawnGrain(note) {
         const buf = this.trackBuffers.get(Number(note.trackId));
         if(!buf || buf.length < 2) return;
+        
         let v = null;
         for(let i=0; i<this.MAX_VOICES; i++) {
-            if(!this.voices[i].active) { v = this.voices[i]; this.activeVoiceIndices.push(i); break; }
+            if(!this.voices[i].active) { 
+                v = this.voices[i]; 
+                this.activeVoiceIndices.push(i); 
+                break; 
+            }
         }
         if(!v) return; 
-        let pos = note.basePosition + (note.params.scanSpeed * (currentTime - note.startTime));
-        const wStart = note.params.windowStart, wEnd = note.params.windowEnd, wSize = wEnd - wStart;
-        if (wSize > 0.0001) pos = wStart + (((pos - wStart) % wSize) + wSize) % wSize;
-        else pos = wStart;
-        if(note.params.spray > 0) pos += (this.random()*2-1)*note.params.spray;
+        
+        // --- STRICT WINDOW WRAPPING LOGIC ---
+        // 1. Get Base Position (Anchor) calculated by GranularLogic
+        let pos = note.basePosition;
+        
+        // 2. Add accumulated scan offset
+        const timeSinceStart = currentTime - note.startTime;
+        const movement = note.params.scanSpeed * timeSinceStart;
+        
+        pos += movement;
+        
+        // 3. Apply Window Wrapping (Matches GranularLogic.js)
+        const wStart = note.params.windowStart;
+        const wEnd = note.params.windowEnd;
+        const wSize = wEnd - wStart;
+        
+        if (wSize > 0.0001) {
+            let relPos = pos - wStart;
+            // Wrap within [0, wSize]
+            let wrappedRel = ((relPos % wSize) + wSize) % wSize;
+            pos = wStart + wrappedRel;
+        } else {
+            pos = wStart;
+        }
+        
+        // 4. Orbit / Spray
+        if (note.params.orbit > 0) {
+            pos += (this.random() - 0.5) * note.params.orbit;
+            if (pos < wStart) pos += wSize;
+            if (pos > wEnd) pos -= wSize;
+        } else {
+            pos += (this.random() * 0.0001); 
+        }
+
+        if(note.params.spray > 0) {
+            pos += (this.random()*2-1)*note.params.spray;
+        }
+        
+        // Final Clamp
         pos = Math.max(0, Math.min(1, pos));
-        v.active = true; v.trackId = note.trackId; v.buffer = buf; v.bufferLength = buf.length;
-        v.position = pos; v.phase = 0; v.grainLength = Math.max(128, Math.floor((note.params.grainSize||0.1) * sampleRate));
+        
+        v.active = true; 
+        v.trackId = note.trackId; 
+        v.buffer = buf; 
+        v.bufferLength = buf.length;
+        v.position = pos; 
+        v.phase = 0;
+        v.grainLength = Math.max(128, Math.floor((note.params.grainSize||0.1) * sampleRate));
         v.invGrainLength = (this.LUT_SIZE - 1) / v.grainLength;
-        v.pitch = note.params.pitch||1; v.velocity = note.params.velocity||1;
-        v.releasing = false; v.releaseAmp = 1.0;
+        v.pitch = note.params.pitch||1; 
+        v.velocity = note.params.velocity||1;
+        v.releasing = false; 
+        v.releaseAmp = 1.0;
+        v.cleanMode = !!note.params.cleanMode;
+        v.edgeCrunch = note.params.edgeCrunch || 0;
+        v.orbit = note.params.orbit || 0;
     }
+    
     killVoice(idx) {
         const vIdx = this.activeVoiceIndices[idx];
         this.voices[vIdx].active = false;
         const last = this.activeVoiceIndices.pop();
         if (idx < this.activeVoiceIndices.length) this.activeVoiceIndices[idx] = last;
     }
+    
     stopAllVoices() { 
-        this.activeNotes = [];
         for(let i=0; i<this.activeVoiceIndices.length; i++) {
             this.voices[this.activeVoiceIndices[i]].releasing = true; 
         }
     }
-    stopTrack(trackId) {
-        this.activeNotes = this.activeNotes.filter(n => n.trackId !== trackId);
+    
+    stopTrack(id) { 
         for(let i=0; i<this.activeVoiceIndices.length; i++) {
             const v = this.voices[this.activeVoiceIndices[i]];
-            if (v.trackId === trackId) v.releasing = true;
+            if(v.trackId === id) v.releasing = true; 
         }
     }
 }
