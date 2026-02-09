@@ -1,0 +1,36 @@
+{
+  "targets": {
+    "release": {
+      "outFile": "build/granular-dsp.wasm",
+      "textFile": "build/granular-dsp.wat",
+      "optimizeLevel": 3,
+      "shrinkLevel": 1,
+      "noAssert": true,
+      "runtime": "stub",
+      "memoryBase": 0,
+      "initialMemory": 64,
+      "maximumMemory": 256,
+      "importMemory": true,
+      "exportMemory": true,
+      "exportStart": false,
+      "sourceMap": false
+    },
+    "debug": {
+      "outFile": "build/granular-dsp.debug.wasm",
+      "textFile": "build/granular-dsp.debug.wat",
+      "optimizeLevel": 0,
+      "shrinkLevel": 0,
+      "runtime": "stub",
+      "memoryBase": 0,
+      "initialMemory": 64,
+      "maximumMemory": 256,
+      "importMemory": true,
+      "exportMemory": true,
+      "sourceMap": true,
+      "debug": true
+    }
+  },
+  "options": {
+    "bindings": "raw"
+  }
+}

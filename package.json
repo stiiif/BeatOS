@@ -1,0 +1,12 @@
+{
+  "name": "beatos-granular-wasm",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "asc assembly/granular-dsp.ts --target release",
+    "build:debug": "asc assembly/granular-dsp.ts --target debug",
+    "build:all": "npm run build && npm run build:debug"
+  },
+  "devDependencies": {
+    "assemblyscript": "^0.27.0"
+  }
+}
