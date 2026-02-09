@@ -1,203 +1,278 @@
-// js/worklets/granular-processor-wasm.js
+// js/core/GranularSynthWorklet.js
+import { MAX_TRACKS } from '../utils/constants.js';
+import { GranularLogic } from '../utils/GranularLogic.js';
 
-class GranularProcessorWasm extends AudioWorkletProcessor {
-    constructor(options) {
-        super();
+export class GranularSynthWorklet {
+    constructor(audioEngine) {
+        this.audioEngine = audioEngine;
+        this.workletNode = null;
+        this.isInitialized = false;
+        this.initPromise = null;
+        this.activeGrains = 0;
         
-        const wasmBytes = options.processorOptions.wasmBytes;
-        if (!wasmBytes) throw new Error("No WASM bytes provided");
-
-        this.wasm = null;
-        this.heapFloat32 = null;
+        // Track buffer identity to detect changes manually
+        this.bufferVersionMap = new Map(); 
+        this.pendingLoads = new Map();
+        this.lastBarStartTimes = new Map();
         
-        // Allocate an output buffer in JS to copy data back from WASM
-        // 128 frames * 2 channels * 4 bytes/float = 1024 bytes
-        this.blockBufferSize = 128 * 2 * 4; 
-        this.outputPtr = 0;
-
-        // Scheduler State
-        this.activeNotes = [];
-        this.currentTime = 0;
-
-        // Compile WASM
-        const importObject = {
-            env: {
-                abort: (msg, file, line, col) => console.error(`AS Abort: ${line}:${col}`),
-                trace: (msg, n, val) => console.log(`AS Trace: ${val}`)
-            }
-        };
-
-        this.ready = false;
-        
-        WebAssembly.instantiate(wasmBytes, importObject).then(module => {
-            this.wasm = module.instance.exports;
-            
-            // Initialize WASM
-            this.wasm.init();
-            
-            // Allocate Output Buffer in WASM Memory
-            this.outputPtr = this.wasm.allocateBuffer(256); // 128 samples * 2 channels
-            
-            // Create view into WASM memory
-            this.memory = this.wasm.memory;
-            this.heapFloat32 = new Float32Array(this.memory.buffer);
-            
-            this.ready = true;
-            this.port.postMessage({ type: 'status', msg: 'WASM Ready' });
-        });
-
-        this.port.onmessage = (e) => this.handleMessage(e.data);
+        // Cache last known filter targets to avoid redundant updates
+        this.lastFilterTargets = new Map();
     }
 
-    handleMessage(msg) {
-        if (!this.ready) return;
-
-        switch(msg.type) {
-            case 'setBuffer':
-                this.loadBufferToWasm(msg.data.trackId, msg.data.buffer);
-                break;
-            case 'noteOn':
-                this.scheduleNote(msg.data);
-                break;
-            case 'stopAll':
-                this.wasm.stopAll();
-                this.activeNotes = [];
-                break;
-        }
-    }
-
-    loadBufferToWasm(trackId, floatData) {
-        const len = floatData.length;
+    async init() {
+        if (this.isInitialized) return;
+        if (this.initPromise) return this.initPromise;
         
-        // 1. Get pointer from WASM (Bump allocator)
-        const ptr = this.wasm.allocateBuffer(len);
-        
-        // 2. CHECK & GROW MEMORY
-        const bytesNeeded = (ptr + (len * 4)); 
-        
-        if (bytesNeeded > this.memory.buffer.byteLength) {
-            const missingBytes = bytesNeeded - this.memory.buffer.byteLength;
-            const pagesToGrow = Math.ceil(missingBytes / 65536) + 4; 
+        this.initPromise = (async () => {
+            const audioCtx = this.audioEngine.getContext();
+            if (!audioCtx) throw new Error('AudioContext not available');
+            
             try {
-                this.memory.grow(pagesToGrow);
-            } catch(e) {
-                console.error("WASM Memory OOM - Failed to grow", e);
-                return;
-            }
-        }
+                // 1. Fetch the WASM Binary
+                const wasmResponse = await fetch('granular.wasm');
+                if (!wasmResponse.ok) throw new Error(`Failed to load granular.wasm: ${wasmResponse.status} ${wasmResponse.statusText}`);
+                const wasmBytes = await wasmResponse.arrayBuffer();
 
-        // 3. Refresh view 
-        this.heapFloat32 = new Float32Array(this.memory.buffer);
-        
-        // 4. Copy data safely
-        const startIdx = ptr >> 2; 
-        
-        if (startIdx + len <= this.heapFloat32.length) {
-            this.heapFloat32.set(floatData, startIdx);
-            this.wasm.setTrackBuffer(trackId, ptr, len);
-        } else {
-            console.error(`Critical: WASM Buffer writes out of bounds.`);
-        }
-    }
+                // 2. Load the JS Processor wrapper manually to ensure validity
+                const procUrl = 'js/worklets/granular-processor-wasm.js';
+                const procResponse = await fetch(procUrl);
+                if (!procResponse.ok) throw new Error(`Failed to load ${procUrl}: ${procResponse.status}`);
+                const procText = await procResponse.text();
 
-    scheduleNote(data) {
-        this.activeNotes.push({
-            trackId: data.trackId,
-            startTime: data.time,
-            params: data.params,
-            nextGrainTime: data.time
-        });
-    }
-
-    process(inputs, outputs, parameters) {
-        if (!this.ready) return true;
-
-        const frameCount = outputs[0][0].length; // Should be 128
-        const now = currentTime;
-
-        // --- 1. JS SCHEDULER (Lightweight) ---
-        for (let i = this.activeNotes.length - 1; i >= 0; i--) {
-            const note = this.activeNotes[i];
-            
-            if (now > note.startTime + 2.0) {
-                this.activeNotes.splice(i, 1);
-                continue;
-            }
-
-            if (now >= note.startTime) {
-                // Calculate Density Interval
-                let density = note.params.density || 20;
-                let interval = 1 / density;
-                
-                // Override for overlap mode (Matches Original Logic)
-                // Note: If overlap > 0, density knob will effectively be ignored.
-                if (note.params.overlap > 0) {
-                    interval = note.params.grainSize / Math.max(0.1, note.params.overlap);
+                // Validation: Ensure it's not HTML (404 fallback) and has registration
+                if (procText.trim().startsWith('<') || !procText.includes('registerProcessor')) {
+                    throw new Error(`Invalid processor script at ${procUrl}. Content appears to be HTML or empty.`);
                 }
 
-                // Catch up loop
-                let lookAhead = now + (frameCount / sampleRate);
-                
-                while (note.nextGrainTime < lookAhead) {
-                    if (note.nextGrainTime >= now) {
-                        
-                        // FIX: Calculate Dynamic Position (Scan Speed)
-                        let timeSinceStart = note.nextGrainTime - note.startTime;
-                        let currentPos = note.params.position + (note.params.scanSpeed * timeSinceStart);
-                        
-                        // Wrap Logic (Simple wrap, detailed wrapping is in Main Thread GranularLogic)
-                        // This keeps the grain moving inside the window during the note's life
-                        const wStart = note.params.windowStart || 0;
-                        const wEnd = note.params.windowEnd || 1;
-                        const wSize = wEnd - wStart;
-                        
-                        if (wSize > 0.0001) {
-                            // Re-wrap relative to window
-                            // We assume 'position' passed in was already anchored.
-                            if (currentPos > wEnd) currentPos = wStart + ((currentPos - wStart) % wSize);
-                            else if (currentPos < wStart) currentPos = wEnd - ((wStart - currentPos) % wSize);
-                        }
+                // Load via Blob to prevent caching issues and ensure execution
+                const procBlob = new Blob([procText], { type: 'application/javascript' });
+                const procBlobUrl = URL.createObjectURL(procBlob);
 
-                        // TRIGGER GRAIN IN WASM with updated Params
-                        this.wasm.noteOn(
-                            note.trackId,
-                            currentPos, // Use dynamic position
-                            note.params.grainSize,
-                            note.params.pitch,
-                            note.params.gain,
-                            note.params.pan,
-                            note.params.spray,
-                            note.params.orbit || 0,
-                            note.params.edgeCrunch || 0,
-                            !!note.params.cleanMode
-                        );
+                try {
+                    await audioCtx.audioWorklet.addModule(procBlobUrl);
+                } finally {
+                    URL.revokeObjectURL(procBlobUrl);
+                }
+
+                // 3. Create the Node, passing WASM bytes in options
+                const outputChannelCounts = new Array(MAX_TRACKS).fill(2); 
+
+                this.workletNode = new AudioWorkletNode(audioCtx, 'beatos-granular-wasm', {
+                    numberOfInputs: 0,
+                    numberOfOutputs: MAX_TRACKS,
+                    outputChannelCount: outputChannelCounts,
+                    processorOptions: {
+                        wasmBytes: wasmBytes,
+                        maxTracks: MAX_TRACKS
                     }
-                    note.nextGrainTime += interval;
+                });
+                
+                // 4. Handle messages
+                this.workletNode.port.onmessage = (event) => {
+                    if (event.data.type === 'grainCount') {
+                        this.activeGrains = event.data.count;
+                    }
+                };
+
+                this.workletNode.connectedTracks = new Set();
+                this.isInitialized = true;
+                console.log('[GranularSynthWorklet] ✅ WASM Engine Ready');
+            } catch (error) {
+                console.error('[GranularSynthWorklet] Initialization failed:', error);
+                this.initPromise = null; // Reset promise so we can retry
+                throw error;
+            }
+        })();
+        
+        return this.initPromise;
+    }
+
+    // --- BUFFER MANAGEMENT ---
+    async ensureBufferLoaded(track) {
+        if (!this.isInitialized) await this.init();
+        const trackId = track.id;
+        
+        if (!track.buffer) return;
+
+        const lastKnownBuffer = this.bufferVersionMap.get(trackId);
+        if (lastKnownBuffer === track.buffer) return; 
+
+        if (this.pendingLoads.has(trackId)) return this.pendingLoads.get(trackId);
+        
+        const loadPromise = new Promise((resolve) => {
+            this.pendingLoads.set(trackId, resolve);
+            
+            const channelData = track.buffer.getChannelData(0);
+            
+            this.workletNode.port.postMessage({
+                type: 'setBuffer',
+                data: { 
+                    trackId: Number(trackId), 
+                    buffer: channelData 
+                }
+            }); 
+            
+            resolve();
+            this.pendingLoads.delete(trackId);
+        });
+
+        await loadPromise;
+        this.bufferVersionMap.set(trackId, track.buffer);
+    }
+
+    // --- BUS CONNECTION ---
+    syncTrackBusParams(track, time = null) {
+        if (!track.bus || !this.audioEngine.getContext()) return;
+        const ctx = this.audioEngine.getContext();
+        const now = time !== null ? time : ctx.currentTime;
+        const p = track.params;
+
+        let mod = { filter: 0, hpFilter: 0, volume: 0, pan: 0 };
+        track.lfos.forEach(lfo => {
+            if (lfo.amount === 0) return;
+            const v = lfo.getValue(now);
+            if (lfo.targets && lfo.targets.length > 0) {
+                lfo.targets.forEach(target => {
+                    if (target === 'filter') mod.filter += v * 5000; 
+                    if (target === 'hpFilter') mod.hpFilter += v * 2000; 
+                    if (target === 'volume') mod.volume += v * 0.5;
+                    if (target === 'pan') mod.pan += v;
+                });
+            } else if (lfo.target) {
+                if (lfo.target === 'filter') mod.filter += v * 5000; 
+                if (lfo.target === 'hpFilter') mod.hpFilter += v * 2000; 
+                if (lfo.target === 'volume') mod.volume += v * 0.5;
+                if (lfo.target === 'pan') mod.pan += v;
+            }
+        });
+
+        // Initialize cache for this track if missing
+        if (!this.lastFilterTargets.has(track.id)) {
+            this.lastFilterTargets.set(track.id, { hp: -1, lp: -1 });
+        }
+        const lastTargets = this.lastFilterTargets.get(track.id);
+
+        // --- FILTER SAFETY LOGIC ---
+        
+        if (track.bus.hp) {
+            let targetHp = Math.max(20, p.hpFilter + mod.hpFilter);
+            targetHp = Math.min(20000, targetHp);
+            const freq = this.audioEngine.getMappedFrequency(targetHp, 'hp');
+            
+            if (Math.abs(freq - lastTargets.hp) > 1.0) {
+                track.bus.hp.frequency.setTargetAtTime(freq, now, 0.05);
+                lastTargets.hp = freq;
+            }
+        }
+        
+        if (track.bus.lp) {
+            let targetLp = Math.max(100, p.filter + mod.filter);
+            targetLp = Math.min(20000, targetLp); 
+            const freq = this.audioEngine.getMappedFrequency(targetLp, 'lp');
+            
+            if (Math.abs(freq - lastTargets.lp) > 1.0) {
+                track.bus.lp.frequency.setTargetAtTime(freq, now, 0.05);
+                lastTargets.lp = freq;
+            }
+        }
+
+        if (track.bus.vol) {
+            let gain = Math.max(0, p.volume + mod.volume);
+            track.bus.vol.gain.setTargetAtTime(gain, now, 0.02);
+        }
+        
+        if (track.bus.pan) {
+            let panVal = Math.max(-1, Math.min(1, p.pan + mod.pan));
+            track.bus.pan.pan.setTargetAtTime(panVal, now, 0.02);
+        }
+    }
+
+    // --- SCHEDULING ---
+    async scheduleNote(track, time, scheduleVisualDrawCallback, velocityLevel = 2, stepIndex = 0) {
+        if (track.type === 'simple-drum') {
+            this.audioEngine.triggerDrum(track, time, velocityLevel);
+            scheduleVisualDrawCallback(time, track.id, stepIndex);
+            return;
+        }
+
+        if (!this.isInitialized) await this.init();
+        
+        await this.ensureBufferLoaded(track);
+
+        if (!this.workletNode.connectedTracks.has(track.id)) {
+            this.workletNode.connect(track.bus.input, track.id, 0);
+            this.workletNode.connectedTracks.add(track.id);
+        }
+
+        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0, relGrain:0, edgeCrunch:0, orbit:0 };
+        track.lfos.forEach(lfo => {
+            const v = lfo.getValue(time);
+            if (lfo.targets && lfo.targets.length > 0) {
+                lfo.targets.forEach(target => {
+                    if(mod[target] !== undefined) mod[target] += v;
+                });
+            } else if (lfo.target && mod[lfo.target]!==undefined) {
+                mod[lfo.target] += v;
+            }
+        });
+
+        this.syncTrackBusParams(track, time);
+
+        const p = track.params;
+        
+        if (stepIndex === 0) this.lastBarStartTimes.set(track.id, time);
+        let scanTime = time;
+        if (track.resetOnTrig) scanTime = 0;
+        else if (track.resetOnBar) scanTime = Math.max(0, time - (this.lastBarStartTimes.get(track.id) || time));
+
+        const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time, scanTime);
+
+        let gainMult = 1.0;
+        if (velocityLevel === 1) gainMult = 0.4;
+        else if (velocityLevel === 2) gainMult = 0.75;
+
+        this.workletNode.port.postMessage({
+            type: 'noteOn',
+            data: {
+                trackId: Number(track.id),
+                time: time,
+                duration: (p.relGrain || 0.4) + mod.relGrain,
+                stepIndex: stepIndex,
+                params: {
+                    position: absPos,
+                    windowStart: actStart,
+                    windowEnd: actEnd,
+                    grainSize: Math.max(0.005, p.grainSize + mod.grainSize),
+                    pitch: Math.max(0.01, p.pitch + mod.pitch),
+                    density: Math.max(1, p.density + mod.density),
+                    spray: Math.max(0, p.spray + mod.spray),
+                    pan: p.pan || 0,
+                    gain: gainMult,
+                    overlap: Math.max(0, (p.overlap || 0) + mod.overlap),
+                    scanSpeed: p.scanSpeed + mod.scanSpeed,
+                    edgeCrunch: Math.max(0, Math.min(1, (p.edgeCrunch || 0) + mod.edgeCrunch)),
+                    orbit: Math.max(0, Math.min(1, (p.orbit || 0) + mod.orbit)),
+                    cleanMode: !!track.cleanMode,
+                    resetOnBar: !!track.resetOnBar,
+                    resetOnTrig: !!track.resetOnTrig
                 }
             }
+        });
+
+        scheduleVisualDrawCallback(time, track.id, stepIndex);
+    }
+    
+    stopAll() {
+        if (this.workletNode) this.workletNode.port.postMessage({ type: 'stopAll' });
+    }
+    
+    getActiveGrainCount() { return this.activeGrains; }
+    setMaxGrains(max) { 
+        if (this.workletNode) {
+            this.workletNode.port.postMessage({
+                type: 'setMaxGrains',
+                data: { max }
+            });
         }
-
-        // --- 2. WASM DSP ---
-        this.wasm.process(this.outputPtr, frameCount);
-
-        // --- 3. OUTPUT COPY ---
-        if (this.heapFloat32.buffer !== this.memory.buffer) {
-             this.heapFloat32 = new Float32Array(this.memory.buffer);
-        }
-
-        const outputL = outputs[0][0]; 
-        const outputR = outputs[0][1]; 
-        
-        if (outputL) {
-            const rawDataPtr = this.outputPtr >> 2; 
-            for (let i = 0; i < frameCount; i++) {
-                outputL[i] = this.heapFloat32[rawDataPtr + (i * 2)];
-                outputR[i] = this.heapFloat32[rawDataPtr + (i * 2) + 1];
-            }
-        }
-
-        return true;
     }
 }
-
-registerProcessor('beatos-granular-wasm', GranularProcessorWasm);
