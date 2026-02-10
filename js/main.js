@@ -18,10 +18,6 @@ import { EffectControls } from './ui/components/EffectControls.js';
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
 
-// --- EXPOSE FOR TESTING ---
-window.granularSynth = granularSynth;
-console.log("GranularSynth exposed to window for Wasm testing.");
-
 const scheduler = new Scheduler(audioEngine, granularSynth);
 const trackManager = new TrackManager(audioEngine);
 const presetManager = new PresetManager();
