@@ -1,0 +1,16 @@
+{
+  "name": "beatos-wasm",
+  "version": "1.0.0",
+  "description": "BeatOS with AssemblyScript DSP",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "asbuild": "asc assembly/index.ts -b js/worklets/dsp.wasm -O3 --noAssert",
+    "start": "npx serve ."
+  },
+  "devDependencies": {
+    "assemblyscript": "^0.27.24"
+  },
+  "dependencies": {
+    "serve": "^14.2.1"
+  }
+}

@@ -18,6 +18,10 @@ import { EffectControls } from './ui/components/EffectControls.js';
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
 
+// EXPOSE FOR DEBUGGING / CONSOLE ACCESS
+window.granularSynth = granularSynth;
+window.audioEngine = audioEngine;
+
 const scheduler = new Scheduler(audioEngine, granularSynth);
 const trackManager = new TrackManager(audioEngine);
 const presetManager = new PresetManager();
@@ -730,3 +734,43 @@ if (maxGrainsInput) {
     });
 }
 setInterval(() => { if (grainMonitorEl) grainMonitorEl.innerText = granularSynth.getActiveGrainCount(); }, 100);
+
+// --- DEBUG / A-B TESTING CONTROLS ---
+const toggleWasmBtn = document.getElementById('toggleWasmBtn');
+let isWasmEnabled = true;
+
+if (toggleWasmBtn) {
+    toggleWasmBtn.addEventListener('click', () => {
+        isWasmEnabled = !isWasmEnabled;
+        if (granularSynth && granularSynth.workletNode) {
+            granularSynth.workletNode.port.postMessage({ 
+                type: 'setProcessorMode', 
+                useWasm: isWasmEnabled 
+            });
+        }
+        
+        toggleWasmBtn.innerText = `WASM: ${isWasmEnabled ? 'ON' : 'OFF'}`;
+        toggleWasmBtn.className = isWasmEnabled 
+            ? "text-[10px] bg-purple-900/50 hover:bg-purple-800 text-purple-300 px-2 py-1 rounded transition border border-purple-700 font-mono"
+            : "text-[10px] bg-yellow-900/50 hover:bg-yellow-800 text-yellow-300 px-2 py-1 rounded transition border border-yellow-700 font-mono";
+    });
+}
+
+const debugDensityBtn = document.getElementById('debugDensityBtn');
+let isDebugEnabled = false;
+
+if (debugDensityBtn) {
+    debugDensityBtn.addEventListener('click', () => {
+        isDebugEnabled = !isDebugEnabled;
+        if (granularSynth && granularSynth.workletNode) {
+            granularSynth.workletNode.port.postMessage({ 
+                type: 'setDebugDensity', 
+                debug: isDebugEnabled 
+            });
+        }
+        debugDensityBtn.innerText = `LOG: ${isDebugEnabled ? 'ON' : 'OFF'}`;
+        debugDensityBtn.className = isDebugEnabled
+            ? "text-[10px] bg-red-900/50 hover:bg-red-800 text-red-300 px-2 py-1 rounded transition border border-red-700 font-mono"
+            : "text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-400 px-2 py-1 rounded transition border border-neutral-700 font-mono";
+    });
+}
