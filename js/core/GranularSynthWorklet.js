@@ -356,9 +356,15 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             if (now > note.startTime + note.duration) {
                 // Swap-and-pop
                 noteLen--;
-                if (i < noteLen) this.activeNotes[i] = this.activeNotes[noteLen];
+                if (i < noteLen) {
+                    this.activeNotes[i] = this.activeNotes[noteLen];
+                    this.activeNotes.length = noteLen;
+                    // Re-check i (swapped element now occupies this slot)
+                    continue;
+                }
+                // Removed the tail element — no swap needed, just shrink
                 this.activeNotes.length = noteLen;
-                // Don't decrement i — re-check swapped element
+                i--;
                 continue;
             }
             if (now >= note.startTime) {
