@@ -6,6 +6,7 @@ export class Randomizer {
     constructor() {
         this.config = null;
         this._rngState = Date.now() | 0;
+        this._configPath = null;
     }
 
     /**
@@ -14,11 +15,67 @@ export class Randomizer {
     async loadConfig(pathOrObject) {
         if (typeof pathOrObject === 'object') {
             this.config = pathOrObject;
+            this._configPath = null;
         } else {
-            const resp = await fetch(pathOrObject);
-            this.config = await resp.json();
+            this._configPath = pathOrObject;
+            await this._fetchConfig();
         }
         console.log('[Randomizer] Config loaded:', Object.keys(this.config).filter(k => !k.startsWith('_')).join(', '));
+    }
+
+    /**
+     * Fetch (or re-fetch) config from the stored path.
+     * Cache-busted to allow real-time editing without page reload.
+     */
+    async _fetchConfig() {
+        if (!this._configPath) return;
+        const url = this._configPath + '?t=' + Date.now();
+        const resp = await fetch(url);
+        this.config = await resp.json();
+    }
+
+    /**
+     * Hot-reload: re-fetch config from disk. Call this from a button or shortcut.
+     * Returns true on success.
+     */
+    async reload() {
+        if (!this._configPath) {
+            console.warn('[Randomizer] No config path — was loaded from object');
+            return false;
+        }
+        try {
+            await this._fetchConfig();
+            console.log('[Randomizer] ♻ Config hot-reloaded');
+            return true;
+        } catch (e) {
+            console.error('[Randomizer] Hot-reload failed:', e);
+            return false;
+        }
+    }
+
+    /**
+     * Get zone name from click position ratio (0-1) using config zones.
+     * Returns zone name string or null.
+     */
+    getZoneName(clickRatio) {
+        const zones = this.config?._meta?.zones;
+        if (!zones || zones.length === 0) return null;
+        const idx = Math.min(zones.length - 1, Math.floor(clickRatio * zones.length));
+        return zones[idx].name;
+    }
+
+    /**
+     * Get zone fraction (0-1) from click position ratio.
+     * With 5 zones: zone 0 → 0.1, zone 1 → 0.3, zone 2 → 0.5, zone 3 → 0.7, zone 4 → 0.9
+     * This centers within each zone band.
+     */
+    getZoneFraction(clickRatio) {
+        const zones = this.config?._meta?.zones;
+        if (!zones || zones.length === 0) return 0.5;
+        const count = zones.length;
+        const idx = Math.min(count - 1, Math.floor(clickRatio * count));
+        // Center of this zone band, normalized to 0-1
+        return (idx + 0.5) / count;
     }
 
     // =========================================================================
@@ -77,9 +134,13 @@ export class Randomizer {
     }
 
     /**
-     * Resolve a single parameter: returns the new value or null if skipped
+     * Resolve a single parameter: returns the new value or null if skipped.
+     * @param {Object} paramConfig - Config for this param
+     * @param {*} currentValue - Current value of the param
+     * @param {Object} overrides - Optional { min, max } overrides
+     * @param {number|null} zoneFraction - 0-1 fraction from click position (for zoned params)
      */
-    _resolveParam(paramConfig, currentValue, overrides) {
+    _resolveParam(paramConfig, currentValue, overrides, zoneFraction) {
         const mode = paramConfig.mode;
 
         if (mode === 'skip') return null;
@@ -89,12 +150,38 @@ export class Randomizer {
         const chance = paramConfig.chance !== undefined ? paramConfig.chance : 1.0;
         if (this._rand() > chance) return null; // Didn't fire
 
-        const min = overrides?.min !== undefined ? overrides.min : paramConfig.min;
-        const max = overrides?.max !== undefined ? overrides.max : paramConfig.max;
+        let min = overrides?.min !== undefined ? overrides.min : paramConfig.min;
+        let max = overrides?.max !== undefined ? overrides.max : paramConfig.max;
         const curve = paramConfig.curve || 'uniform';
         const snaps = paramConfig.snapValues;
 
+        // --- ZONED PARAMS ---
+        // If zoned and we have a zone fraction, narrow the [min, max] range
+        // to a sub-band corresponding to the zone position.
+        // zoneFraction 0 → bottom of range, 1 → top of range.
+        // We create a window of 1/zoneCount of the total range, centered on the fraction.
+        if (paramConfig.zoned && zoneFraction !== null && zoneFraction !== undefined && min !== null && max !== null) {
+            const zones = this.config?._meta?.zones;
+            const zoneCount = (zones && zones.length > 0) ? zones.length : 5;
+            const bandSize = (max - min) / zoneCount;
+            const center = min + zoneFraction * (max - min);
+            const halfBand = bandSize / 2;
+            min = Math.max(min, center - halfBand);
+            max = Math.min(max, center + halfBand);
+        }
+
         if (snaps && snaps.length > 0) {
+            // For zoned params with snapValues, pick from the zone-appropriate slice
+            if (paramConfig.zoned && zoneFraction !== null && zoneFraction !== undefined && snaps.length > 1) {
+                const zones = this.config?._meta?.zones;
+                const zoneCount = (zones && zones.length > 0) ? zones.length : 5;
+                const zoneIdx = Math.min(zoneCount - 1, Math.floor(zoneFraction * zoneCount));
+                const perZone = Math.max(1, Math.ceil(snaps.length / zoneCount));
+                const start = Math.min(snaps.length - 1, zoneIdx * perZone);
+                const end = Math.min(snaps.length, start + perZone);
+                const slice = snaps.slice(start, end);
+                return this._pickSnap(slice.length > 0 ? slice : snaps);
+            }
             return this._pickSnap(snaps);
         }
 
@@ -134,7 +221,7 @@ export class Randomizer {
      *   - audioEngine: AudioEngine
      *   - effectsManager: EffectsManager
      *   - selectedTrackIndex: number
-     *   - releaseOverride: { min, max } | null  — from click-position zone
+     *   - zoneFraction: number (0-1) | null — from click position, used for zoned params
      */
     randomize(ctx) {
         if (!this.config) {
@@ -142,11 +229,12 @@ export class Randomizer {
             return;
         }
 
-        const { tracks, audioEngine, effectsManager, selectedTrackIndex, releaseOverride } = ctx;
+        const { tracks, audioEngine, effectsManager, selectedTrackIndex, zoneFraction } = ctx;
+        this._zoneFraction = zoneFraction !== undefined ? zoneFraction : null;
 
         // --- 1. GRANULAR ENGINE ---
         if (this.config.granularEngine) {
-            this._randomizeGranularEngine(tracks, this.config.granularEngine, selectedTrackIndex, releaseOverride);
+            this._randomizeGranularEngine(tracks, this.config.granularEngine, selectedTrackIndex);
         }
 
         // --- 2. 909 DRUM ENGINE ---
@@ -189,7 +277,7 @@ export class Randomizer {
     // GROUP RANDOMIZERS
     // =========================================================================
 
-    _randomizeGranularEngine(tracks, cfg, selectedIdx, releaseOverride) {
+    _randomizeGranularEngine(tracks, cfg, selectedIdx) {
         const params = cfg.params;
         if (!params) return;
 
@@ -199,9 +287,7 @@ export class Randomizer {
             if (!this._isInScope(i, cfg, selectedIdx)) return;
 
             for (const [key, paramCfg] of Object.entries(params)) {
-                // Special handling for relGrain: use release zone override
-                const overrides = (key === 'relGrain' && releaseOverride) ? releaseOverride : undefined;
-                const val = this._resolveParam(paramCfg, t.params[key], overrides);
+                const val = this._resolveParam(paramCfg, t.params[key], undefined, this._zoneFraction);
                 if (val !== null) t.params[key] = val;
             }
         });
@@ -217,7 +303,7 @@ export class Randomizer {
             if (!this._isInScope(i, cfg, selectedIdx)) return;
 
             for (const [key, paramCfg] of Object.entries(params)) {
-                const val = this._resolveParam(paramCfg, t.params[key]);
+                const val = this._resolveParam(paramCfg, t.params[key], undefined, this._zoneFraction);
                 if (val !== null) t.params[key] = val;
             }
         });
@@ -251,31 +337,31 @@ export class Randomizer {
 
                 // Randomize wave
                 if (perLFO.wave) {
-                    const val = this._resolveParam(perLFO.wave, lfo.wave);
+                    const val = this._resolveParam(perLFO.wave, lfo.wave, undefined, this._zoneFraction);
                     if (val !== null) lfo.wave = val;
                 }
 
                 // Randomize rate
                 if (perLFO.rate) {
-                    const val = this._resolveParam(perLFO.rate, lfo.rate);
+                    const val = this._resolveParam(perLFO.rate, lfo.rate, undefined, this._zoneFraction);
                     if (val !== null) lfo.rate = val;
                 }
 
                 // Randomize amount
                 if (perLFO.amount) {
-                    const val = this._resolveParam(perLFO.amount, lfo.amount);
+                    const val = this._resolveParam(perLFO.amount, lfo.amount, undefined, this._zoneFraction);
                     if (val !== null) lfo.amount = val;
                 }
 
                 // Randomize sync
                 if (perLFO.sync) {
-                    const val = this._resolveParam(perLFO.sync, lfo.sync);
+                    const val = this._resolveParam(perLFO.sync, lfo.sync, undefined, this._zoneFraction);
                     if (val !== null) lfo.sync = val;
                 }
 
                 // Randomize syncRateIndex
                 if (perLFO.syncRateIndex) {
-                    const val = this._resolveParam(perLFO.syncRateIndex, lfo.syncRateIndex);
+                    const val = this._resolveParam(perLFO.syncRateIndex, lfo.syncRateIndex, undefined, this._zoneFraction);
                     if (val !== null) lfo.syncRateIndex = Math.round(val);
                 }
 
@@ -312,7 +398,7 @@ export class Randomizer {
             if (!this._isInScope(i, cfg, selectedIdx)) return;
 
             for (const [key, paramCfg] of Object.entries(params)) {
-                const val = this._resolveParam(paramCfg, t.params[key]);
+                const val = this._resolveParam(paramCfg, t.params[key], undefined, this._zoneFraction);
                 if (val !== null) {
                     t.params[key] = val;
                     // Apply to audio nodes immediately
@@ -379,7 +465,7 @@ export class Randomizer {
 
             for (const [key, paramCfg] of Object.entries(params)) {
                 const currentVal = this._getGroupBusValue(bus, key);
-                const val = this._resolveParam(paramCfg, currentVal);
+                const val = this._resolveParam(paramCfg, currentVal, undefined, this._zoneFraction);
                 if (val !== null) {
                     this._applyGroupBusParam(bus, key, val, audioEngine);
                 }
@@ -435,7 +521,7 @@ export class Randomizer {
 
             for (const [key, paramCfg] of Object.entries(params)) {
                 const currentVal = this._getReturnBusValue(bus, key);
-                const val = this._resolveParam(paramCfg, currentVal);
+                const val = this._resolveParam(paramCfg, currentVal, undefined, this._zoneFraction);
                 if (val !== null) {
                     this._applyReturnBusParam(bus, key, val, audioEngine);
                 }
@@ -503,7 +589,7 @@ export class Randomizer {
                 const pIdx = parseInt(key.replace('param', ''));
                 if (isNaN(pIdx) || pIdx < 0 || pIdx > 3) continue;
 
-                const val = this._resolveParam(paramCfg, state.params[pIdx]);
+                const val = this._resolveParam(paramCfg, state.params[pIdx], undefined, this._zoneFraction);
                 if (val !== null) {
                     state.params[pIdx] = val;
                     audioEngine.setEffectParam(fxId, pIdx, val);
@@ -531,23 +617,23 @@ export class Randomizer {
                 }
 
                 if (perLFO.wave) {
-                    const val = this._resolveParam(perLFO.wave, lfo.wave);
+                    const val = this._resolveParam(perLFO.wave, lfo.wave, undefined, this._zoneFraction);
                     if (val !== null) lfo.wave = val;
                 }
                 if (perLFO.rate) {
-                    const val = this._resolveParam(perLFO.rate, lfo.rate);
+                    const val = this._resolveParam(perLFO.rate, lfo.rate, undefined, this._zoneFraction);
                     if (val !== null) lfo.rate = val;
                 }
                 if (perLFO.amount) {
-                    const val = this._resolveParam(perLFO.amount, lfo.amount);
+                    const val = this._resolveParam(perLFO.amount, lfo.amount, undefined, this._zoneFraction);
                     if (val !== null) lfo.amount = val;
                 }
                 if (perLFO.sync) {
-                    const val = this._resolveParam(perLFO.sync, lfo.sync);
+                    const val = this._resolveParam(perLFO.sync, lfo.sync, undefined, this._zoneFraction);
                     if (val !== null) lfo.sync = val;
                 }
                 if (perLFO.syncRateIndex) {
-                    const val = this._resolveParam(perLFO.syncRateIndex, lfo.syncRateIndex);
+                    const val = this._resolveParam(perLFO.syncRateIndex, lfo.syncRateIndex, undefined, this._zoneFraction);
                     if (val !== null) lfo.syncRateIndex = Math.round(val);
                 }
             });

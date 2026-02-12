@@ -131,10 +131,13 @@ export class TrackManager {
 
         // If a config-driven Randomizer is available, use it
         if (randomizer && randomizer.config) {
+            // Map intensity 1-5 to zoneFraction 0-1
+            const maxLevel = Object.keys(AUTOMATION_INTENSITIES).length;
+            const zoneFraction = (intensityLevel - 0.5) / maxLevel;
             randomizer.randomize({
                 ...ctx,
                 tracks: this.tracks,
-                releaseOverride: { min: zone.min, max: zone.max }
+                zoneFraction
             });
             return;
         }

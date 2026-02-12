@@ -217,18 +217,25 @@ document.getElementById('scopeBtnTrim').addEventListener('click', (e) => {
 document.getElementById('randomizeAllPatternsBtn').addEventListener('click', () => uiManager.randomizeAllPatterns());
 document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const buttonWidth = rect.width;
-    const clickRatio = clickX / buttonWidth;
-    let releaseMin, releaseMax, zoneName;
-    if (clickRatio < 0.2) { releaseMin = 0.01; releaseMax = 0.2; zoneName = 'VERY SHORT'; }
-    else if (clickRatio < 0.4) { releaseMin = 0.2; releaseMax = 0.6; zoneName = 'SHORT'; }
-    else if (clickRatio < 0.6) { releaseMin = 0.6; releaseMax = 1.2; zoneName = 'MEDIUM'; }
-    else if (clickRatio < 0.8) { releaseMin = 1.2; releaseMax = 1.6; zoneName = 'LONG'; }
-    else { releaseMin = 1.6; releaseMax = 2.0; zoneName = 'VERY LONG'; }
+    const clickRatio = (e.clientX - rect.left) / rect.width;
+
+    // Get zone name from config (or fallback)
+    let zoneName;
+    if (randomizer.config) {
+        zoneName = randomizer.getZoneName(clickRatio);
+    }
+    if (!zoneName) {
+        // Hardcoded fallback
+        if (clickRatio < 0.2) zoneName = 'VERY SHORT';
+        else if (clickRatio < 0.4) zoneName = 'SHORT';
+        else if (clickRatio < 0.6) zoneName = 'MEDIUM';
+        else if (clickRatio < 0.8) zoneName = 'LONG';
+        else zoneName = 'VERY LONG';
+    }
+
     const btn = e.currentTarget;
     const originalText = btn.innerHTML;
-    btn.innerHTML = `${zoneName} REL`;
+    btn.innerHTML = `${zoneName}`;
     btn.style.transition = 'none';
     btn.style.backgroundColor = '#4f46e5';
     setTimeout(() => {
@@ -238,16 +245,22 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
     }, 300);
 
     if (randomizer.config) {
-        // Config-driven randomization
+        const zoneFraction = randomizer.getZoneFraction(clickRatio);
         randomizer.randomize({
             tracks,
             audioEngine,
             effectsManager,
             selectedTrackIndex: uiManager.getSelectedTrackIndex(),
-            releaseOverride: { min: releaseMin, max: releaseMax }
+            zoneFraction
         });
     } else {
-        // Fallback: legacy hardcoded behavior
+        // Legacy fallback (no zone support, uses hardcoded release ranges)
+        let releaseMin, releaseMax;
+        if (clickRatio < 0.2) { releaseMin = 0.01; releaseMax = 0.2; }
+        else if (clickRatio < 0.4) { releaseMin = 0.2; releaseMax = 0.6; }
+        else if (clickRatio < 0.6) { releaseMin = 0.6; releaseMax = 1.2; }
+        else if (clickRatio < 0.8) { releaseMin = 1.2; releaseMax = 1.6; }
+        else { releaseMin = 1.6; releaseMax = 2.0; }
         tracks.forEach(t => {
             if (t.ignoreRandom) return;
             if (t.type === 'granular') {
@@ -264,6 +277,18 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
     uiManager.updateLfoUI();
     visualizer.triggerRedraw();
     if (effectControls) effectControls.render();
+});
+
+// Reload randomization config button
+document.getElementById('reloadRandConfigBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('reloadRandConfigBtn');
+    const icon = btn.querySelector('i');
+    if (icon) icon.classList.add('fa-spin');
+    const ok = await randomizer.reload();
+    if (icon) icon.classList.remove('fa-spin');
+    btn.style.transition = 'none';
+    btn.style.color = ok ? '#34d399' : '#f87171';
+    setTimeout(() => { btn.style.transition = ''; btn.style.color = ''; }, 800);
 });
 
 document.getElementById('randomizeBtn').addEventListener('click', () => {

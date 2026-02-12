@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "version": "1.0.0",
+    "version": "1.2.0",
     "description": "BeatOS Randomization Configuration — controls which parameters the 'Rand Prms' button affects",
     "modes": {
       "randomize": "Parameter will be randomized within min/max range (or snapValues if present)",
@@ -17,7 +17,15 @@
       "all": "Apply to all tracks/instances in this group",
       "selected": "Apply only to the currently selected track",
       "indices": "Apply only to specific indices listed in scopeIndices"
-    }
+    },
+    "zonedExplanation": "When 'zoned' is true on a parameter, the Rand Prms button click position (left=zone 1, right=last zone) scales the effective randomization range. Zone 1 uses a sub-range near min, last zone uses a sub-range near max. The zones below define the named breakpoints and their label shown on the button. For non-zoned params, the full min/max range is always used regardless of click position.",
+    "zones": [
+      { "name": "VERY SHORT" },
+      { "name": "SHORT" },
+      { "name": "MEDIUM" },
+      { "name": "LONG" },
+      { "name": "VERY LONG" }
+    ]
   },
 
   "granularEngine": {
@@ -25,23 +33,21 @@
     "_scope": "all",
     "_scopeIndices": [],
     "params": {
-      "position":   { "mode": "randomize", "min": 0.0,   "max": 1.0,   "chance": 1.0, "curve": "uniform",  "snapValues": null },
-      "spray":      { "mode": "randomize", "min": 0.0,   "max": 0.1,   "chance": 0.8, "curve": "exponential", "snapValues": null },
-      "scanSpeed":  { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.5, "curve": "exponential", "snapValues": null },
-      "density":    { "mode": "skip",      "min": 1,     "max": 80,    "chance": 0.7, "curve": "uniform",  "snapValues": [5, 10, 20, 40, 60, 80] },
-      "overlap":    { "mode": "skip",      "min": 0.0,   "max": 4.0,   "chance": 0.6, "curve": "uniform",  "snapValues": null },
-      "grainSize":  { "mode": "randomize", "min": 0.05,  "max": 0.3,   "chance": 1.0, "curve": "uniform",  "snapValues": null },
-      "pitch":      { "mode": "randomize", "min": 0.5,   "max": 2.0,   "chance": 1.0, "curve": "gaussian", "snapValues": [0.25, 0.5, 0.75, 1.0, 1.5, 2.0] },
-      "relGrain":   { "mode": "randomize", "min": 0.05,  "max": 0.5,   "chance": 1.0, "curve": "uniform",  "snapValues": null,
-        "_note": "min/max are overridden by release zone when clicking Rand Prms at different positions"
-      },
-      "sampleStart":{ "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null },
-      "sampleEnd":  { "mode": "skip",      "min": 0.5,   "max": 1.0,   "chance": 0.3, "curve": "inverseExponential", "snapValues": null },
-      "edgeCrunch": { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null },
-      "orbit":      { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null },
-      "ampAttack":  { "mode": "skip",      "min": 0.001, "max": 0.5,   "chance": 0.4, "curve": "exponential", "snapValues": null },
-      "ampDecay":   { "mode": "skip",      "min": 0.001, "max": 0.5,   "chance": 0.4, "curve": "exponential", "snapValues": null },
-      "ampRelease": { "mode": "skip",      "min": 0.001, "max": 0.5,   "chance": 0.4, "curve": "exponential", "snapValues": null }
+      "position":   { "mode": "randomize", "min": 0.0,   "max": 1.0,   "chance": 1.0, "curve": "uniform",     "snapValues": null, "zoned": false },
+      "spray":      { "mode": "randomize", "min": 0.0,   "max": 0.1,   "chance": 0.8, "curve": "exponential", "snapValues": null, "zoned": false },
+      "scanSpeed":  { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.5, "curve": "exponential", "snapValues": null, "zoned": false },
+      "density":    { "mode": "skip",      "min": 1,     "max": 80,    "chance": 0.7, "curve": "uniform",     "snapValues": [5, 10, 20, 40, 60, 80], "zoned": false },
+      "overlap":    { "mode": "skip",      "min": 0.0,   "max": 4.0,   "chance": 0.6, "curve": "uniform",     "snapValues": null, "zoned": false },
+      "grainSize":  { "mode": "randomize", "min": 0.05,  "max": 0.3,   "chance": 1.0, "curve": "uniform",     "snapValues": null, "zoned": false },
+      "pitch":      { "mode": "randomize", "min": 0.5,   "max": 2.0,   "chance": 1.0, "curve": "gaussian",    "snapValues": [0.25, 0.5, 0.75, 1.0, 1.5, 2.0], "zoned": false },
+      "relGrain":   { "mode": "randomize", "min": 0.01,  "max": 2.0,   "chance": 1.0, "curve": "uniform",     "snapValues": null, "zoned": true },
+      "sampleStart":{ "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null, "zoned": false },
+      "sampleEnd":  { "mode": "skip",      "min": 0.5,   "max": 1.0,   "chance": 0.3, "curve": "inverseExponential", "snapValues": null, "zoned": false },
+      "edgeCrunch": { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null, "zoned": false },
+      "orbit":      { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null, "zoned": false },
+      "ampAttack":  { "mode": "skip",      "min": 0.001, "max": 0.5,   "chance": 0.4, "curve": "exponential", "snapValues": null, "zoned": false },
+      "ampDecay":   { "mode": "skip",      "min": 0.001, "max": 0.5,   "chance": 0.4, "curve": "exponential", "snapValues": null, "zoned": false },
+      "ampRelease": { "mode": "skip",      "min": 0.001, "max": 0.5,   "chance": 0.4, "curve": "exponential", "snapValues": null, "zoned": false }
     }
   },
 
@@ -50,8 +56,8 @@
     "_scope": "all",
     "_scopeIndices": [],
     "params": {
-      "drumTune":  { "mode": "randomize", "min": 0.0, "max": 1.0, "chance": 1.0, "curve": "uniform", "snapValues": null },
-      "drumDecay": { "mode": "randomize", "min": 0.0, "max": 1.0, "chance": 1.0, "curve": "uniform", "snapValues": null }
+      "drumTune":  { "mode": "randomize", "min": 0.0, "max": 1.0, "chance": 1.0, "curve": "uniform", "snapValues": null, "zoned": false },
+      "drumDecay": { "mode": "randomize", "min": 0.0, "max": 1.0, "chance": 1.0, "curve": "uniform", "snapValues": null, "zoned": true }
     }
   },
 
@@ -60,18 +66,16 @@
     "_scope": "all",
     "_scopeIndices": [],
     "perLFO": {
-      "wave":          { "mode": "randomize", "min": null,  "max": null,  "chance": 0.7,  "curve": "uniform", "snapValues": ["sine", "square", "sawtooth", "triangle", "pulse", "random"] },
-      "rate":          { "mode": "randomize", "min": 0.1,   "max": 20.0,  "chance": 0.7,  "curve": "uniform", "snapValues": null },
-      "amount":        { "mode": "randomize", "min": 0.1,   "max": 1.0,   "chance": 0.7,  "curve": "uniform", "snapValues": null },
-      "sync":          { "mode": "skip",      "min": null,  "max": null,  "chance": 0.3,  "curve": "uniform", "snapValues": [true, false] },
-      "syncRateIndex": { "mode": "skip",      "min": 0,     "max": 29,    "chance": 0.5,  "curve": "uniform", "snapValues": [7, 9, 12, 15, 20, 24] },
-      "targets":       { "mode": "randomize", "min": null,  "max": null,  "chance": 0.7,  "curve": "uniform",
+      "wave":          { "mode": "randomize", "min": null,  "max": null,  "chance": 0.7,  "curve": "uniform", "snapValues": ["sine", "square", "sawtooth", "triangle", "pulse", "random"], "zoned": false },
+      "rate":          { "mode": "randomize", "min": 0.1,   "max": 20.0,  "chance": 0.7,  "curve": "uniform", "snapValues": null, "zoned": false },
+      "amount":        { "mode": "randomize", "min": 0.1,   "max": 1.0,   "chance": 0.7,  "curve": "uniform", "snapValues": null, "zoned": false },
+      "sync":          { "mode": "skip",      "min": null,  "max": null,  "chance": 0.3,  "curve": "uniform", "snapValues": [true, false], "zoned": false },
+      "syncRateIndex": { "mode": "skip",      "min": 0,     "max": 29,    "chance": 0.5,  "curve": "uniform", "snapValues": [7, 9, 12, 15, 20, 24], "zoned": false },
+      "targets":       { "mode": "randomize", "min": null,  "max": null,  "chance": 0.7,  "curve": "uniform", "zoned": false,
         "maxTargets": 3,
-        "snapValues": ["position", "spray", "density", "grainSize", "pitch", "filter", "hpFilter", "sampleStart", "sampleEnd", "scanSpeed", "overlap", "edgeCrunch", "orbit"],
-        "_note": "Picks 1-maxTargets random targets from snapValues. Set to empty array [] to clear."
+        "snapValues": ["position", "spray", "density", "grainSize", "pitch", "filter", "hpFilter", "sampleStart", "sampleEnd", "scanSpeed", "overlap", "edgeCrunch", "orbit"]
       },
-      "_activationChance": 0.7,
-      "_activationNote": "Probability that this LFO is active at all. If inactive, amount is set to 0 and targets cleared."
+      "_activationChance": 0.7
     }
   },
 
@@ -80,19 +84,19 @@
     "_scope": "all",
     "_scopeIndices": [],
     "params": {
-      "hpFilter":  { "mode": "randomize", "min": 20,    "max": 520,   "chance": 1.0, "curve": "exponential", "snapValues": null },
-      "filter":    { "mode": "randomize", "min": 2000,  "max": 12000, "chance": 1.0, "curve": "inverseExponential", "snapValues": null },
-      "volume":    { "mode": "lock",      "min": 0.0,   "max": 1.5,   "chance": 1.0, "curve": "uniform",  "snapValues": null },
-      "pan":       { "mode": "lock",      "min": -1.0,  "max": 1.0,   "chance": 1.0, "curve": "gaussian", "snapValues": null },
-      "gain":      { "mode": "lock",      "min": 0.0,   "max": 2.0,   "chance": 1.0, "curve": "uniform",  "snapValues": null },
-      "eqLow":     { "mode": "skip",      "min": -15,   "max": 15,    "chance": 0.5, "curve": "gaussian", "snapValues": null },
-      "eqMid":     { "mode": "skip",      "min": -15,   "max": 15,    "chance": 0.5, "curve": "gaussian", "snapValues": null },
-      "eqHigh":    { "mode": "skip",      "min": -15,   "max": 15,    "chance": 0.5, "curve": "gaussian", "snapValues": null },
-      "eqMidFreq": { "mode": "skip",      "min": 200,   "max": 5000,  "chance": 0.5, "curve": "uniform",  "snapValues": null },
-      "drive":     { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null },
-      "comp":      { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null },
-      "sendA":     { "mode": "skip",      "min": 0.0,   "max": 0.6,   "chance": 0.4, "curve": "exponential", "snapValues": null },
-      "sendB":     { "mode": "skip",      "min": 0.0,   "max": 0.6,   "chance": 0.4, "curve": "exponential", "snapValues": null }
+      "hpFilter":  { "mode": "randomize", "min": 20,    "max": 520,   "chance": 1.0, "curve": "exponential",        "snapValues": null, "zoned": false },
+      "filter":    { "mode": "randomize", "min": 2000,  "max": 12000, "chance": 1.0, "curve": "inverseExponential", "snapValues": null, "zoned": false },
+      "volume":    { "mode": "lock",      "min": 0.0,   "max": 1.5,   "chance": 1.0, "curve": "uniform",  "snapValues": null, "zoned": false },
+      "pan":       { "mode": "lock",      "min": -1.0,  "max": 1.0,   "chance": 1.0, "curve": "gaussian", "snapValues": null, "zoned": false },
+      "gain":      { "mode": "lock",      "min": 0.0,   "max": 2.0,   "chance": 1.0, "curve": "uniform",  "snapValues": null, "zoned": false },
+      "eqLow":     { "mode": "skip",      "min": -15,   "max": 15,    "chance": 0.5, "curve": "gaussian", "snapValues": null, "zoned": false },
+      "eqMid":     { "mode": "skip",      "min": -15,   "max": 15,    "chance": 0.5, "curve": "gaussian", "snapValues": null, "zoned": false },
+      "eqHigh":    { "mode": "skip",      "min": -15,   "max": 15,    "chance": 0.5, "curve": "gaussian", "snapValues": null, "zoned": false },
+      "eqMidFreq": { "mode": "skip",      "min": 200,   "max": 5000,  "chance": 0.5, "curve": "uniform",  "snapValues": null, "zoned": false },
+      "drive":     { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null, "zoned": false },
+      "comp":      { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null, "zoned": false },
+      "sendA":     { "mode": "skip",      "min": 0.0,   "max": 0.6,   "chance": 0.4, "curve": "exponential", "snapValues": null, "zoned": false },
+      "sendB":     { "mode": "skip",      "min": 0.0,   "max": 0.6,   "chance": 0.4, "curve": "exponential", "snapValues": null, "zoned": false }
     }
   },
 
@@ -101,14 +105,14 @@
     "_scope": "all",
     "_scopeIndices": [],
     "params": {
-      "volume": { "mode": "lock", "min": 0.0, "max": 1.5, "chance": 1.0, "curve": "uniform",     "snapValues": null },
-      "comp":   { "mode": "skip", "min": 0.0, "max": 0.5, "chance": 0.3, "curve": "exponential",  "snapValues": null },
-      "drive":  { "mode": "skip", "min": 0.0, "max": 0.5, "chance": 0.3, "curve": "exponential",  "snapValues": null },
-      "sendA":  { "mode": "skip", "min": 0.0, "max": 0.5, "chance": 0.3, "curve": "exponential",  "snapValues": null },
-      "sendB":  { "mode": "skip", "min": 0.0, "max": 0.5, "chance": 0.3, "curve": "exponential",  "snapValues": null },
-      "eqLow":  { "mode": "skip", "min": -40, "max": 0,   "chance": 0.2, "curve": "uniform",      "snapValues": [-40, 0], "_note": "Kill switch values" },
-      "eqMid":  { "mode": "skip", "min": -40, "max": 0,   "chance": 0.2, "curve": "uniform",      "snapValues": [-40, 0] },
-      "eqHigh": { "mode": "skip", "min": -40, "max": 0,   "chance": 0.2, "curve": "uniform",      "snapValues": [-40, 0] }
+      "volume": { "mode": "lock", "min": 0.0, "max": 1.5, "chance": 1.0, "curve": "uniform",     "snapValues": null, "zoned": false },
+      "comp":   { "mode": "skip", "min": 0.0, "max": 0.5, "chance": 0.3, "curve": "exponential",  "snapValues": null, "zoned": false },
+      "drive":  { "mode": "skip", "min": 0.0, "max": 0.5, "chance": 0.3, "curve": "exponential",  "snapValues": null, "zoned": false },
+      "sendA":  { "mode": "skip", "min": 0.0, "max": 0.5, "chance": 0.3, "curve": "exponential",  "snapValues": null, "zoned": false },
+      "sendB":  { "mode": "skip", "min": 0.0, "max": 0.5, "chance": 0.3, "curve": "exponential",  "snapValues": null, "zoned": false },
+      "eqLow":  { "mode": "skip", "min": -40, "max": 0,   "chance": 0.2, "curve": "uniform",      "snapValues": [-40, 0], "zoned": false },
+      "eqMid":  { "mode": "skip", "min": -40, "max": 0,   "chance": 0.2, "curve": "uniform",      "snapValues": [-40, 0], "zoned": false },
+      "eqHigh": { "mode": "skip", "min": -40, "max": 0,   "chance": 0.2, "curve": "uniform",      "snapValues": [-40, 0], "zoned": false }
     }
   },
 
@@ -117,17 +121,17 @@
     "_scope": "all",
     "_scopeIndices": [],
     "params": {
-      "inputGain": { "mode": "lock", "min": 0.0,  "max": 2.0,   "chance": 1.0, "curve": "uniform",     "snapValues": null },
-      "volume":    { "mode": "lock", "min": 0.0,  "max": 1.5,   "chance": 1.0, "curve": "uniform",     "snapValues": null },
-      "pan":       { "mode": "skip", "min": -1.0, "max": 1.0,   "chance": 0.3, "curve": "gaussian",    "snapValues": null },
-      "eqLow":     { "mode": "skip", "min": -15,  "max": 15,    "chance": 0.3, "curve": "gaussian",    "snapValues": null },
-      "eqMid":     { "mode": "skip", "min": -15,  "max": 15,    "chance": 0.3, "curve": "gaussian",    "snapValues": null },
-      "eqHigh":    { "mode": "skip", "min": -15,  "max": 15,    "chance": 0.3, "curve": "gaussian",    "snapValues": null },
-      "eqMidFreq": { "mode": "skip", "min": 200,  "max": 5000,  "chance": 0.3, "curve": "uniform",     "snapValues": null },
-      "drive":     { "mode": "skip", "min": 0.0,  "max": 0.5,   "chance": 0.2, "curve": "exponential", "snapValues": null },
-      "comp":      { "mode": "skip", "min": 0.0,  "max": 0.5,   "chance": 0.2, "curve": "exponential", "snapValues": null },
-      "sendA":     { "mode": "skip", "min": 0.0,  "max": 0.5,   "chance": 0.2, "curve": "exponential", "snapValues": null },
-      "sendB":     { "mode": "skip", "min": 0.0,  "max": 0.5,   "chance": 0.2, "curve": "exponential", "snapValues": null }
+      "inputGain": { "mode": "lock", "min": 0.0,  "max": 2.0,   "chance": 1.0, "curve": "uniform",     "snapValues": null, "zoned": false },
+      "volume":    { "mode": "lock", "min": 0.0,  "max": 1.5,   "chance": 1.0, "curve": "uniform",     "snapValues": null, "zoned": false },
+      "pan":       { "mode": "skip", "min": -1.0, "max": 1.0,   "chance": 0.3, "curve": "gaussian",    "snapValues": null, "zoned": false },
+      "eqLow":     { "mode": "skip", "min": -15,  "max": 15,    "chance": 0.3, "curve": "gaussian",    "snapValues": null, "zoned": false },
+      "eqMid":     { "mode": "skip", "min": -15,  "max": 15,    "chance": 0.3, "curve": "gaussian",    "snapValues": null, "zoned": false },
+      "eqHigh":    { "mode": "skip", "min": -15,  "max": 15,    "chance": 0.3, "curve": "gaussian",    "snapValues": null, "zoned": false },
+      "eqMidFreq": { "mode": "skip", "min": 200,  "max": 5000,  "chance": 0.3, "curve": "uniform",     "snapValues": null, "zoned": false },
+      "drive":     { "mode": "skip", "min": 0.0,  "max": 0.5,   "chance": 0.2, "curve": "exponential", "snapValues": null, "zoned": false },
+      "comp":      { "mode": "skip", "min": 0.0,  "max": 0.5,   "chance": 0.2, "curve": "exponential", "snapValues": null, "zoned": false },
+      "sendA":     { "mode": "skip", "min": 0.0,  "max": 0.5,   "chance": 0.2, "curve": "exponential", "snapValues": null, "zoned": false },
+      "sendB":     { "mode": "skip", "min": 0.0,  "max": 0.5,   "chance": 0.2, "curve": "exponential", "snapValues": null, "zoned": false }
     }
   },
 
@@ -136,10 +140,10 @@
     "_scope": "all",
     "_scopeIndices": [],
     "perFX": {
-      "param0": { "mode": "skip", "min": 0.0, "max": 1.0, "chance": 0.5, "curve": "uniform", "snapValues": null, "_label_fx0": "Time",     "_label_fx1": "Tone" },
-      "param1": { "mode": "skip", "min": 0.0, "max": 1.0, "chance": 0.5, "curve": "uniform", "snapValues": null, "_label_fx0": "Feedback",  "_label_fx1": "Size" },
-      "param2": { "mode": "skip", "min": 0.0, "max": 1.0, "chance": 0.5, "curve": "uniform", "snapValues": null, "_label_fx0": "Color",     "_label_fx1": "Damp" },
-      "param3": { "mode": "skip", "min": 0.0, "max": 1.0, "chance": 0.5, "curve": "uniform", "snapValues": null, "_label_fx0": "Mix",       "_label_fx1": "Mix" }
+      "param0": { "mode": "skip", "min": 0.0, "max": 1.0, "chance": 0.5, "curve": "uniform", "snapValues": null, "zoned": false, "_label_fx0": "Time",     "_label_fx1": "Tone" },
+      "param1": { "mode": "skip", "min": 0.0, "max": 1.0, "chance": 0.5, "curve": "uniform", "snapValues": null, "zoned": false, "_label_fx0": "Feedback",  "_label_fx1": "Size" },
+      "param2": { "mode": "skip", "min": 0.0, "max": 1.0, "chance": 0.5, "curve": "uniform", "snapValues": null, "zoned": false, "_label_fx0": "Color",     "_label_fx1": "Damp" },
+      "param3": { "mode": "skip", "min": 0.0, "max": 1.0, "chance": 0.5, "curve": "uniform", "snapValues": null, "zoned": false, "_label_fx0": "Mix",       "_label_fx1": "Mix" }
     }
   },
 
@@ -148,11 +152,11 @@
     "_scope": "all",
     "_scopeIndices": [],
     "perLFO": {
-      "wave":          { "mode": "skip", "min": null, "max": null, "chance": 0.4, "curve": "uniform", "snapValues": ["sine", "square", "sawtooth", "triangle", "pulse", "random"] },
-      "rate":          { "mode": "skip", "min": 0.1,  "max": 20.0, "chance": 0.4, "curve": "uniform", "snapValues": null },
-      "amount":        { "mode": "skip", "min": 0.0,  "max": 1.0,  "chance": 0.4, "curve": "uniform", "snapValues": null },
-      "sync":          { "mode": "skip", "min": null, "max": null, "chance": 0.3, "curve": "uniform", "snapValues": [true, false] },
-      "syncRateIndex": { "mode": "skip", "min": 0,    "max": 29,   "chance": 0.3, "curve": "uniform", "snapValues": [7, 9, 12, 15, 20, 24] },
+      "wave":          { "mode": "skip", "min": null, "max": null, "chance": 0.4, "curve": "uniform", "snapValues": ["sine", "square", "sawtooth", "triangle", "pulse", "random"], "zoned": false },
+      "rate":          { "mode": "skip", "min": 0.1,  "max": 20.0, "chance": 0.4, "curve": "uniform", "snapValues": null, "zoned": false },
+      "amount":        { "mode": "skip", "min": 0.0,  "max": 1.0,  "chance": 0.4, "curve": "uniform", "snapValues": null, "zoned": false },
+      "sync":          { "mode": "skip", "min": null, "max": null, "chance": 0.3, "curve": "uniform", "snapValues": [true, false], "zoned": false },
+      "syncRateIndex": { "mode": "skip", "min": 0,    "max": 29,   "chance": 0.3, "curve": "uniform", "snapValues": [7, 9, 12, 15, 20, 24], "zoned": false },
       "_activationChance": 0.4
     },
     "matrix": {
