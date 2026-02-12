@@ -64,7 +64,6 @@ export class Mixer {
 
         document.addEventListener('visibilitychange', () => {
             this.isVisible = !document.hidden;
-        });            }
         });
     }
 
