@@ -75,7 +75,7 @@ export class TrackManager {
     randomizeTrackModulators(t) {
         // Updated with new targets
         const targets = ['none', 'position', 'spray', 'density', 'grainSize', 'pitch', 'filter', 'hpFilter', 'sampleStart', 'sampleEnd'];
-        const waves = ['sine', 'square', 'sawtooth', 'random'];
+        const waves = ['sine', 'square', 'sawtooth', 'triangle','pulse', 'random'];
         t.lfos.forEach(lfo => {
             if(Math.random() < 0.7) {
                 lfo.target = targets[Math.floor(Math.random() * (targets.length - 1)) + 1]; 
