@@ -275,8 +275,11 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
 
     uiManager.updateKnobs();
     uiManager.updateLfoUI();
+    uiManager.selectTrack(uiManager.getSelectedTrackIndex(), () => visualizer.triggerRedraw());
     visualizer.triggerRedraw();
     if (effectControls) effectControls.render();
+    if (uiManager.mixer) uiManager.mixer.render();
+    if (uiManager.automationPanel) uiManager.automationPanel.render();
 });
 
 // Reload randomization config button
