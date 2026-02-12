@@ -256,9 +256,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         super();
         this.MAX_VOICES = 64;
         this.safetyLimit = 400; 
-
-        // OPT: Pre-allocate voice pool as flat typed arrays for cache-friendly access
-        // Each voice has fixed-size properties stored contiguously
         this.voices = Array(this.MAX_VOICES).fill(null).map((_, id) => ({
             id, active: false, buffer: null, bufferLength: 0,
             position: 0, phase: 0, grainLength: 0, pitch: 1.0, velocity: 1.0,
@@ -272,30 +269,11 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         this.lastReportedCount = 0;
         this._rngState = 0xCAFEBABE;
 
-        // OPT: Track which output indices have active voices this block
-        // Avoids clearing/clipping all 32 outputs when only a few are active
-        this._dirtyOutputs = new Uint8Array(32);
-
-        // OPT: Free-list for activeNotes to avoid splice() GC pressure
-        this._notePool = [];
-
         this.LUT_SIZE = 4096;
         this.windowLUT = new Float32Array(this.LUT_SIZE);
         for(let i=0; i<this.LUT_SIZE; i++) {
             const phase = i/(this.LUT_SIZE-1);
             this.windowLUT[i] = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * phase));
-        }
-
-        // OPT: Pre-compute soft clip LUT to avoid division in inner loop
-        // Maps input range [-4, 4] to soft-clipped output via x/(1+|x|)
-        this.CLIP_LUT_SIZE = 8192;
-        this.CLIP_LUT_HALF = this.CLIP_LUT_SIZE >>> 1;
-        this.CLIP_RANGE = 4.0; // input range [-4, 4]
-        this.CLIP_SCALE = this.CLIP_LUT_HALF / this.CLIP_RANGE;
-        this.clipLUT = new Float32Array(this.CLIP_LUT_SIZE);
-        for (let i = 0; i < this.CLIP_LUT_SIZE; i++) {
-            const x = (i - this.CLIP_LUT_HALF) / this.CLIP_SCALE;
-            this.clipLUT[i] = x / (1.0 + (x < 0 ? -x : x));
         }
         
         this.port.onmessage = (e) => {
@@ -303,7 +281,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             switch(type) {
                 case 'noteOn': this.handleNoteOn(data); break;
                 case 'setBuffer': this.trackBuffers.set(Number(data.trackId), data.buffer); break;
-                case 'stopAll': this.stopAllVoices(); this.activeNotes.length = 0; break;
+                case 'stopAll': this.stopAllVoices(); this.activeNotes = []; break;
                 case 'stopTrack': this.stopTrack(Number(data.trackId)); break;
                 case 'setMaxGrains': this.safetyLimit = data.max; break;
             }
@@ -315,15 +293,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         this._rngState ^= this._rngState >>> 17;
         this._rngState ^= this._rngState << 5;
         return (this._rngState >>> 0) / 4294967296;
-    }
-
-    // OPT: Inline soft clip via LUT — no division, no branching
-    softClip(x) {
-        // Clamp to LUT range and look up
-        let i = (x * this.CLIP_SCALE + this.CLIP_LUT_HALF) | 0;
-        if (i < 0) i = 0;
-        else if (i >= this.CLIP_LUT_SIZE) i = this.CLIP_LUT_SIZE - 1;
-        return this.clipLUT[i];
     }
 
     handleNoteOn(data) {
@@ -340,32 +309,23 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     process(inputs, outputs, parameters) {
         const frameCount = outputs[0][0].length;
         const now = currentTime;
-        const invSR = 1.0 / sampleRate;
-        const blockEnd = now + frameCount * invSR;
-
-        // OPT: Only clear outputs that will be written to (tracked via _dirtyOutputs)
-        // Reset dirty flags
-        this._dirtyOutputs.fill(0);
+        
+        for (let o = 0; o < outputs.length; o++) {
+            if (outputs[o]) {
+                for (let c = 0; c < outputs[o].length; c++) {
+                    outputs[o][c].fill(0);
+                }
+            }
+        }
 
         // --- 1. SCHEDULER ---
-        // OPT: Swap-and-pop removal instead of splice()
-        let noteLen = this.activeNotes.length;
-        let i = noteLen - 1;
-        while (i >= 0) {
+        for (let i = this.activeNotes.length - 1; i >= 0; i--) {
             const note = this.activeNotes[i];
-            if (now > note.startTime + note.duration) {
-                // Swap-and-pop
-                noteLen--;
-                if (i < noteLen) this.activeNotes[i] = this.activeNotes[noteLen];
-                this.activeNotes.length = noteLen;
-                // Don't decrement i — re-check swapped element
-                continue;
-            }
+            if (now > note.startTime + note.duration) { this.activeNotes.splice(i, 1); continue; }
             if (now >= note.startTime) {
-                const density = note.params.density || 20;
-                const interval = 1.0 / (density > 0.1 ? density : 0.1);
+                let interval = 1 / Math.max(0.1, note.params.density || 20);
                 let spawnLimit = 5;
-                while (note.nextGrainTime < blockEnd && spawnLimit > 0) {
+                while (note.nextGrainTime < now + (frameCount / sampleRate) && spawnLimit > 0) {
                     if (note.nextGrainTime >= now) {
                         if (this.activeVoiceIndices.length < this.MAX_VOICES) {
                             this.spawnGrain(note);
@@ -375,7 +335,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                     spawnLimit--;
                 }
             }
-            i--;
         }
 
         if (this.activeVoiceIndices.length !== this.lastReportedCount) {
@@ -385,31 +344,15 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
 
         if (this.activeVoiceIndices.length === 0) return true;
 
-        // OPT: Compute trackScale ONCE outside voice loop (same for all voices with same mode)
-        const activeCount = this.activeVoiceIndices.length;
-        const normalScale = 1.0 / (1.0 + (activeCount * 0.15));
-        const cleanScale = 1.0 / (activeCount > 0 ? activeCount : 1);
-
         // --- 2. DSP LOOP ---
-        const wLUT = this.windowLUT;
-        const lutMax = this.LUT_SIZE - 1;
-
         for (let i = this.activeVoiceIndices.length - 1; i >= 0; i--) {
             const vIdx = this.activeVoiceIndices[i];
             const voice = this.voices[vIdx];
-            const tId = voice.trackId;
-            const trackOut = outputs[tId];
+            const trackOut = outputs[voice.trackId];
             
             if (!trackOut || !voice.buffer || voice.bufferLength < 2) { 
                 this.killVoice(i); 
                 continue; 
-            }
-
-            // OPT: Clear output channels on first touch only
-            if (!this._dirtyOutputs[tId]) {
-                this._dirtyOutputs[tId] = 1;
-                trackOut[0].fill(0);
-                if (trackOut[1]) trackOut[1].fill(0);
             }
             
             const L = trackOut[0], R = trackOut[1];
@@ -417,83 +360,60 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const pitch = voice.pitch, gLen = voice.grainLength, invGL = voice.invGrainLength;
             const start = voice.position * bufLen;
             const baseAmp = voice.velocity;
-            const trackScale = voice.cleanMode ? cleanScale : normalScale;
-
-            // OPT: Pre-compute edgeCrunch outside inner loop
-            const hasEdgeCrunch = !voice.cleanMode && voice.edgeCrunch > 0;
-            const maxOverflow = hasEdgeCrunch ? 1.0 + (voice.edgeCrunch * voice.edgeCrunch * voice.edgeCrunch * bufLen) : 0;
+            
+            const activeCount = Math.max(1, this.activeVoiceIndices.length);
+            const trackScale = voice.cleanMode ? (1.0 / activeCount) : (1.0 / (1.0 + (activeCount * 0.15)));
 
             let ph = voice.phase, amp = voice.releaseAmp, rel = voice.releasing;
-
-            // OPT: Hoist bufLen-1 for wrap check
-            const bufLenM1 = bufLen - 1;
 
             for (let j = 0; j < frameCount; j++) {
                 if (rel) { amp -= 0.015; if (amp <= 0) { this.killVoice(i); break; } }
                 if (ph >= gLen) { this.killVoice(i); break; }
                 
                 let rPos = start + (ph * pitch);
-                
-                // OPT: Replace while-loops with single modulo for wrap
-                if (rPos >= bufLen || rPos < 0) {
-                    rPos = ((rPos % bufLen) + bufLen) % bufLen;
-                }
+                while (rPos >= bufLen) rPos -= bufLen;
+                while (rPos < 0) rPos += bufLen;
                 
                 let idx = rPos | 0;
                 let frac = rPos - idx;
                 
-                if (hasEdgeCrunch) {
-                    if (frac < -maxOverflow) frac = -maxOverflow;
-                    else if (frac > maxOverflow) frac = maxOverflow;
+                if (!voice.cleanMode && voice.edgeCrunch > 0) {
+                    let maxOverflow = 1.0 + (voice.edgeCrunch * voice.edgeCrunch * voice.edgeCrunch * bufLen);
+                    if (frac < 0) frac = Math.max(frac, -maxOverflow);
+                    else frac = Math.min(frac, maxOverflow);
                 }
 
-                // OPT: Direct array access with bounds check instead of || 0
-                const s1 = idx <= bufLenM1 ? buf[idx] : 0;
-                const idx2 = idx < bufLenM1 ? idx + 1 : 0;
-                const s2 = buf[idx2];
+                const s1 = buf[idx] || 0;
+                const idx2 = (idx + 1) % bufLen;
+                const s2 = buf[idx2] || 0;
                 
                 const sample = s1 + frac * (s2 - s1);
-
-                // OPT: Bitwise OR for floor, bounded by lutMax
-                let winIdx = (ph * invGL) | 0;
-                if (winIdx > lutMax) winIdx = lutMax;
-                const win = wLUT[winIdx];
+                const winIdx = Math.min(this.LUT_SIZE - 1, (ph * invGL) | 0);
+                const win = this.windowLUT[winIdx] || 0;
                 
                 const val = sample * win * baseAmp * amp * trackScale;
                 
-                L[j] += val; 
-                if (R) R[j] += val;
+                if (!isNaN(val)) {
+                    L[j] += val; 
+                    if (R) R[j] += val;
+                }
                 ph++;
             }
             voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
         }
 
         // --- 3. SOFT CLIPPER ---
-        // OPT: Only clip dirty (active) outputs, use LUT instead of division
-        const clipScale = this.CLIP_SCALE;
-        const clipHalf = this.CLIP_LUT_HALF;
-        const clipSize = this.CLIP_LUT_SIZE;
-        const clipSizeM1 = clipSize - 1;
-        const cLUT = this.clipLUT;
-
-        for (let o = 0; o < 32; o++) {
-            if (!this._dirtyOutputs[o]) continue;
-            const outCh = outputs[o];
-            if (!outCh) continue;
-            const outL = outCh[0];
+        for (let o = 0; o < outputs.length; o++) {
+            if (!outputs[o]) continue;
+            const outL = outputs[o][0];
+            const outR = outputs[o][1];
             if (!outL) continue;
-            const outR = outCh[1];
-            
             for (let j = 0; j < frameCount; j++) {
-                // OPT: Inline LUT clip — no division, no isNaN, no Math.abs
-                let ci = (outL[j] * clipScale + clipHalf) | 0;
-                if (ci < 0) ci = 0; else if (ci > clipSizeM1) ci = clipSizeM1;
-                outL[j] = cLUT[ci];
-                
+                const sL = outL[j];
+                outputs[o][0][j] = isNaN(sL) ? 0 : sL / (1.0 + Math.abs(sL));
                 if (outR) {
-                    ci = (outR[j] * clipScale + clipHalf) | 0;
-                    if (ci < 0) ci = 0; else if (ci > clipSizeM1) ci = clipSizeM1;
-                    outR[j] = cLUT[ci];
+                    const sR = outR[j];
+                    outputs[o][1][j] = isNaN(sR) ? 0 : sR / (1.0 + Math.abs(sR));
                 }
             }
         }
@@ -516,23 +436,30 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         if(!v) return; 
         
         // --- STRICT WINDOW WRAPPING LOGIC ---
+        // 1. Get Base Position (Anchor) calculated by GranularLogic
         let pos = note.basePosition;
         
+        // 2. Add accumulated scan offset
         const timeSinceStart = currentTime - note.startTime;
-        pos += note.params.scanSpeed * timeSinceStart;
+        const movement = note.params.scanSpeed * timeSinceStart;
         
+        pos += movement;
+        
+        // 3. Apply Window Wrapping (Matches GranularLogic.js)
         const wStart = note.params.windowStart;
         const wEnd = note.params.windowEnd;
         const wSize = wEnd - wStart;
         
         if (wSize > 0.0001) {
             let relPos = pos - wStart;
+            // Wrap within [0, wSize]
             let wrappedRel = ((relPos % wSize) + wSize) % wSize;
             pos = wStart + wrappedRel;
         } else {
             pos = wStart;
         }
         
+        // 4. Orbit / Spray
         if (note.params.orbit > 0) {
             pos += (this.random() - 0.5) * note.params.orbit;
             if (pos < wStart) pos += wSize;
@@ -545,8 +472,8 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             pos += (this.random()*2-1)*note.params.spray;
         }
         
-        // OPT: Branchless clamp
-        pos = pos < 0 ? 0 : pos > 1 ? 1 : pos;
+        // Final Clamp
+        pos = Math.max(0, Math.min(1, pos));
         
         v.active = true; 
         v.trackId = note.trackId; 
@@ -554,12 +481,10 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         v.bufferLength = buf.length;
         v.position = pos; 
         v.phase = 0;
-
-        const gLen = (note.params.grainSize || 0.1) * sampleRate;
-        v.grainLength = gLen > 128 ? (gLen | 0) : 128;
+        v.grainLength = Math.max(128, Math.floor((note.params.grainSize||0.1) * sampleRate));
         v.invGrainLength = (this.LUT_SIZE - 1) / v.grainLength;
-        v.pitch = note.params.pitch || 1; 
-        v.velocity = note.params.velocity || 1;
+        v.pitch = note.params.pitch||1; 
+        v.velocity = note.params.velocity||1;
         v.releasing = false; 
         v.releaseAmp = 1.0;
         v.cleanMode = !!note.params.cleanMode;
