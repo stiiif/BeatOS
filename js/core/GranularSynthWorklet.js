@@ -271,6 +271,9 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         
         this.lastReportedCount = 0;
         this._rngState = 0xCAFEBABE;
+        
+        // Smoothed voice count for amplitude scaling (avoids crackle from instant jumps)
+        this._smoothedVoiceCount = 0;
 
         // OPT: Track which output indices have active voices this block
         // Avoids clearing/clipping all 32 outputs when only a few are active
@@ -391,10 +394,13 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
 
         if (this.activeVoiceIndices.length === 0) return true;
 
-        // OPT: Compute trackScale ONCE outside voice loop (same for all voices with same mode)
-        const activeCount = this.activeVoiceIndices.length;
-        const normalScale = 1.0 / (1.0 + (activeCount * 0.15));
-        const cleanScale = 1.0 / (activeCount > 0 ? activeCount : 1);
+        // Smooth voice count to prevent amplitude jumps (crackle source)
+        const actualCount = this.activeVoiceIndices.length;
+        this._smoothedVoiceCount += (actualCount - this._smoothedVoiceCount) * 0.05; // ~20ms smoothing
+        const smoothCount = Math.max(1, this._smoothedVoiceCount);
+        
+        const normalScale = 1.0 / (1.0 + (smoothCount * 0.15));
+        const cleanScale = 1.0 / smoothCount;
 
         // --- 2. DSP LOOP ---
         const wLUT = this.windowLUT;

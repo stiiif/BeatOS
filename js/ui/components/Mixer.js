@@ -54,31 +54,17 @@ export class Mixer {
 
         // Event Subscriptions
         globalBus.on('playback:start', () => {
-            if (!this.isMetering) {
-                this.isMetering = true;
-                if (this.isVisible) this.animateMeters();
-            }
+            this.isMetering = true;
         });
         
         globalBus.on('playback:stop', () => {
             this.isMetering = false;
-            if (this.animationFrameId) {
-                cancelAnimationFrame(this.animationFrameId);
-                this.animationFrameId = null;
-            }
             this.clearMeters();
         });
 
         document.addEventListener('visibilitychange', () => {
             this.isVisible = !document.hidden;
-            if (this.isVisible) {
-                if (this.isMetering) this.animateMeters();
-            } else {
-                if (this.animationFrameId) {
-                    cancelAnimationFrame(this.animationFrameId);
-                    this.animationFrameId = null;
-                }
-            }
+        });            }
         });
     }
 
@@ -119,8 +105,6 @@ export class Mixer {
     render() {
         if (!this.container) return;
         
-        if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
-        
         if (this.resizeObserver) {
             this.resizeObserver.disconnect();
             this.resizeObserver = null;
@@ -141,7 +125,7 @@ export class Mixer {
         this.meterOverlay.style.position = 'absolute';
         this.meterOverlay.style.top = '0';
         this.meterOverlay.style.left = '0';
-        this.meterOverlay.style.pointerEvents = 'none'; // Allow clicks to pass through to knobs
+        this.meterOverlay.style.pointerEvents = 'none';
         this.meterOverlay.style.zIndex = '5'; 
         
         this.meterCtx = this.meterOverlay.getContext('2d');
@@ -183,10 +167,7 @@ export class Mixer {
         window.addEventListener('resize', () => this.resizeOverlay());
 
         this.updateAllTrackStates();
-        
-        if (this.audioEngine.getContext() && this.audioEngine.getContext().state === 'running' && this.isMetering && this.isVisible) {
-             this.animateMeters();
-        }
+        // Meters now driven by RenderLoop — no self-start needed
     }
     
     // OPTIMIZATION: Cache Layout Geometry to avoid 'Forced Reflow'
@@ -229,6 +210,9 @@ export class Mixer {
             this.clearMeters();
             return; 
         }
+
+        // Check if mixer container is visible
+        if (this.container && this.container.offsetParent === null) return;
 
         const container = this.container.querySelector('.mixer-container');
         if (!container) return;
@@ -273,10 +257,6 @@ export class Mixer {
             const rms = Math.sqrt(sum / (len / step));
             let rawValue = Math.min(1, rms * 4); // Gain boost for visual range
             
-            // --- ENHANCED SMOOTHING LOGIC ---
-            // 1. Target Value (Peak Hold / Decay)
-            // If new signal is higher, jump up immediately (Attack)
-            // If new signal is lower, decay the target slowly (Release)
             if (rawValue >= meta.targetValue) {
                 meta.targetValue = rawValue;
             } else {
@@ -284,18 +264,13 @@ export class Mixer {
                 if (meta.targetValue < 0) meta.targetValue = 0;
             }
 
-            // 2. Display Value Interpolation (Lerp)
-            // Instead of jumping to target, move towards it smoothly
-            // This removes visual jitter/flicker
             meta.currentValue += (meta.targetValue - meta.currentValue) * this.smoothingFactor;
 
-            // Small threshold to snap to zero
             if (meta.currentValue < 0.01) {
                 meta.currentValue = 0;
-                if(rawValue < 0.01) meta.targetValue = 0; // Reset target too if silent
+                if(rawValue < 0.01) meta.targetValue = 0;
             }
 
-            // Quantize SMOOTHED value to 9 steps
             let activeLeds = 0;
             for(let i=0; i<numLeds; i++) {
                 if(meta.currentValue >= this.ledThresholds[i]) {
@@ -307,23 +282,17 @@ export class Mixer {
 
             if (activeLeds === 0) return;
 
-            // Draw discrete LEDs
-            const ledHeight = (meterH / numLeds) - 1; // 1px gap
+            const ledHeight = (meterH / numLeds) - 1;
             
             for(let i=0; i<activeLeds; i++) {
-                // Color Logic based on index
-                // 0-4 (Green), 5-6 (Yellow), 7-8 (Red)
-                if(i < 5) this.meterCtx.fillStyle = '#10b981';      // -20 to -3 dB
-                else if(i < 7) this.meterCtx.fillStyle = '#eab308'; // 0 to +3 dB
-                else this.meterCtx.fillStyle = '#ef4444';           // +6 to +10 dB
+                if(i < 5) this.meterCtx.fillStyle = '#10b981';
+                else if(i < 7) this.meterCtx.fillStyle = '#eab308';
+                else this.meterCtx.fillStyle = '#ef4444';
 
-                // Draw from bottom up
                 const y = (meterY + meterH) - ((i + 1) * (ledHeight + 1));
                 this.meterCtx.fillRect(meterX, y, meterW, ledHeight);
             }
         });
-
-        this.animationFrameId = requestAnimationFrame(this.animateMeters);
     }
 
     clearMeters() {

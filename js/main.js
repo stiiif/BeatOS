@@ -15,6 +15,7 @@ import { globalBus } from './events/EventBus.js';
 import { EffectsManager } from './modules/EffectsManager.js';
 import { EffectControls } from './ui/components/EffectControls.js';
 import { Randomizer } from './modules/Randomizer.js';
+import { RenderLoop } from './core/RenderLoop.js';
 
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
@@ -90,16 +91,30 @@ function addGroup() {
     }
 }
 
-// Start Effects Modulation Loop
-function startEffectsLoop() {
-    const loop = () => {
-        if (audioEngine.getContext() && audioEngine.getContext().state === 'running') {
-            effectsManager.update(audioEngine.getContext().currentTime);
-        }
-        requestAnimationFrame(loop);
-    };
-    loop();
-}
+// Unified Render Loop — replaces 3+ separate rAF loops
+const renderLoop = new RenderLoop();
+
+// 1. Effects modulation (audio-rate, every frame)
+renderLoop.register('effectsManager', () => {
+    if (audioEngine.getContext() && audioEngine.getContext().state === 'running') {
+        effectsManager.update(audioEngine.getContext().currentTime);
+    }
+}, 0);
+
+// 2. Visualizer (30fps — scope, waveform, overlays, per-track mini canvases)
+renderLoop.register('visualizer', (ts) => {
+    visualizer.update(ts);
+}, 33);
+
+// 3. FX slider animation (30fps — moves sliders with LFO modulation)
+renderLoop.register('effectControls', (ts) => {
+    effectControls.update(ts);
+}, 33);
+
+// 4. Mixer meters (30fps — LED meter strips)
+renderLoop.register('mixerMeters', (ts) => {
+    if (uiManager.mixer) uiManager.mixer.animateMeters(ts);
+}, 33);
 
 document.getElementById('initAudioBtn').addEventListener('click', async () => {
     console.log("[Main] Init audio clicked.");
@@ -122,7 +137,7 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     // Render Effects UI
     effectsManager.setBpm(scheduler.getBPM()); // SYNC BPM ON START
     effectControls.render();
-    startEffectsLoop();
+    renderLoop.start();
 
     uiManager.selectTrack(0, () => {
         visualizer.setSelectedTrackIndex(0);

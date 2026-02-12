@@ -26,14 +26,6 @@ export class Visualizer {
         // Event Subscriptions
         globalBus.on('playback:start', () => this.startLoop());
         globalBus.on('playback:stop', () => this.stopLoop());
-
-        // Handle visibility change to save resources
-        document.addEventListener('visibilitychange', () => {
-            this.isVisible = !document.hidden;
-            if (this.isVisible && this.isRunning) {
-                this.drawVisuals();
-            }
-        });
         
         // Cache track canvases to avoid getElementById in the loop
         this.canvasCache = new Map();
@@ -82,10 +74,7 @@ export class Visualizer {
     }
 
     startLoop() {
-        if (!this.isRunning) {
-            this.isRunning = true;
-            this.drawVisuals();
-        }
+        this.isRunning = true;
     }
 
     stopLoop() {
@@ -94,9 +83,6 @@ export class Visualizer {
 
     triggerRedraw() {
         this.needsRedraw = true;
-        if (!this.isRunning && this.isVisible) {
-            requestAnimationFrame((t) => this.drawVisuals(t, true));
-        }
     }
 
     getTrackCanvas(trackId) {
@@ -107,15 +93,64 @@ export class Visualizer {
         return this.canvasCache.get(trackId);
     }
 
-    drawVisuals(timestamp, forceOnce = false) {
-        if (!this.isVisible && !forceOnce) return;
-        if (!this.isRunning && !this.needsRedraw && !forceOnce) return;
+    /** Called by RenderLoop — replaces internal rAF */
+    update(timestamp) {
+        if (!this.isRunning && !this.needsRedraw) return;
 
-        if (timestamp && (timestamp - this.lastDrawTime < 33) && !forceOnce) {
-            if (this.isRunning) requestAnimationFrame((t) => this.drawVisuals(t));
+        // Check if the buffer display canvas is actually visible (parent not collapsed)
+        if (this.bufCanvas && this.bufCanvas.offsetParent === null && !this.needsRedraw) {
+            // Buffer display is hidden (collapsed section) — only draw mini track canvases
+            this._drawMiniCanvasesOnly(timestamp);
             return;
         }
-        this.lastDrawTime = timestamp;
+
+        this.drawVisuals(timestamp);
+    }
+
+    _drawMiniCanvasesOnly(timestamp) {
+        if (!this.isRunning) return;
+
+        const audioCtx = this.audioEngine.getContext();
+        const now = audioCtx ? audioCtx.currentTime : 0;
+
+        // Clean drawQueue
+        let activeCount = 0;
+        for (let i = 0; i < this.drawQueue.length; i++) {
+            if (this.drawQueue[i].time > now - 0.5) {
+                if (i !== activeCount) this.drawQueue[activeCount] = this.drawQueue[i];
+                activeCount++;
+            }
+        }
+        this.drawQueue.length = activeCount;
+
+        // Only draw mini canvases that are visible
+        for (let i = 0; i < this.tracks.length; i++) {
+            const canvas = this.getTrackCanvas(i);
+            if (!canvas || canvas.offsetParent === null) continue;
+            const ctx = canvas.getContext('2d', { alpha: true });
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        for (let d of this.drawQueue) {
+            if (d.time <= now) {
+                const age = (now - d.time) / 0.2;
+                if (age > 1) continue;
+                const canvas = this.getTrackCanvas(d.trackId);
+                if (!canvas || canvas.offsetParent === null) continue;
+                const ctx = canvas.getContext('2d');
+                const w = canvas.width;
+                const h = canvas.height;
+                const hue = (d.trackId / this.tracks.length) * 360;
+                ctx.fillStyle = `hsla(${hue}, 70%, 60%, ${1 - age})`;
+                ctx.fillRect(0, 0, w, h);
+            }
+        }
+        this.needsRedraw = false;
+    }
+
+    drawVisuals(timestamp, forceOnce = false) {
+        if (!this.isRunning && !this.needsRedraw && !forceOnce) return;
 
         const audioCtx = this.audioEngine.getContext();
         const now = audioCtx ? audioCtx.currentTime : 0;
@@ -131,11 +166,10 @@ export class Visualizer {
 
         for(let i=0; i<this.tracks.length; i++) {
             const canvas = this.getTrackCanvas(i);
-            if(canvas) {
-                const ctx = canvas.getContext('2d', { alpha: true });
-                ctx.fillStyle = 'rgba(0,0,0,0.2)'; 
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-            }
+            if (!canvas || canvas.offsetParent === null) continue; // Skip hidden canvases
+            const ctx = canvas.getContext('2d', { alpha: true });
+            ctx.fillStyle = 'rgba(0,0,0,0.2)'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
         for(let d of this.drawQueue) {
@@ -144,24 +178,20 @@ export class Visualizer {
                 if(age > 1) continue;
                 
                 const canvas = this.getTrackCanvas(d.trackId);
-                if(canvas) {
-                    const ctx = canvas.getContext('2d');
-                    const w = canvas.width;
-                    const h = canvas.height;
-                    
-                    const hue = (d.trackId / this.tracks.length) * 360;
-                    ctx.fillStyle = `hsla(${hue}, 70%, 60%, ${1-age})`;
-                    ctx.fillRect(0, 0, w, h);
-                }
+                if (!canvas || canvas.offsetParent === null) continue;
+                const ctx = canvas.getContext('2d');
+                const w = canvas.width;
+                const h = canvas.height;
+                
+                const hue = (d.trackId / this.tracks.length) * 360;
+                ctx.fillStyle = `hsla(${hue}, 70%, 60%, ${1-age})`;
+                ctx.fillRect(0, 0, w, h);
             }
         }
         
-        if(this.bufCanvas) this.drawBufferDisplay();
+        // Only draw buffer display if its canvas is visible
+        if(this.bufCanvas && this.bufCanvas.offsetParent !== null) this.drawBufferDisplay();
         this.needsRedraw = false;
-
-        if (this.isRunning) {
-            requestAnimationFrame((t) => this.drawVisuals(t));
-        }
     }
 
     drawBufferDisplay() {

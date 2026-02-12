@@ -6,6 +6,7 @@ export class EffectControls {
         this.manager = effectsManager;
         this.container = document.getElementById('effectsControlsContainer');
         this.isDragging = false;
+        this._cachedSliders = null; // Cached slider references
         
         // Colors & Config
         this.fxConfig = {
@@ -27,14 +28,13 @@ export class EffectControls {
             }
         };
 
-        // Bind animate loop
-        this.animate = this.animate.bind(this);
-        requestAnimationFrame(this.animate);
+        // Animation now handled by RenderLoop
     }
 
     render() {
         if (!this.container) return;
         this.container.innerHTML = '';
+        this._cachedSliders = null; // Invalidate cache
 
         [0, 1].forEach(fxId => {
             const el = this.renderMonolith(fxId);
@@ -386,14 +386,19 @@ export class EffectControls {
         }
     }
 
-    animate() {
-        if (!this.container || this.isDragging) {
-            requestAnimationFrame(this.animate);
-            return;
+    /** Called by RenderLoop — replaces internal rAF */
+    update(timestamp) {
+        if (!this.container || this.isDragging) return;
+        // Check if FX container is visible
+        if (this.container.offsetParent === null) return;
+
+        // Cache slider refs on first call or after render()
+        if (!this._cachedSliders) {
+            this._cachedSliders = Array.from(this.container.querySelectorAll('.fx-param-slider'));
         }
 
-        const sliders = this.container.querySelectorAll('.fx-param-slider');
-        sliders.forEach(slider => {
+        for (let i = 0; i < this._cachedSliders.length; i++) {
+            const slider = this._cachedSliders[i];
             const fxId = parseInt(slider.dataset.fx);
             const targetIdx = parseInt(slider.dataset.target);
             
@@ -406,8 +411,6 @@ export class EffectControls {
                     }
                 }
             }
-        });
-
-        requestAnimationFrame(this.animate);
+        }
     }
 }
