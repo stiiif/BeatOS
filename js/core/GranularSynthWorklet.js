@@ -435,8 +435,16 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const bufLenM1 = bufLen - 1;
 
             for (let j = 0; j < frameCount; j++) {
-                if (rel) { amp -= 0.015; if (amp <= 0) { this.killVoice(i); break; } }
-                if (ph >= gLen) { this.killVoice(i); break; }
+                if (rel) { 
+                    amp -= 0.003; // ~7ms fade at 48kHz — smooth enough to avoid clicks
+                    if (amp <= 0) { this.killVoice(i); break; } 
+                }
+                
+                // When grain reaches its end, enter release (freeze phase at last valid position)
+                if (ph >= gLen) { 
+                    if (!rel) rel = true;
+                    ph = gLen - 1; // Clamp to last valid sample
+                }
                 
                 let rPos = start + (ph * pitch);
                 
@@ -469,7 +477,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 
                 L[j] += val; 
                 if (R) R[j] += val;
-                ph++;
+                if (!rel) ph++; // Only advance phase if not releasing
             }
             voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
         }
