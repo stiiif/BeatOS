@@ -50,6 +50,7 @@ export class Track {
             density: 20,     
             overlap: 1.0,    
             grainSize: 0.10, 
+            stereoSpread: 0.0, // 0 = mono center, 1 = full random L/R
             pitch: 1.0, 
             relGrain: 2.00,  
             

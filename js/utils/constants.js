@@ -35,6 +35,7 @@ export const MODULATION_TARGETS = [
     { id: 'scanSpeed', name: 'Speed' },
     { id: 'density', name: 'Density' },
     { id: 'grainSize', name: 'Size' },
+    { id: 'stereoSpread', name: 'Stereo' },
     { id: 'overlap', name: 'Overlap' },
     { id: 'pitch', name: 'Pitch' },
     { id: 'relGrain', name: 'Rel Dur' },

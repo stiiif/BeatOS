@@ -233,6 +233,7 @@ export class TrackControls {
                 // Special formatting for new params
                 if(param === 'edgeCrunch') { suffix = '%'; displayValue = (t.params[param] * 100).toFixed(0); }
                 if(param === 'orbit') { suffix = '%'; displayValue = (t.params[param] * 100).toFixed(0); }
+                if(param === 'stereoSpread') { suffix = '%'; displayValue = (t.params[param] * 100).toFixed(0); }
 
                 let displayEl = el.nextElementSibling;
                 if (displayEl && !displayEl.classList.contains('value-display')) displayEl = el.parentElement.nextElementSibling;

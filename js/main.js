@@ -328,7 +328,7 @@ document.getElementById('resetParamBtn').addEventListener('click', () => {
     if (t.type === 'granular') {
         t.params.position = 0.00; t.params.spray = 0.00; t.params.grainSize = 0.11;
         t.params.density = 3.00; t.params.pitch = 1.00; t.params.relGrain = 0.50;
-        t.params.edgeCrunch = 0.0; t.params.orbit = 0.0; // Reset new params
+        t.params.edgeCrunch = 0.0; t.params.orbit = 0.0; t.params.stereoSpread = 0.0;
     } else { t.params.drumTune = 0.5; t.params.drumDecay = 0.5; }
     t.params.hpFilter = 20.00; t.params.filter = 20000.00; t.params.volume = 0.80;
     t.lfos.forEach(lfo => { lfo.target = 'none'; });

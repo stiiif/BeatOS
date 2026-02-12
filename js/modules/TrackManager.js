@@ -61,6 +61,7 @@ export class TrackManager {
         t.params.position = Math.random();
         t.params.spray = Math.random() * 0.1;
         t.params.grainSize = 0.05 + Math.random() * 0.25;
+        t.params.stereoSpread = Math.random() * 0.8;
         t.params.filter = 2000 + Math.random() * 10000;
         t.params.hpFilter = 20 + Math.random() * 500;
         t.params.pitch = 0.5 + Math.random() * 1.5;
@@ -73,8 +74,7 @@ export class TrackManager {
     }
 
     randomizeTrackModulators(t) {
-        // Updated with new targets
-        const targets = ['none', 'position', 'spray', 'density', 'grainSize', 'pitch', 'filter', 'hpFilter', 'sampleStart', 'sampleEnd'];
+        const targets = ['none', 'position', 'spray', 'density', 'grainSize', 'stereoSpread', 'pitch', 'filter', 'hpFilter', 'sampleStart', 'sampleEnd'];
         const waves = ['sine', 'square', 'sawtooth', 'random'];
         t.lfos.forEach(lfo => {
             if(Math.random() < 0.7) {
@@ -106,6 +106,7 @@ export class TrackManager {
                 t.params.position = data.params.position;
                 t.params.spray = data.params.spray;
                 t.params.grainSize = data.params.grainSize;
+                t.params.stereoSpread = data.params.stereoSpread;
                 t.params.filter = data.params.filter;
                 t.params.hpFilter = data.params.hpFilter;
                 t.params.pitch = data.params.pitch;

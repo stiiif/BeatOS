@@ -155,7 +155,7 @@ export class GranularSynthWorklet {
 
         this.syncTrackBusParams(track, time);
 
-        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0, relGrain:0, edgeCrunch: 0, orbit: 0 };
+        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0, relGrain:0, edgeCrunch: 0, orbit: 0, stereoSpread: 0 };
         track.lfos.forEach(lfo => {
             const v = lfo.getValue(time);
             if (lfo.targets && lfo.targets.length > 0) {
@@ -222,7 +222,8 @@ export class GranularSynthWorklet {
                     resetOnTrig: !!track.resetOnTrig,
                     cleanMode: !!track.cleanMode,
                     edgeCrunch: Math.max(0, Math.min(1, (p.edgeCrunch || 0) + mod.edgeCrunch)),
-                    orbit: Math.max(0, Math.min(1, (p.orbit || 0) + mod.orbit))
+                    orbit: Math.max(0, Math.min(1, (p.orbit || 0) + mod.orbit)),
+                    stereoSpread: Math.max(0, Math.min(1, (p.stereoSpread || 0) + mod.stereoSpread))
                 }
             }
         });
@@ -263,7 +264,8 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             id, active: false, buffer: null, bufferLength: 0,
             position: 0, phase: 0, grainLength: 0, pitch: 1.0, velocity: 1.0,
             trackId: 0, releasing: false, releaseAmp: 1.0, invGrainLength: 0,
-            cleanMode: false, edgeCrunch: 0.0, orbit: 0.0
+            cleanMode: false, edgeCrunch: 0.0, orbit: 0.0,
+            panL: 1.0, panR: 1.0 // Equal-power pan gains
         }));
         this.activeVoiceIndices = [];
         this.activeNotes = [];
@@ -430,6 +432,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const start = voice.position * bufLen;
             const baseAmp = voice.velocity;
             const trackScale = voice.cleanMode ? cleanScale : normalScale;
+            const vPanL = voice.panL, vPanR = voice.panR;
 
             // OPT: Pre-compute edgeCrunch outside inner loop
             const hasEdgeCrunch = !voice.cleanMode && voice.edgeCrunch > 0;
@@ -481,8 +484,8 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 
                 const val = sample * win * baseAmp * amp * trackScale;
                 
-                L[j] += val; 
-                if (R) R[j] += val;
+                L[j] += val * vPanL; 
+                if (R) R[j] += val * vPanR;
                 if (!rel) ph++; // Only advance phase if not releasing
             }
             voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
@@ -585,6 +588,19 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         v.cleanMode = !!note.params.cleanMode;
         v.edgeCrunch = note.params.edgeCrunch || 0;
         v.orbit = note.params.orbit || 0;
+        
+        // Per-grain stereo placement: random pan within ±spread, equal-power pan law
+        const spread = note.params.stereoSpread || 0;
+        if (spread > 0) {
+            const panPos = (this.random() * 2 - 1) * spread; // -spread to +spread
+            // Equal-power: L = cos(θ), R = sin(θ) where θ = (pan+1)/2 * π/2
+            const theta = (panPos + 1) * 0.25 * Math.PI; // 0 to π/2
+            v.panL = Math.cos(theta);
+            v.panR = Math.sin(theta);
+        } else {
+            v.panL = 0.7071; // 1/√2 — center, equal power
+            v.panR = 0.7071;
+        }
     }
     
     killVoice(idx) {

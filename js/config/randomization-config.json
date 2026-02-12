@@ -39,6 +39,7 @@
       "density":    { "mode": "skip",      "min": 1,     "max": 80,    "chance": 0.7, "curve": "uniform",     "snapValues": [5, 10, 20, 40, 60, 80], "zoned": false },
       "overlap":    { "mode": "skip",      "min": 0.0,   "max": 4.0,   "chance": 0.6, "curve": "uniform",     "snapValues": null, "zoned": false },
       "grainSize":  { "mode": "randomize", "min": 0.05,  "max": 0.3,   "chance": 1.0, "curve": "uniform",     "snapValues": null, "zoned": false },
+      "stereoSpread":{ "mode": "randomize","min": 0.0,   "max": 0.8,   "chance": 0.6, "curve": "exponential", "snapValues": null, "zoned": true },
       "pitch":      { "mode": "randomize", "min": 0.5,   "max": 2.0,   "chance": 1.0, "curve": "gaussian",    "snapValues": [0.25, 0.5, 0.75, 1.0, 1.5, 2.0], "zoned": false },
       "relGrain":   { "mode": "randomize", "min": 0.01,  "max": 2.0,   "chance": 1.0, "curve": "uniform",     "snapValues": null, "zoned": true },
       "sampleStart":{ "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null, "zoned": false },
@@ -73,7 +74,7 @@
       "syncRateIndex": { "mode": "skip",      "min": 0,     "max": 29,    "chance": 0.5,  "curve": "uniform", "snapValues": [7, 9, 12, 15, 20, 24], "zoned": false },
       "targets":       { "mode": "randomize", "min": null,  "max": null,  "chance": 0.7,  "curve": "uniform", "zoned": false,
         "maxTargets": 3,
-        "snapValues": ["position", "spray", "density", "grainSize", "pitch", "filter", "hpFilter", "sampleStart", "sampleEnd", "scanSpeed", "overlap", "edgeCrunch", "orbit"]
+        "snapValues": ["position", "spray", "density", "grainSize", "stereoSpread", "pitch", "filter", "hpFilter", "sampleStart", "sampleEnd", "scanSpeed", "overlap", "edgeCrunch", "orbit"]
       },
       "_activationChance": 0.7
     }

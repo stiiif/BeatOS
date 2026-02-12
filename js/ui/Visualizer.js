@@ -426,7 +426,7 @@ export class Visualizer {
     }
 
     drawOverlays(ctx, t, w, h, time, viewStart, viewEnd) {
-        let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0, sampleStart:0, sampleEnd:0, scanSpeed:0 };
+        let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0, sampleStart:0, sampleEnd:0, scanSpeed:0, stereoSpread:0 };
         
         t.lfos.forEach(lfo => {
             if (lfo.amount > 0) {
@@ -543,7 +543,6 @@ export class Visualizer {
         }
 
         // Draw Playhead
-        // Check if playhead is within view
         if (posPx >= -5 && posPx <= w + 5) {
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
             ctx.lineWidth = 1;
@@ -551,6 +550,41 @@ export class Visualizer {
             ctx.moveTo(posPx, 0);
             ctx.lineTo(posPx, h);
             ctx.stroke();
+        }
+
+        // --- STEREO FIELD DOTS ---
+        const stereoSpread = Math.max(0, Math.min(1, (p.stereoSpread || 0) + mod.stereoSpread));
+        if (stereoSpread > 0.01) {
+            const finalDensity = Math.max(1, (p.density || 20) + mod.density);
+            // Show up to 20 dots representing recent grain stereo positions
+            const dotCount = Math.min(20, Math.ceil(finalDensity * 0.5));
+            const dotH = 4; // Tick height
+            const centerX = w / 2;
+
+            // Seeded pseudo-random for deterministic but animated dots
+            let seed = (time * 1000) | 0;
+            const prand = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
+
+            for (let i = 0; i < dotCount; i++) {
+                // Each dot gets a unique pan position based on time + index
+                const age = i / dotCount; // 0=newest, 1=oldest
+                const panPos = (prand() * 2 - 1) * stereoSpread; // -spread to +spread
+                const dotX = centerX + panPos * centerX; // Map to pixel x
+
+                const alpha = 1.0 - age * 0.7; // Fade older dots
+                ctx.fillStyle = `rgba(6, 182, 212, ${alpha})`;
+                ctx.fillRect(dotX - 1, 0, 2, dotH);
+            }
+
+            // Center line reference
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 3]);
+            ctx.beginPath();
+            ctx.moveTo(centerX, 0);
+            ctx.lineTo(centerX, dotH + 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
         }
     }
 }
