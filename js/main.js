@@ -14,6 +14,7 @@ import { globalBus } from './events/EventBus.js';
 // NEW IMPORTS
 import { EffectsManager } from './modules/EffectsManager.js';
 import { EffectControls } from './ui/components/EffectControls.js';
+import { Randomizer } from './modules/Randomizer.js';
 
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
@@ -29,6 +30,10 @@ const visualizer = new Visualizer('visualizer', 'bufferDisplay', audioEngine);
 const effectsManager = new EffectsManager(audioEngine);
 const effectControls = new EffectControls(effectsManager);
 
+// Config-driven Randomizer
+const randomizer = new Randomizer();
+randomizer.loadConfig('./js/config/randomization-config.json').catch(e => console.warn('[Randomizer] Config load failed, falling back to defaults:', e));
+
 const layoutManager = new LayoutManager();
 
 scheduler.setTrackManager(trackManager);
@@ -43,6 +48,7 @@ visualizer.setTracks(tracks);
 
 scheduler.setUpdateMatrixHeadCallback((step, total) => uiManager.updateMatrixHead(step, total));
 scheduler.setRandomChokeCallback(() => uiManager.getRandomChokeInfo());
+scheduler.setRandomizer(randomizer, { audioEngine, effectsManager, selectedTrackIndex: 0 });
 
 function updateTrackControlsVisibility() {
     uiManager.updateTrackControlsVisibility();
@@ -230,19 +236,34 @@ document.getElementById('randAllParamsBtn').addEventListener('click', (e) => {
         btn.style.backgroundColor = '';
         btn.innerHTML = originalText;
     }, 300);
-    tracks.forEach(t => {
-        if (t.ignoreRandom) return;
-        if (t.type === 'granular') {
-            trackManager.randomizeTrackParams(t, releaseMin, releaseMax);
-            trackManager.randomizeTrackModulators(t);
-        } else if (t.type === 'simple-drum') {
-            t.params.drumTune = Math.random();
-            t.params.drumDecay = Math.random();
-        }
-    });
+
+    if (randomizer.config) {
+        // Config-driven randomization
+        randomizer.randomize({
+            tracks,
+            audioEngine,
+            effectsManager,
+            selectedTrackIndex: uiManager.getSelectedTrackIndex(),
+            releaseOverride: { min: releaseMin, max: releaseMax }
+        });
+    } else {
+        // Fallback: legacy hardcoded behavior
+        tracks.forEach(t => {
+            if (t.ignoreRandom) return;
+            if (t.type === 'granular') {
+                trackManager.randomizeTrackParams(t, releaseMin, releaseMax);
+                trackManager.randomizeTrackModulators(t);
+            } else if (t.type === 'simple-drum') {
+                t.params.drumTune = Math.random();
+                t.params.drumDecay = Math.random();
+            }
+        });
+    }
+
     uiManager.updateKnobs();
     uiManager.updateLfoUI();
     visualizer.triggerRedraw();
+    if (effectControls) effectControls.render();
 });
 
 document.getElementById('randomizeBtn').addEventListener('click', () => {

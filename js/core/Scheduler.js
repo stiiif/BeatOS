@@ -18,6 +18,10 @@ export class Scheduler {
         
         this.trackManager = null; 
         this.activeSnapshot = null; 
+
+        // Config-driven randomizer (optional)
+        this.randomizer = null;
+        this.randomizerCtx = null;
     }
 
     setTracks(tracks) {
@@ -26,6 +30,11 @@ export class Scheduler {
 
     setTrackManager(tm) {
         this.trackManager = tm;
+    }
+
+    setRandomizer(randomizer, ctx) {
+        this.randomizer = randomizer;
+        this.randomizerCtx = ctx;
     }
 
     setBPM(bpm) {
@@ -197,10 +206,10 @@ export class Scheduler {
                 if (!this.activeSnapshot) {
                     this.activeSnapshot = this.trackManager.saveGlobalSnapshot();
                 }
-                this.trackManager.triggerRandomization(currentValue);
+                this.trackManager.triggerRandomization(currentValue, this.randomizer, this.randomizerCtx);
             }
             else if (prevValue > 0 && currentValue > 0) {
-                this.trackManager.triggerRandomization(currentValue);
+                this.trackManager.triggerRandomization(currentValue, this.randomizer, this.randomizerCtx);
             }
             else if (prevValue > 0 && currentValue === 0) {
                 if (this.activeSnapshot) {

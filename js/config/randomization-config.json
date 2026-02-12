@@ -1,0 +1,164 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "description": "BeatOS Randomization Configuration — controls which parameters the 'Rand Prms' button affects",
+    "modes": {
+      "randomize": "Parameter will be randomized within min/max range (or snapValues if present)",
+      "skip": "Parameter is ignored entirely by randomization",
+      "lock": "Parameter is actively written back to its current value (protects from automation drift)"
+    },
+    "curves": {
+      "uniform": "Equal probability across range",
+      "gaussian": "Bell curve centered between min/max (good for pitch, pan)",
+      "exponential": "Biased toward min value (good for chaos/spray params)",
+      "inverseExponential": "Biased toward max value (good for filter cutoff)"
+    },
+    "scopes": {
+      "all": "Apply to all tracks/instances in this group",
+      "selected": "Apply only to the currently selected track",
+      "indices": "Apply only to specific indices listed in scopeIndices"
+    }
+  },
+
+  "granularEngine": {
+    "_label": "Granular Synthesis Engine",
+    "_scope": "all",
+    "_scopeIndices": [],
+    "params": {
+      "position":   { "mode": "randomize", "min": 0.0,   "max": 1.0,   "chance": 1.0, "curve": "uniform",  "snapValues": null },
+      "spray":      { "mode": "randomize", "min": 0.0,   "max": 0.1,   "chance": 0.8, "curve": "exponential", "snapValues": null },
+      "scanSpeed":  { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.5, "curve": "exponential", "snapValues": null },
+      "density":    { "mode": "skip",      "min": 1,     "max": 80,    "chance": 0.7, "curve": "uniform",  "snapValues": [5, 10, 20, 40, 60, 80] },
+      "overlap":    { "mode": "skip",      "min": 0.0,   "max": 4.0,   "chance": 0.6, "curve": "uniform",  "snapValues": null },
+      "grainSize":  { "mode": "randomize", "min": 0.05,  "max": 0.3,   "chance": 1.0, "curve": "uniform",  "snapValues": null },
+      "pitch":      { "mode": "randomize", "min": 0.5,   "max": 2.0,   "chance": 1.0, "curve": "gaussian", "snapValues": [0.25, 0.5, 0.75, 1.0, 1.5, 2.0] },
+      "relGrain":   { "mode": "randomize", "min": 0.05,  "max": 0.5,   "chance": 1.0, "curve": "uniform",  "snapValues": null,
+        "_note": "min/max are overridden by release zone when clicking Rand Prms at different positions"
+      },
+      "sampleStart":{ "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null },
+      "sampleEnd":  { "mode": "skip",      "min": 0.5,   "max": 1.0,   "chance": 0.3, "curve": "inverseExponential", "snapValues": null },
+      "edgeCrunch": { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null },
+      "orbit":      { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null },
+      "ampAttack":  { "mode": "skip",      "min": 0.001, "max": 0.5,   "chance": 0.4, "curve": "exponential", "snapValues": null },
+      "ampDecay":   { "mode": "skip",      "min": 0.001, "max": 0.5,   "chance": 0.4, "curve": "exponential", "snapValues": null },
+      "ampRelease": { "mode": "skip",      "min": 0.001, "max": 0.5,   "chance": 0.4, "curve": "exponential", "snapValues": null }
+    }
+  },
+
+  "drum909": {
+    "_label": "909 Drum Engine",
+    "_scope": "all",
+    "_scopeIndices": [],
+    "params": {
+      "drumTune":  { "mode": "randomize", "min": 0.0, "max": 1.0, "chance": 1.0, "curve": "uniform", "snapValues": null },
+      "drumDecay": { "mode": "randomize", "min": 0.0, "max": 1.0, "chance": 1.0, "curve": "uniform", "snapValues": null }
+    }
+  },
+
+  "modulatorLFOs": {
+    "_label": "Track Modulator LFOs (per-track, 3 LFOs each)",
+    "_scope": "all",
+    "_scopeIndices": [],
+    "perLFO": {
+      "wave":          { "mode": "randomize", "min": null,  "max": null,  "chance": 0.7,  "curve": "uniform", "snapValues": ["sine", "square", "sawtooth", "triangle", "pulse", "random"] },
+      "rate":          { "mode": "randomize", "min": 0.1,   "max": 20.0,  "chance": 0.7,  "curve": "uniform", "snapValues": null },
+      "amount":        { "mode": "randomize", "min": 0.1,   "max": 1.0,   "chance": 0.7,  "curve": "uniform", "snapValues": null },
+      "sync":          { "mode": "skip",      "min": null,  "max": null,  "chance": 0.3,  "curve": "uniform", "snapValues": [true, false] },
+      "syncRateIndex": { "mode": "skip",      "min": 0,     "max": 29,    "chance": 0.5,  "curve": "uniform", "snapValues": [7, 9, 12, 15, 20, 24] },
+      "targets":       { "mode": "randomize", "min": null,  "max": null,  "chance": 0.7,  "curve": "uniform",
+        "maxTargets": 3,
+        "snapValues": ["position", "spray", "density", "grainSize", "pitch", "filter", "hpFilter", "sampleStart", "sampleEnd", "scanSpeed", "overlap", "edgeCrunch", "orbit"],
+        "_note": "Picks 1-maxTargets random targets from snapValues. Set to empty array [] to clear."
+      },
+      "_activationChance": 0.7,
+      "_activationNote": "Probability that this LFO is active at all. If inactive, amount is set to 0 and targets cleared."
+    }
+  },
+
+  "mixerTracks": {
+    "_label": "Per-Track Mixer Strip",
+    "_scope": "all",
+    "_scopeIndices": [],
+    "params": {
+      "hpFilter":  { "mode": "randomize", "min": 20,    "max": 520,   "chance": 1.0, "curve": "exponential", "snapValues": null },
+      "filter":    { "mode": "randomize", "min": 2000,  "max": 12000, "chance": 1.0, "curve": "inverseExponential", "snapValues": null },
+      "volume":    { "mode": "lock",      "min": 0.0,   "max": 1.5,   "chance": 1.0, "curve": "uniform",  "snapValues": null },
+      "pan":       { "mode": "lock",      "min": -1.0,  "max": 1.0,   "chance": 1.0, "curve": "gaussian", "snapValues": null },
+      "gain":      { "mode": "lock",      "min": 0.0,   "max": 2.0,   "chance": 1.0, "curve": "uniform",  "snapValues": null },
+      "eqLow":     { "mode": "skip",      "min": -15,   "max": 15,    "chance": 0.5, "curve": "gaussian", "snapValues": null },
+      "eqMid":     { "mode": "skip",      "min": -15,   "max": 15,    "chance": 0.5, "curve": "gaussian", "snapValues": null },
+      "eqHigh":    { "mode": "skip",      "min": -15,   "max": 15,    "chance": 0.5, "curve": "gaussian", "snapValues": null },
+      "eqMidFreq": { "mode": "skip",      "min": 200,   "max": 5000,  "chance": 0.5, "curve": "uniform",  "snapValues": null },
+      "drive":     { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null },
+      "comp":      { "mode": "skip",      "min": 0.0,   "max": 0.5,   "chance": 0.3, "curve": "exponential", "snapValues": null },
+      "sendA":     { "mode": "skip",      "min": 0.0,   "max": 0.6,   "chance": 0.4, "curve": "exponential", "snapValues": null },
+      "sendB":     { "mode": "skip",      "min": 0.0,   "max": 0.6,   "chance": 0.4, "curve": "exponential", "snapValues": null }
+    }
+  },
+
+  "mixerGroups": {
+    "_label": "Group Bus Mixer Strips (4 groups)",
+    "_scope": "all",
+    "_scopeIndices": [],
+    "params": {
+      "volume": { "mode": "lock", "min": 0.0, "max": 1.5, "chance": 1.0, "curve": "uniform",     "snapValues": null },
+      "comp":   { "mode": "skip", "min": 0.0, "max": 0.5, "chance": 0.3, "curve": "exponential",  "snapValues": null },
+      "drive":  { "mode": "skip", "min": 0.0, "max": 0.5, "chance": 0.3, "curve": "exponential",  "snapValues": null },
+      "sendA":  { "mode": "skip", "min": 0.0, "max": 0.5, "chance": 0.3, "curve": "exponential",  "snapValues": null },
+      "sendB":  { "mode": "skip", "min": 0.0, "max": 0.5, "chance": 0.3, "curve": "exponential",  "snapValues": null },
+      "eqLow":  { "mode": "skip", "min": -40, "max": 0,   "chance": 0.2, "curve": "uniform",      "snapValues": [-40, 0], "_note": "Kill switch values" },
+      "eqMid":  { "mode": "skip", "min": -40, "max": 0,   "chance": 0.2, "curve": "uniform",      "snapValues": [-40, 0] },
+      "eqHigh": { "mode": "skip", "min": -40, "max": 0,   "chance": 0.2, "curve": "uniform",      "snapValues": [-40, 0] }
+    }
+  },
+
+  "returnTracks": {
+    "_label": "Return Bus Strips (RTN A: Delay, RTN B: Reverb)",
+    "_scope": "all",
+    "_scopeIndices": [],
+    "params": {
+      "inputGain": { "mode": "lock", "min": 0.0,  "max": 2.0,   "chance": 1.0, "curve": "uniform",     "snapValues": null },
+      "volume":    { "mode": "lock", "min": 0.0,  "max": 1.5,   "chance": 1.0, "curve": "uniform",     "snapValues": null },
+      "pan":       { "mode": "skip", "min": -1.0, "max": 1.0,   "chance": 0.3, "curve": "gaussian",    "snapValues": null },
+      "eqLow":     { "mode": "skip", "min": -15,  "max": 15,    "chance": 0.3, "curve": "gaussian",    "snapValues": null },
+      "eqMid":     { "mode": "skip", "min": -15,  "max": 15,    "chance": 0.3, "curve": "gaussian",    "snapValues": null },
+      "eqHigh":    { "mode": "skip", "min": -15,  "max": 15,    "chance": 0.3, "curve": "gaussian",    "snapValues": null },
+      "eqMidFreq": { "mode": "skip", "min": 200,  "max": 5000,  "chance": 0.3, "curve": "uniform",     "snapValues": null },
+      "drive":     { "mode": "skip", "min": 0.0,  "max": 0.5,   "chance": 0.2, "curve": "exponential", "snapValues": null },
+      "comp":      { "mode": "skip", "min": 0.0,  "max": 0.5,   "chance": 0.2, "curve": "exponential", "snapValues": null },
+      "sendA":     { "mode": "skip", "min": 0.0,  "max": 0.5,   "chance": 0.2, "curve": "exponential", "snapValues": null },
+      "sendB":     { "mode": "skip", "min": 0.0,  "max": 0.5,   "chance": 0.2, "curve": "exponential", "snapValues": null }
+    }
+  },
+
+  "fxEngines": {
+    "_label": "FX Engine Macro Parameters (Delay P1-P4, Reverb P1-P4)",
+    "_scope": "all",
+    "_scopeIndices": [],
+    "perFX": {
+      "param0": { "mode": "skip", "min": 0.0, "max": 1.0, "chance": 0.5, "curve": "uniform", "snapValues": null, "_label_fx0": "Time",     "_label_fx1": "Tone" },
+      "param1": { "mode": "skip", "min": 0.0, "max": 1.0, "chance": 0.5, "curve": "uniform", "snapValues": null, "_label_fx0": "Feedback",  "_label_fx1": "Size" },
+      "param2": { "mode": "skip", "min": 0.0, "max": 1.0, "chance": 0.5, "curve": "uniform", "snapValues": null, "_label_fx0": "Color",     "_label_fx1": "Damp" },
+      "param3": { "mode": "skip", "min": 0.0, "max": 1.0, "chance": 0.5, "curve": "uniform", "snapValues": null, "_label_fx0": "Mix",       "_label_fx1": "Mix" }
+    }
+  },
+
+  "fxLFOs": {
+    "_label": "FX Engine LFOs (3 per FX, 2 FX units)",
+    "_scope": "all",
+    "_scopeIndices": [],
+    "perLFO": {
+      "wave":          { "mode": "skip", "min": null, "max": null, "chance": 0.4, "curve": "uniform", "snapValues": ["sine", "square", "sawtooth", "triangle", "pulse", "random"] },
+      "rate":          { "mode": "skip", "min": 0.1,  "max": 20.0, "chance": 0.4, "curve": "uniform", "snapValues": null },
+      "amount":        { "mode": "skip", "min": 0.0,  "max": 1.0,  "chance": 0.4, "curve": "uniform", "snapValues": null },
+      "sync":          { "mode": "skip", "min": null, "max": null, "chance": 0.3, "curve": "uniform", "snapValues": [true, false] },
+      "syncRateIndex": { "mode": "skip", "min": 0,    "max": 29,   "chance": 0.3, "curve": "uniform", "snapValues": [7, 9, 12, 15, 20, 24] },
+      "_activationChance": 0.4
+    },
+    "matrix": {
+      "mode": "skip",
+      "chance": 0.3,
+      "_note": "When randomize: each cell in the 3x13 matrix has 'chance' probability of being toggled on"
+    }
+  }
+}

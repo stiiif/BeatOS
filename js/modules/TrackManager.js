@@ -125,14 +125,23 @@ export class TrackManager {
         });
     }
 
-    triggerRandomization(intensityLevel) {
+    triggerRandomization(intensityLevel, randomizer = null, ctx = null) {
         const zone = AUTOMATION_INTENSITIES[intensityLevel];
         if (!zone) return;
 
+        // If a config-driven Randomizer is available, use it
+        if (randomizer && randomizer.config) {
+            randomizer.randomize({
+                ...ctx,
+                tracks: this.tracks,
+                releaseOverride: { min: zone.min, max: zone.max }
+            });
+            return;
+        }
+
+        // Legacy fallback
         this.tracks.forEach(t => {
             if (t.type === 'automation') return; 
-            
-            // Protect track if "Exclude Random" is enabled
             if (t.ignoreRandom) return;
 
             if (t.type === 'granular') {
