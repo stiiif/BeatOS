@@ -51,7 +51,7 @@ export class GranularSynthWorklet {
 
                 this.workletNode.connectedTracks = new Set();
                 this.isInitialized = true;
-                console.log('[GranularSynthWorklet] ✅ DSP Engine Ready');
+                console.log('[GranularSynthWorklet] ✅ DSP Engine Ready 2');
             } catch (error) {
                 console.error('[GranularSynthWorklet] Initialization failed:', error);
                 throw error;
