@@ -6,6 +6,10 @@ export class SnapshotManager {
         this.tracks = [];
         this.snapshotData = null;
         this.matrixStepElements = [];
+        // External references — set by main/UIManager
+        this._randomizer = null;
+        this._audioEngine = null;
+        this._effectsManager = null;
     }
 
     setTracks(tracks) {
@@ -14,6 +18,15 @@ export class SnapshotManager {
 
     setGridElements(matrixStepElements) {
         this.matrixStepElements = matrixStepElements;
+    }
+
+    /**
+     * Provide external references needed for config-driven snapshot.
+     */
+    setContext(randomizer, audioEngine, effectsManager) {
+        this._randomizer = randomizer;
+        this._audioEngine = audioEngine;
+        this._effectsManager = effectsManager;
     }
 
     // ============================================================================
@@ -25,22 +38,36 @@ export class SnapshotManager {
         
         if(!this.snapshotData) {
             // SAVE SNAPSHOT
-            this.snapshotData = JSON.stringify({
-                tracks: this.tracks.map(t => ({
-                    params: {...t.params},
+            const snapObj = {
+                // Always save sequencer + state (not config-driven, always needed)
+                trackState: this.tracks.map(t => ({
                     steps: Array.from(t.steps),
                     muted: t.muted,
                     soloed: t.soloed,
                     stepLock: t.stepLock,
-                    ignoreRandom: t.ignoreRandom,
-                    lfos: t.lfos.map(l => ({ 
-                        wave: l.wave, 
-                        rate: l.rate, 
-                        amount: l.amount, 
-                        target: l.target 
-                    }))
+                    ignoreRandom: t.ignoreRandom
                 }))
-            });
+            };
+
+            // Config-driven param snapshot via Randomizer
+            if (this._randomizer && this._randomizer.config) {
+                snapObj.randSnap = this._randomizer.saveSnapshot({
+                    tracks: this.tracks,
+                    audioEngine: this._audioEngine,
+                    effectsManager: this._effectsManager
+                });
+            } else {
+                // Fallback: save all track params and LFOs
+                snapObj.fallbackTracks = this.tracks.map(t => ({
+                    params: {...t.params},
+                    lfos: t.lfos.map(l => ({ 
+                        wave: l.wave, rate: l.rate, amount: l.amount, 
+                        target: l.target, targets: l.targets ? [...l.targets] : []
+                    }))
+                }));
+            }
+
+            this.snapshotData = JSON.stringify(snapObj);
             
             btn.classList.add('snap-active');
             btn.innerText = 'RESTORE';
@@ -50,60 +77,65 @@ export class SnapshotManager {
             try {
                 const data = JSON.parse(this.snapshotData);
                 
-                data.tracks.forEach((trackData, i) => {
-                    if (i >= this.tracks.length) return;
-                    const t = this.tracks[i];
-                    
-                    // Restore parameters
-                    t.params = { ...trackData.params };
-                    t.steps = new Uint8Array(trackData.steps);
-                    t.muted = trackData.muted;
-                    t.soloed = trackData.soloed;
-                    t.stepLock = trackData.stepLock || false;
-                    t.ignoreRandom = trackData.ignoreRandom || false;
-                    
-                    // Restore LFOs
-                    trackData.lfos.forEach((lData, lIdx) => {
-                        if(lIdx < NUM_LFOS) {
-                            t.lfos[lIdx].wave = lData.wave;
-                            t.lfos[lIdx].rate = lData.rate;
-                            t.lfos[lIdx].amount = lData.amount;
-                            t.lfos[lIdx].target = lData.target;
+                // 1. Restore sequencer state (always)
+                if (data.trackState) {
+                    data.trackState.forEach((stateData, i) => {
+                        if (i >= this.tracks.length) return;
+                        const t = this.tracks[i];
+                        t.steps = new Uint8Array(stateData.steps);
+                        t.muted = stateData.muted;
+                        t.soloed = stateData.soloed;
+                        t.stepLock = stateData.stepLock || false;
+                        t.ignoreRandom = stateData.ignoreRandom || false;
+                        
+                        if (onUpdateTrackStateUI) onUpdateTrackStateUI(i);
+                        
+                        // Update step buttons
+                        for(let s = 0; s < NUM_STEPS; s++) {
+                            const stepBtn = this.matrixStepElements[i]?.[s];
+                            if (!stepBtn) continue;
+                            stepBtn.className = 'step-btn';
+                            stepBtn.classList.remove('active', 'vel-1', 'vel-2', 'vel-3',
+                                'auto-level-1', 'auto-level-2', 'auto-level-3',
+                                'auto-level-4', 'auto-level-5');
+                            if (t.type === 'automation') {
+                                if (t.steps[s] > 0) stepBtn.classList.add('active', `auto-level-${t.steps[s]}`);
+                            } else {
+                                if (t.steps[s] > 0) stepBtn.classList.add(`vel-${t.steps[s]}`);
+                            }
                         }
                     });
-                    
-                    // Update track state UI (mute/solo/lock buttons)
-                    if (onUpdateTrackStateUI) {
-                        onUpdateTrackStateUI(i);
-                    }
-                    
-                    // Update step buttons
-                    for(let s=0; s<NUM_STEPS; s++) {
-                         const btn = this.matrixStepElements[i][s];
-                         if (!btn) continue;
-                         
-                         btn.className = 'step-btn';
-                         btn.classList.remove('active', 'vel-1', 'vel-2', 'vel-3', 
-                                            'auto-level-1', 'auto-level-2', 'auto-level-3', 
-                                            'auto-level-4', 'auto-level-5');
-                         
-                         if(t.type === 'automation') {
-                             if(t.steps[s] > 0) {
-                                 btn.classList.add('active', `auto-level-${t.steps[s]}`);
-                             }
-                         } else {
-                             if(t.steps[s] > 0) {
-                                 btn.classList.add(`vel-${t.steps[s]}`);
-                             }
-                         }
-                    }
-                    
-                    // Restore audio bus parameters
-                    if(t.bus.hp) t.bus.hp.frequency.value = t.params.hpFilter;
-                    if(t.bus.lp) t.bus.lp.frequency.value = t.params.filter;
-                    if(t.bus.vol) t.bus.vol.gain.value = t.params.volume;
-                    if(t.bus.pan) t.bus.pan.pan.value = t.params.pan;
-                });
+                }
+
+                // 2. Restore config-driven params via Randomizer
+                if (data.randSnap && this._randomizer) {
+                    this._randomizer.restoreSnapshot(data.randSnap, {
+                        tracks: this.tracks,
+                        audioEngine: this._audioEngine,
+                        effectsManager: this._effectsManager
+                    });
+                } else if (data.fallbackTracks) {
+                    // Fallback restore
+                    data.fallbackTracks.forEach((tData, i) => {
+                        if (i >= this.tracks.length) return;
+                        const t = this.tracks[i];
+                        Object.assign(t.params, tData.params);
+                        tData.lfos.forEach((lData, lIdx) => {
+                            if (lIdx < NUM_LFOS) {
+                                const lfo = t.lfos[lIdx];
+                                lfo.wave = lData.wave;
+                                lfo.rate = lData.rate;
+                                lfo.amount = lData.amount;
+                                lfo.target = lData.target;
+                                if (lData.targets) lfo.targets = [...lData.targets];
+                            }
+                        });
+                        if (t.bus.hp) t.bus.hp.frequency.value = t.params.hpFilter;
+                        if (t.bus.lp) t.bus.lp.frequency.value = t.params.filter;
+                        if (t.bus.vol) t.bus.vol.gain.value = t.params.volume;
+                        if (t.bus.pan) t.bus.pan.pan.value = t.params.pan;
+                    });
+                }
                 
                 // Clear snapshot
                 this.snapshotData = null;

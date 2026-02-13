@@ -211,6 +211,210 @@ export class Randomizer {
     }
 
     // =========================================================================
+    // SNAPSHOT — Config-driven save/restore
+    // Captures exactly the parameters declared in the randomization config.
+    // =========================================================================
+
+    /**
+     * Save a snapshot of all parameters the config can affect.
+     * @param {Object} ctx - Same context as randomize()
+     * @returns {Object} snapshot data
+     */
+    saveSnapshot(ctx) {
+        if (!this.config) return null;
+        const { tracks, audioEngine, effectsManager } = ctx;
+        const snap = {};
+
+        // 1. Granular engine + mixer track params (both stored on track.params)
+        // Merge param keys from granularEngine, drum909, and mixerTracks configs
+        const trackParamKeys = new Set();
+        if (this.config.granularEngine?.params) Object.keys(this.config.granularEngine.params).forEach(k => trackParamKeys.add(k));
+        if (this.config.drum909?.params) Object.keys(this.config.drum909.params).forEach(k => trackParamKeys.add(k));
+        if (this.config.mixerTracks?.params) Object.keys(this.config.mixerTracks.params).forEach(k => trackParamKeys.add(k));
+
+        snap.tracks = tracks.map(t => {
+            const params = {};
+            trackParamKeys.forEach(k => { params[k] = t.params[k]; });
+            return { params };
+        });
+
+        // 2. Modulator LFOs
+        if (this.config.modulatorLFOs) {
+            snap.trackLFOs = tracks.map(t => {
+                return t.lfos.map(lfo => ({
+                    wave: lfo.wave,
+                    rate: lfo.rate,
+                    amount: lfo.amount,
+                    target: lfo.target,
+                    targets: lfo.targets ? [...lfo.targets] : [],
+                    sync: lfo.sync,
+                    syncRateIndex: lfo.syncRateIndex,
+                    syncDivision: lfo.syncDivision
+                }));
+            });
+        }
+
+        // 3. Group buses
+        if (this.config.mixerGroups?.params && audioEngine?.groupBuses) {
+            const keys = Object.keys(this.config.mixerGroups.params);
+            snap.groups = audioEngine.groupBuses.map(bus => {
+                if (!bus) return null;
+                const vals = {};
+                keys.forEach(k => { vals[k] = this._getGroupBusValue(bus, k); });
+                return vals;
+            });
+        }
+
+        // 4. Return buses
+        if (this.config.returnTracks?.params && audioEngine?.returnBuses) {
+            const keys = Object.keys(this.config.returnTracks.params);
+            snap.returns = audioEngine.returnBuses.map(bus => {
+                if (!bus) return null;
+                const vals = {};
+                keys.forEach(k => { vals[k] = this._getReturnBusValue(bus, k); });
+                return vals;
+            });
+        }
+
+        // 5. FX engines
+        if (this.config.fxEngines?.perFX && effectsManager) {
+            snap.fxEngines = [0, 1].map(fxId => {
+                const state = effectsManager.getEffectState(fxId);
+                return state ? { params: [...state.params] } : null;
+            });
+        }
+
+        // 6. FX LFOs
+        if (this.config.fxLFOs && effectsManager) {
+            snap.fxLFOs = [0, 1].map(fxId => {
+                const state = effectsManager.getEffectState(fxId);
+                if (!state) return null;
+                return {
+                    lfos: state.lfos.map(lfo => ({
+                        wave: lfo.wave,
+                        rate: lfo.rate,
+                        amount: lfo.amount,
+                        sync: lfo.sync,
+                        syncRateIndex: lfo.syncRateIndex
+                    })),
+                    matrix: state.matrix ? state.matrix.map(row => [...row]) : null
+                };
+            });
+        }
+
+        return snap;
+    }
+
+    /**
+     * Restore a snapshot, applying all values back to audio nodes.
+     * @param {Object} snap - Data from saveSnapshot()
+     * @param {Object} ctx - Same context as randomize()
+     */
+    restoreSnapshot(snap, ctx) {
+        if (!snap || !this.config) return;
+        const { tracks, audioEngine, effectsManager } = ctx;
+
+        // 1. Track params (granular + mixer)
+        if (snap.tracks) {
+            snap.tracks.forEach((snapTrack, i) => {
+                if (i >= tracks.length) return;
+                const t = tracks[i];
+                for (const [key, val] of Object.entries(snapTrack.params)) {
+                    if (val !== undefined) {
+                        t.params[key] = val;
+                        this._applyTrackBusParam(t, key, val, audioEngine);
+                    }
+                }
+            });
+        }
+
+        // 2. Modulator LFOs
+        if (snap.trackLFOs) {
+            snap.trackLFOs.forEach((lfoArr, i) => {
+                if (i >= tracks.length) return;
+                lfoArr.forEach((lData, lIdx) => {
+                    if (lIdx >= tracks[i].lfos.length) return;
+                    const lfo = tracks[i].lfos[lIdx];
+                    if (lData.wave !== undefined) lfo.wave = lData.wave;
+                    if (lData.rate !== undefined) lfo.rate = lData.rate;
+                    if (lData.amount !== undefined) lfo.amount = lData.amount;
+                    if (lData.target !== undefined) lfo.target = lData.target;
+                    if (lData.targets) lfo.targets = [...lData.targets];
+                    if (lData.sync !== undefined) lfo.sync = lData.sync;
+                    if (lData.syncRateIndex !== undefined) lfo.syncRateIndex = lData.syncRateIndex;
+                    if (lData.syncDivision !== undefined) lfo.syncDivision = lData.syncDivision;
+                });
+            });
+        }
+
+        // 3. Group buses
+        if (snap.groups && audioEngine?.groupBuses) {
+            snap.groups.forEach((gData, i) => {
+                if (!gData || i >= audioEngine.groupBuses.length) return;
+                const bus = audioEngine.groupBuses[i];
+                if (!bus) return;
+                for (const [key, val] of Object.entries(gData)) {
+                    this._applyGroupBusParam(bus, key, val, audioEngine);
+                }
+            });
+        }
+
+        // 4. Return buses
+        if (snap.returns && audioEngine?.returnBuses) {
+            snap.returns.forEach((rData, i) => {
+                if (!rData || i >= audioEngine.returnBuses.length) return;
+                const bus = audioEngine.returnBuses[i];
+                if (!bus) return;
+                for (const [key, val] of Object.entries(rData)) {
+                    this._applyReturnBusParam(bus, key, val, audioEngine);
+                }
+            });
+        }
+
+        // 5. FX engines
+        if (snap.fxEngines && effectsManager && audioEngine) {
+            snap.fxEngines.forEach((fxData, fxId) => {
+                if (!fxData) return;
+                const state = effectsManager.getEffectState(fxId);
+                if (!state) return;
+                fxData.params.forEach((val, pIdx) => {
+                    state.params[pIdx] = val;
+                    audioEngine.setEffectParam(fxId, pIdx, val);
+                });
+            });
+        }
+
+        // 6. FX LFOs
+        if (snap.fxLFOs && effectsManager) {
+            snap.fxLFOs.forEach((fxData, fxId) => {
+                if (!fxData) return;
+                const state = effectsManager.getEffectState(fxId);
+                if (!state) return;
+                if (fxData.lfos) {
+                    fxData.lfos.forEach((lData, lIdx) => {
+                        if (lIdx >= state.lfos.length) return;
+                        const lfo = state.lfos[lIdx];
+                        if (lData.wave !== undefined) lfo.wave = lData.wave;
+                        if (lData.rate !== undefined) lfo.rate = lData.rate;
+                        if (lData.amount !== undefined) lfo.amount = lData.amount;
+                        if (lData.sync !== undefined) lfo.sync = lData.sync;
+                        if (lData.syncRateIndex !== undefined) lfo.syncRateIndex = lData.syncRateIndex;
+                    });
+                }
+                if (fxData.matrix && state.matrix) {
+                    fxData.matrix.forEach((row, src) => {
+                        if (src < state.matrix.length) {
+                            row.forEach((val, tgt) => {
+                                if (tgt < state.matrix[src].length) state.matrix[src][tgt] = val;
+                            });
+                        }
+                    });
+                }
+            });
+        }
+    }
+
+    // =========================================================================
     // MAIN ENTRY POINT
     // =========================================================================
 

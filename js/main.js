@@ -145,6 +145,9 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     effectControls.render();
     renderLoop.start();
 
+    // Wire snapshot context so Snap/Restore covers all Rand Prms params
+    uiManager.setSnapshotContext(randomizer, audioEngine, effectsManager);
+
     uiManager.selectTrack(0, () => {
         visualizer.setSelectedTrackIndex(0);
         visualizer.triggerRedraw();

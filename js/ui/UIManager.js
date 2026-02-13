@@ -41,6 +41,10 @@ export class UIManager {
         this.trackControls.setTrackManager(tm);
     }
 
+    setSnapshotContext(randomizer, audioEngine, effectsManager) {
+        this.snapshotManager.setContext(randomizer, audioEngine, effectsManager);
+    }
+
     initUI(addTrackCallback, addGroupCallback, visualizerCallback = null) {
         this.visualizerCallback = visualizerCallback;
         
@@ -200,15 +204,20 @@ export class UIManager {
     toggleRandomChoke() { this.trackOps.toggleRandomChoke((idx, cb) => this.selectTrack(idx, cb), this.visualizerCallback, this.getSelectedTrackIndex()); }
 
     toggleSnapshot() {
+        const wasSnapped = this.snapshotManager.hasSnapshot();
         this.snapshotManager.toggleSnapshot(
             (trk) => {
                 this.updateTrackStateUI(trk);
-                if(this.mixer) this.mixer.updateTrackState(trk); // Update Mixer on snapshot restore
+                if(this.mixer) this.mixer.updateTrackState(trk);
             },
             (idx, cb) => this.selectTrack(idx, cb),
             this.getSelectedTrackIndex(),
             this.visualizerCallback
         );
+        // If we just restored (was snapped, now isn't), re-render mixer to sync knob positions
+        if (wasSnapped && !this.snapshotManager.hasSnapshot()) {
+            if (this.mixer) this.mixer.render();
+        }
     }
 
     get matrixStepElements() { return this.grid.getMatrixStepElements(); }
