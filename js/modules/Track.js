@@ -13,6 +13,8 @@ export class Track {
         this.rmsMap = []; 
         this.steps = new Uint8Array(NUM_STEPS).fill(0);
         this.microtiming = new Float32Array(NUM_STEPS).fill(0);
+        // Per-step pitch overrides: null = use track defaults, array = semitone offsets
+        this.stepPitches = new Array(NUM_STEPS).fill(null);
         // Modulator slots — backward compat: .lfos still works
         this.lfos = Array.from({ length: NUM_LFOS }, () => new LFO());
         
@@ -52,7 +54,19 @@ export class Track {
             overlap: 1.0,    
             grainSize: 0.10, 
             stereoSpread: 0.0, // 0 = mono center, 1 = full random L/R
-            pitch: 1.0, 
+            pitch: 1.0,         // Legacy ratio — kept for backward compat
+            
+            // --- Musical Pitch System ---
+            pitchSemi: 0,        // -24 to +24 semitones
+            pitchFine: 0,        // -100 to +100 cents
+            pitchSnap: true,     // Quantize coarse to semitones
+            scaleRoot: 0,        // 0-11 (C=0, C#=1, ... B=11)
+            scaleType: 'chromatic', // Scale ID
+            chordType: 'unison', // Chord ID
+            chordSpread: 0,      // 0-3 octaves
+            chordInversion: 0,   // 0-3
+            voiceMode: 'random', // 'cycle', 'random', 'weighted'
+            
             relGrain: 2.00,  
             
             // --- NEW PARAMETERS (Sample Window) ---

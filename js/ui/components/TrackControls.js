@@ -225,8 +225,10 @@ export class TrackControls {
                 el.value = t.params[param];
                 let suffix = '';
                 let displayValue = t.params[param].toFixed(3); 
-                if(param === 'density') { suffix = 'hz'; displayValue = t.params[param].toFixed(1); } // UPDATED: Show 1 decimal
+                if(param === 'density') { suffix = 'hz'; displayValue = t.params[param].toFixed(1); }
                 if(param === 'grainSize') suffix = 's';
+                if(param === 'pitchSemi') { suffix = 'st'; displayValue = t.params[param].toFixed(0); }
+                if(param === 'pitchFine') { suffix = 'ct'; displayValue = t.params[param].toFixed(0); }
                 if(param === 'pitch') suffix = 'x';
                 if(param === 'overlap') suffix = 'x';
                 

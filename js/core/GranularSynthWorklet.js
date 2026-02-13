@@ -157,7 +157,7 @@ export class GranularSynthWorklet {
 
         this.syncTrackBusParams(track, time);
 
-        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0, relGrain:0, edgeCrunch: 0, orbit: 0, stereoSpread: 0 };
+        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, pitchSemi:0, pitchFine:0, chordSpread:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0, relGrain:0, edgeCrunch: 0, orbit: 0, stereoSpread: 0 };
         const noteModCtx = { siblings: track.lfos, audioEngine: this.audioEngine, tracks: this.audioEngine._tracks, stepIndex: stepIndex };
         track.lfos.forEach((lfo, idx) => {
             noteModCtx.selfIndex = idx;
@@ -219,6 +219,19 @@ export class GranularSynthWorklet {
                     density: Math.max(1, (p.density || 20) + mod.density),
                     grainSize: Math.max(0.005, (p.grainSize || 0.1) + mod.grainSize),
                     overlap: Math.max(0, (p.overlap || 0) + mod.overlap),
+                    
+                    // Musical pitch system — compute in worklet per-grain
+                    pitchSemi: (p.pitchSemi || 0) + (mod.pitchSemi || 0) + (mod.pitch || 0) * 12, // legacy pitch mod → semitones
+                    pitchFine: (p.pitchFine || 0) + (mod.pitchFine || 0),
+                    scaleRoot: p.scaleRoot || 0,
+                    scaleType: p.scaleType || 'chromatic',
+                    chordType: p.chordType || 'unison',
+                    chordSpread: Math.max(0, Math.min(3, (p.chordSpread || 0) + (mod.chordSpread || 0))),
+                    chordInversion: p.chordInversion || 0,
+                    voiceMode: p.voiceMode || 'random',
+                    // Per-step pitch override
+                    _stepPitches: track.stepPitches ? track.stepPitches[stepIndex] : null,
+                    // Legacy fallback: flat ratio for backward compat
                     pitch: Math.max(0.01, (p.pitch || 1.0) + mod.pitch),
                     velocity: gainMult,
                     spray: Math.max(0, (p.spray || 0) + mod.spray),
@@ -256,11 +269,52 @@ export class GranularSynthWorklet {
 
     getWorkletCode() {
         return `
+// ═══ Musical Pitch Tables (inlined for worklet) ═══
+const _SCALES = {
+    chromatic:[0,1,2,3,4,5,6,7,8,9,10,11], major:[0,2,4,5,7,9,11], minor:[0,2,3,5,7,8,10],
+    dorian:[0,2,3,5,7,9,10], phrygian:[0,1,3,5,7,8,10], lydian:[0,2,4,6,7,9,11],
+    mixolydian:[0,2,4,5,7,9,10], pentatonic:[0,2,4,7,9], minPent:[0,3,5,7,10],
+    blues:[0,3,5,6,7,10], wholetone:[0,2,4,6,8,10], diminished:[0,1,3,4,6,7,9,10],
+    japanese:[0,1,5,7,8], arabic:[0,1,4,5,7,8,11], hungarian:[0,2,3,6,7,8,11],
+    harmonicMin:[0,2,3,5,7,8,11]
+};
+const _CHORDS = {
+    unison:[0], octaves:[0,12], fifth:[0,7], major:[0,4,7], minor:[0,3,7],
+    sus2:[0,2,7], sus4:[0,5,7], dim:[0,3,6], aug:[0,4,8],
+    maj7:[0,4,7,11], min7:[0,3,7,10], dom7:[0,4,7,10],
+    add9:[0,4,7,14], min9:[0,3,7,10,14], stack4:[0,5,10], stack5:[0,7,14], cluster:[0,1,2]
+};
+
+function _quantize(semi, root, scale) {
+    if (!scale || scale.length === 12) return semi;
+    const rel = semi - root;
+    const oct = Math.floor(rel / 12);
+    const wo = ((rel % 12) + 12) % 12;
+    let best = scale[0], bestD = 12;
+    for (let i = 0; i < scale.length; i++) {
+        const d = Math.min(Math.abs(wo - scale[i]), 12 - Math.abs(wo - scale[i]));
+        if (d < bestD) { bestD = d; best = scale[i]; }
+    }
+    return root + oct * 12 + best;
+}
+
+function _buildVoicings(chord, inv, spread) {
+    const base = (_CHORDS[chord] || _CHORDS.unison).slice();
+    const n = Math.min(inv, base.length - 1);
+    for (let i = 0; i < n; i++) base[i] += 12;
+    base.sort((a,b) => a - b);
+    if (spread <= 0) return base;
+    const v = [];
+    for (let o = 0; o <= spread; o++) for (const i of base) v.push(i + o * 12);
+    return v;
+}
+
 class BeatOSGranularProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
         this.MAX_VOICES = 64;
-        this.safetyLimit = 400; 
+        this.safetyLimit = 400;
+        this._grainCounter = 0; // for chord cycle mode
 
         // OPT: Pre-allocate voice pool as flat typed arrays for cache-friendly access
         // Each voice has fixed-size properties stored contiguously
@@ -585,7 +639,58 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const gLen = (note.params.grainSize || 0.1) * sampleRate;
         v.grainLength = gLen > 128 ? (gLen | 0) : 128;
         v.invGrainLength = (this.LUT_SIZE - 1) / v.grainLength;
-        v.pitch = note.params.pitch || 1; 
+        
+        // ═══ Musical Pitch Per Grain ═══
+        const pp = note.params;
+        if (pp.pitchSemi !== undefined) {
+            let semi = pp.pitchSemi || 0;
+            const fine = pp.pitchFine || 0;
+            const scaleType = pp.scaleType || 'chromatic';
+            const scaleArr = _SCALES[scaleType];
+            const scaleRoot = pp.scaleRoot || 0;
+            
+            // Scale quantize base pitch
+            if (scaleType !== 'chromatic') {
+                semi = _quantize(semi, scaleRoot, scaleArr);
+            }
+            
+            // Per-step chord override
+            const stepChord = pp._stepPitches;
+            let chordSemi = 0;
+            
+            if (stepChord && stepChord.length > 0) {
+                // Per-step explicit chord tones
+                const idx = pp.voiceMode === 'cycle' 
+                    ? (this._grainCounter % stepChord.length)
+                    : (pp.voiceMode === 'weighted' && this.random() < 0.4) 
+                        ? 0 
+                        : Math.floor(this.random() * stepChord.length);
+                chordSemi = stepChord[idx] || 0;
+            } else {
+                // Track-level chord type
+                const chordType = pp.chordType || 'unison';
+                if (chordType !== 'unison') {
+                    const voicings = _buildVoicings(chordType, pp.chordInversion || 0, pp.chordSpread || 0);
+                    const idx = pp.voiceMode === 'cycle'
+                        ? (this._grainCounter % voicings.length)
+                        : (pp.voiceMode === 'weighted' && this.random() < 0.4)
+                            ? 0
+                            : Math.floor(this.random() * voicings.length);
+                    chordSemi = voicings[idx] || 0;
+                }
+            }
+            
+            // Quantize chord tone to scale
+            if (chordSemi !== 0 && scaleType !== 'chromatic') {
+                chordSemi = _quantize(chordSemi, 0, scaleArr);
+            }
+            
+            v.pitch = Math.pow(2, (semi + chordSemi + fine / 100) / 12);
+            this._grainCounter++;
+        } else {
+            // Legacy fallback
+            v.pitch = pp.pitch || 1;
+        }
         v.velocity = note.params.velocity || 1;
         v.releasing = false; 
         v.releaseAmp = 1.0;

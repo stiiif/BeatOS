@@ -27,7 +27,8 @@ export class PresetManager {
                     amount: l.amount, 
                     targets: l.targets
                 }),
-                samplePath: null // Will be filled if custom sample exists
+                stepPitches: t.stepPitches || null,
+                samplePath: null
             };
 
             // If track has a custom sample, add it to the ZIP
@@ -138,6 +139,18 @@ export class PresetManager {
             
             const t = tracks[i];
             t.params = { ...t.params, ...trackData.params };
+            
+            // Backward compat: convert old pitch ratio to semitones
+            if (trackData.params && trackData.params.pitch !== undefined && trackData.params.pitchSemi === undefined) {
+                t.params.pitchSemi = Math.round(12 * Math.log2(trackData.params.pitch || 1));
+                t.params.pitchFine = 0;
+            }
+            
+            // Load stepPitches if present
+            if (trackData.stepPitches) {
+                t.stepPitches = trackData.stepPitches;
+            }
+            
             t.steps = [...trackData.steps];
             t.muted = !!trackData.muted; t.soloed = !!trackData.soloed;
             t.stepLock = !!trackData.stepLock;

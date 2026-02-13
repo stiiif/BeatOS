@@ -59,6 +59,12 @@ function updateTrackControlsVisibility() {
     uiManager.updateTrackControlsVisibility();
 }
 
+// Wire step pitch lane toggle
+const pitchLaneBtn = document.getElementById('togglePitchLane');
+if (pitchLaneBtn) {
+    pitchLaneBtn.onclick = () => uiManager.stepPitchLane.toggle();
+}
+
 const originalSelectTrack = uiManager.selectTrack.bind(uiManager);
 uiManager.selectTrack = (idx, cb) => {
     originalSelectTrack(idx, cb);

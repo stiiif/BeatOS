@@ -6,6 +6,8 @@ import { GrooveControls } from './components/GrooveControls.js';
 import { TrackOperations } from './components/TrackOperations.js';
 import { SnapshotManager } from './components/SnapshotManager.js';
 import { AutomationPanel } from './components/AutomationPanel.js';
+import { PitchHarmonyUI } from './components/PitchHarmonyUI.js';
+import { StepPitchLane } from './components/StepPitchLane.js';
 import { SearchModal } from './SearchModal.js';
 import { Mixer } from './components/Mixer.js';
 
@@ -23,6 +25,8 @@ export class UIManager {
         this.trackOps = new TrackOperations();
         this.snapshotManager = new SnapshotManager();
         this.automationPanel = new AutomationPanel();
+        this.pitchHarmonyUI = new PitchHarmonyUI();
+        this.stepPitchLane = new StepPitchLane();
     }
 
     setTracks(tracks) {
@@ -33,6 +37,8 @@ export class UIManager {
         this.trackOps.setTracks(tracks);
         this.snapshotManager.setTracks(tracks);
         this.automationPanel.setTracks(tracks);
+        this.pitchHarmonyUI.setTracks(tracks);
+        this.stepPitchLane.setTracks(tracks);
     }
 
     setTrackManager(tm) {
@@ -143,6 +149,8 @@ export class UIManager {
         this.trackControls.setRandomChokeInfo(randomChokeInfo.mode, randomChokeInfo.groups);
         this.trackControls.selectTrack(idx, visualizerCallback);
         this.automationPanel.setSelectedTrackIndex(idx);
+        this.pitchHarmonyUI.setSelectedTrackIndex(idx);
+        this.stepPitchLane.setSelectedTrackIndex(idx);
     }
 
     updateTrackControlsVisibility() { this.trackControls.updateTrackControlsVisibility(); }
