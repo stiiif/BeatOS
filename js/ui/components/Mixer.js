@@ -126,9 +126,14 @@ export class Mixer {
     _updateHeaderRecordState(isRecording) {
         this._headerEls.forEach((el, key) => {
             if (el) {
-                el.style.color = isRecording ? '#ef4444' : ''; // Red when recording
+                el.style.color = isRecording ? '#ef4444' : '';
             }
         });
+    }
+
+    /** Check if a lane was written to during the current record pass */
+    _recordingLanes_has(key) {
+        return this.mixerAutomation && this.mixerAutomation._recordingLanes.has(key);
     }
 
     /**
@@ -140,9 +145,10 @@ export class Mixer {
 
         const fraction = this._getLoopFraction();
 
-        // Update knobs
+        // Update knobs — skip any that are being actively dragged
         for (let i = 0; i < this._autoKnobs.length; i++) {
             const ak = this._autoKnobs[i];
+            if (ak.isDragging && ak.isDragging()) continue; // Don't fight the user's mouse
             const val = this.mixerAutomation.getValue(ak.key, fraction);
             if (val !== null) {
                 ak.setCurrentValue(val);
@@ -151,9 +157,10 @@ export class Mixer {
             }
         }
 
-        // Update faders
+        // Update faders — skip actively dragged
         for (let i = 0; i < this._autoFaders.length; i++) {
             const af = this._autoFaders[i];
+            if (af.isDragging && af.isDragging()) continue;
             const val = this.mixerAutomation.getValue(af.key, fraction);
             if (val !== null) {
                 af.fader.value = val;
@@ -442,9 +449,11 @@ export class Mixer {
         // Automation border update
         const updateAutoBorder = () => {
             if (autoKey && this.mixerAutomation && this.mixerAutomation.hasAutomation(autoKey)) {
-                knobOuter.style.boxShadow = '0 0 0 1.5px #f5f0e0';
+                knobOuter.style.outline = '1.5px solid #f5f0e0';
+                knobOuter.style.outlineOffset = '1px';
             } else {
-                knobOuter.style.boxShadow = '';
+                knobOuter.style.outline = '';
+                knobOuter.style.outlineOffset = '';
             }
         };
 
@@ -453,20 +462,11 @@ export class Mixer {
         // Store references for playback updates
         if (autoKey) {
             if (!this._autoKnobs) this._autoKnobs = [];
-            this._autoKnobs.push({ key: autoKey, updateRotation, updateAutoBorder, knobOuter, onChange, min, max, step, getCurrentValue: () => currentValue, setCurrentValue: (v) => { currentValue = v; } });
+            this._autoKnobs.push({ key: autoKey, updateRotation, updateAutoBorder, knobOuter, onChange, min, max, step, getCurrentValue: () => currentValue, setCurrentValue: (v) => { currentValue = v; }, isDragging: () => isDragging });
             updateAutoBorder();
         }
 
         knobOuter.addEventListener('mousedown', (e) => {
-            // * + click = clear automation
-            if (autoKey && this._isStarHeld && this.mixerAutomation) {
-                this.mixerAutomation.clearLane(autoKey);
-                updateAutoBorder();
-                e.preventDefault();
-                e.stopPropagation();
-                return;
-            }
-
             isDragging = true;
             startY = e.clientY;
             startVal = currentValue;
@@ -491,7 +491,6 @@ export class Mixer {
                     const delta = newVal - currentValue;
                     this.mixerAutomation.addOffset(autoKey, delta);
                     currentValue = newVal;
-                    // Don't call onChange here — playback loop handles it
                     return;
                 }
                 currentValue = newVal;
@@ -510,6 +509,11 @@ export class Mixer {
             isDragging = false;
             wrapper.classList.remove('dragging');
             document.body.style.cursor = '';
+            // Check if this was a click (no drag movement) with * held = clear automation
+            if (autoKey && this._isStarHeld && this.mixerAutomation && !this._recordingLanes_has(autoKey)) {
+                this.mixerAutomation.clearLane(autoKey);
+                updateAutoBorder();
+            }
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
         };
@@ -613,22 +617,21 @@ export class Mixer {
         };
 
         fader.addEventListener('mousedown', (e) => {
-            // * + click = clear automation
-            if (autoKey && this._isStarHeld && this.mixerAutomation) {
-                this.mixerAutomation.clearLane(autoKey);
-                updateAutoBorder();
-                e.preventDefault();
-                e.stopPropagation();
-                return;
-            }
             faderDragging = true;
         });
-        fader.addEventListener('mouseup', () => { faderDragging = false; });
+        fader.addEventListener('mouseup', () => {
+            faderDragging = false;
+            // * + click (no drag movement) = clear automation
+            if (autoKey && this._isStarHeld && this.mixerAutomation && !this._recordingLanes_has(autoKey)) {
+                this.mixerAutomation.clearLane(autoKey);
+                updateAutoBorder();
+            }
+        });
 
         // Store for playback
         if (autoKey) {
             if (!this._autoFaders) this._autoFaders = [];
-            this._autoFaders.push({ key: autoKey, fader, updateAutoBorder, onChange });
+            this._autoFaders.push({ key: autoKey, fader, updateAutoBorder, onChange, isDragging: () => faderDragging });
             updateAutoBorder();
         }
         
