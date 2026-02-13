@@ -1,9 +1,9 @@
 // Constants & Configuration
 export const START_TRACKS = 16;
 export const MAX_TRACKS = 32;
-export const NUM_STEPS = 32; // Set to 64
-export const NUM_LFOS = 3;
-export const TRACKS_PER_GROUP = 8; // Changed from 4 to 8 for V2 patterns
+export const NUM_STEPS = 64; // Set to 64
+export const NUM_LFOS = 4;
+export const TRACKS_PER_GROUP = 4; // Changed from 4 to 8 for V2 patterns
 
 export const DEFAULT_BPM = 120;
 export const LOOKAHEAD = 25.0;
