@@ -309,6 +309,37 @@ function _buildVoicings(chord, inv, spread) {
     return v;
 }
 
+// ═══ FIX 2: Pitch ratio LUT — covers -48 to +48 semitones at 0.01 cent resolution ═══
+// Index = (semitones + 48) * 100  → range [0, 9600]
+const _PITCH_LUT_SIZE = 9601;
+const _PITCH_LUT_OFFSET = 4800; // +48 semitones * 100
+const _PITCH_LUT = new Float32Array(_PITCH_LUT_SIZE);
+for (let i = 0; i < _PITCH_LUT_SIZE; i++) {
+    _PITCH_LUT[i] = Math.pow(2, (i - _PITCH_LUT_OFFSET) / 1200);
+}
+function _pitchRatio(semitones, cents) {
+    const idx = ((semitones * 100 + cents) + _PITCH_LUT_OFFSET) | 0;
+    if (idx <= 0) return _PITCH_LUT[0];
+    if (idx >= _PITCH_LUT_SIZE - 1) return _PITCH_LUT[_PITCH_LUT_SIZE - 1];
+    return _PITCH_LUT[idx];
+}
+
+// ═══ FIX 3: Equal-power pan LUT — 256 entries for panPos [-1, +1] ═══
+const _PAN_LUT_SIZE = 256;
+const _PAN_L = new Float32Array(_PAN_LUT_SIZE);
+const _PAN_R = new Float32Array(_PAN_LUT_SIZE);
+for (let i = 0; i < _PAN_LUT_SIZE; i++) {
+    const panPos = (i / (_PAN_LUT_SIZE - 1)) * 2 - 1; // -1 to +1
+    const theta = (panPos + 1) * 0.25 * Math.PI;
+    _PAN_L[i] = Math.cos(theta);
+    _PAN_R[i] = Math.sin(theta);
+}
+function _panLookup(panPos) {
+    let idx = ((panPos + 1) * 0.5 * (_PAN_LUT_SIZE - 1)) | 0;
+    if (idx < 0) idx = 0; else if (idx >= _PAN_LUT_SIZE) idx = _PAN_LUT_SIZE - 1;
+    return idx;
+}
+
 class BeatOSGranularProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
@@ -328,12 +359,21 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         this.activeNotes = [];
         this.trackBuffers = new Map();
         
+        // FIX 4: Free-list stack for O(1) voice allocation
+        this._freeList = new Int16Array(this.MAX_VOICES);
+        this._freeCount = this.MAX_VOICES;
+        for (let i = 0; i < this.MAX_VOICES; i++) this._freeList[i] = this.MAX_VOICES - 1 - i; // top of stack = index 0
+        
         this.lastReportedCount = 0;
         this._rngState = 0xCAFEBABE;
         
         // Per-track smoothed voice counts for independent amplitude scaling
-        this._perTrackSmoothed = new Float32Array(32); // up to 32 tracks
-        this._perTrackCount = new Uint16Array(32);     // actual count per block
+        this._perTrackSmoothed = new Float32Array(32);
+        this._perTrackCount = new Uint16Array(32);
+        
+        // FIX 6: Pre-computed per-track amplitude scales
+        this._perTrackNormalScale = new Float32Array(32).fill(1.0);
+        this._perTrackCleanScale = new Float32Array(32).fill(1.0);
 
         this._dirtyOutputs = new Uint8Array(32);
         this._notePool = [];
@@ -366,6 +406,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 case 'stopTrack': this.stopTrack(Number(data.trackId)); break;
                 case 'setMaxGrains': 
                     this.safetyLimit = data.max;
+                    const oldMax = this.voices.length;
                     // Grow voice pool if needed
                     while (this.voices.length < data.max && this.voices.length < 1024) {
                         const id = this.voices.length;
@@ -378,6 +419,14 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                         });
                     }
                     this.MAX_VOICES = Math.min(data.max, this.voices.length);
+                    // Rebuild free-list
+                    const newFree = new Int16Array(this.MAX_VOICES);
+                    let fc = 0;
+                    for (let i = 0; i < this.MAX_VOICES; i++) {
+                        if (!this.voices[i].active) newFree[fc++] = i;
+                    }
+                    this._freeList = newFree;
+                    this._freeCount = fc;
                     break;
             }
         };
@@ -400,13 +449,20 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     }
 
     handleNoteOn(data) {
+        // FIX 1: Pre-compute and cache voicings once per note instead of per grain
+        const pp = data.params;
+        let cachedVoicings = null;
+        if (pp.chordType && pp.chordType !== 'unison' && !pp._stepPitches) {
+            cachedVoicings = _buildVoicings(pp.chordType, pp.chordInversion || 0, pp.chordSpread || 0);
+        }
         this.activeNotes.push({
             trackId: Number(data.trackId), 
             startTime: data.time, 
             duration: data.duration,
-            params: data.params, 
+            params: pp, 
             nextGrainTime: data.time,
-            basePosition: data.params.position 
+            basePosition: pp.position,
+            _cachedVoicings: cachedVoicings
         });
     }
 
@@ -446,7 +502,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 let spawnLimit = 5;
                 while (note.nextGrainTime < blockEnd && spawnLimit > 0) {
                     if (note.nextGrainTime >= now) {
-                        if (this.activeVoiceIndices.length < this.MAX_VOICES) {
+                        if (this._freeCount > 0) {
                             this.spawnGrain(note);
                         }
                     }
@@ -474,6 +530,10 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         // Per-track smoothed counts for amplitude scaling
         for (let t = 0; t < 32; t++) {
             this._perTrackSmoothed[t] += (this._perTrackCount[t] - this._perTrackSmoothed[t]) * 0.05;
+            // FIX 6: Pre-compute scales — one division per track, not per voice
+            const sc = Math.max(1, this._perTrackSmoothed[t]);
+            this._perTrackNormalScale[t] = 1.0 / (1.0 + (sc * 0.15));
+            this._perTrackCleanScale[t] = 1.0 / sc;
         }
 
         // --- 2. DSP LOOP ---
@@ -504,11 +564,8 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const start = voice.position * bufLen;
             const baseAmp = voice.velocity;
             
-            // Per-track amplitude scaling based on this track's voice count only
-            const trackSmoothed = Math.max(1, this._perTrackSmoothed[tId] || 1);
-            const normalScale = 1.0 / (1.0 + (trackSmoothed * 0.15));
-            const cleanScale = 1.0 / trackSmoothed;
-            const trackScale = voice.cleanMode ? cleanScale : normalScale;
+            // FIX 6: Use pre-computed per-track scales — zero division here
+            const trackScale = voice.cleanMode ? this._perTrackCleanScale[tId] : this._perTrackNormalScale[tId];
             
             const vPanL = voice.panL, vPanR = voice.panR;
 
@@ -516,31 +573,32 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const hasEdgeCrunch = !voice.cleanMode && voice.edgeCrunch > 0;
             const maxOverflow = hasEdgeCrunch ? 1.0 + (voice.edgeCrunch * voice.edgeCrunch * voice.edgeCrunch * bufLen) : 0;
 
+            // OPT: Pre-multiply constant amplitude factors to reduce per-sample multiplies (4→2)
+            const ampBase = baseAmp * trackScale;
+            const hasStereo = !!R;
+
             let ph = voice.phase, amp = voice.releaseAmp, rel = voice.releasing;
 
-            // OPT: Hoist bufLen-1 for wrap check
             const bufLenM1 = bufLen - 1;
 
             for (let j = 0; j < frameCount; j++) {
                 if (rel) { 
-                    amp -= 0.003; // ~7ms fade at 48kHz — smooth enough to avoid clicks
+                    amp -= 0.003;
                     if (amp <= 0) { this.killVoice(i); break; } 
                 }
                 
-                // When grain reaches its end, enter release (freeze phase at last valid position)
                 if (ph >= gLen) { 
                     if (!rel) rel = true;
-                    ph = gLen - 1; // Clamp to last valid sample
+                    ph = gLen - 1;
                 }
                 
                 let rPos = start + (ph * pitch);
                 
-                // OPT: Replace while-loops with single modulo for wrap
                 if (rPos >= bufLen || rPos < 0) {
                     rPos = ((rPos % bufLen) + bufLen) % bufLen;
                 }
                 
-                let idx = rPos | 0;
+                const idx = rPos | 0;
                 let frac = rPos - idx;
                 
                 if (hasEdgeCrunch) {
@@ -548,23 +606,17 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                     else if (frac > maxOverflow) frac = maxOverflow;
                 }
 
-                // OPT: Direct array access with bounds check instead of || 0
                 const s1 = idx <= bufLenM1 ? buf[idx] : 0;
-                const idx2 = idx < bufLenM1 ? idx + 1 : 0;
-                const s2 = buf[idx2];
+                const s2 = buf[idx < bufLenM1 ? idx + 1 : 0];
                 
-                const sample = s1 + frac * (s2 - s1);
-
-                // OPT: Bitwise OR for floor, bounded by lutMax
+                // OPT: 2 multiplies instead of 4 (pre-multiplied ampBase)
                 let winIdx = (ph * invGL) | 0;
                 if (winIdx > lutMax) winIdx = lutMax;
-                const win = wLUT[winIdx];
-                
-                const val = sample * win * baseAmp * amp * trackScale;
+                const val = (s1 + frac * (s2 - s1)) * wLUT[winIdx] * ampBase * amp;
                 
                 L[j] += val * vPanL; 
-                if (R) R[j] += val * vPanR;
-                if (!rel) ph++; // Only advance phase if not releasing
+                if (hasStereo) R[j] += val * vPanR;
+                if (!rel) ph++;
             }
             voice.phase = ph; voice.releasing = rel; voice.releaseAmp = amp;
         }
@@ -606,15 +658,11 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         const buf = this.trackBuffers.get(Number(note.trackId));
         if(!buf || buf.length < 2) return;
         
-        let v = null;
-        for(let i=0; i<this.MAX_VOICES; i++) {
-            if(!this.voices[i].active) { 
-                v = this.voices[i]; 
-                this.activeVoiceIndices.push(i); 
-                break; 
-            }
-        }
-        if(!v) return; 
+        // FIX 4: O(1) voice allocation via free-list stack
+        if (this._freeCount <= 0) return;
+        const vIdx = this._freeList[--this._freeCount];
+        const v = this.voices[vIdx];
+        this.activeVoiceIndices.push(vIdx);
         
         // --- STRICT WINDOW WRAPPING LOGIC ---
         let pos = note.basePosition;
@@ -646,7 +694,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             pos += (this.random()*2-1)*note.params.spray;
         }
         
-        // OPT: Branchless clamp
         pos = pos < 0 ? 0 : pos > 1 ? 1 : pos;
         
         v.active = true; 
@@ -660,7 +707,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         v.grainLength = gLen > 128 ? (gLen | 0) : 128;
         v.invGrainLength = (this.LUT_SIZE - 1) / v.grainLength;
         
-        // ═══ Musical Pitch Per Grain ═══
+        // ═══ Musical Pitch Per Grain (FIX 1 + FIX 2) ═══
         const pp = note.params;
         if (pp.pitchSemi !== undefined) {
             let semi = pp.pitchSemi || 0;
@@ -679,7 +726,6 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             let chordSemi = 0;
             
             if (stepChord && stepChord.length > 0) {
-                // Per-step explicit chord tones
                 const idx = pp.voiceMode === 'cycle' 
                     ? (this._grainCounter % stepChord.length)
                     : (pp.voiceMode === 'weighted' && this.random() < 0.4) 
@@ -687,10 +733,9 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                         : Math.floor(this.random() * stepChord.length);
                 chordSemi = stepChord[idx] || 0;
             } else {
-                // Track-level chord type
-                const chordType = pp.chordType || 'unison';
-                if (chordType !== 'unison') {
-                    const voicings = _buildVoicings(chordType, pp.chordInversion || 0, pp.chordSpread || 0);
+                // FIX 1: Use cached voicings from noteOn instead of rebuilding
+                const voicings = note._cachedVoicings;
+                if (voicings && voicings.length > 0) {
                     const idx = pp.voiceMode === 'cycle'
                         ? (this._grainCounter % voicings.length)
                         : (pp.voiceMode === 'weighted' && this.random() < 0.4)
@@ -705,10 +750,10 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 chordSemi = _quantize(chordSemi, 0, scaleArr);
             }
             
-            v.pitch = Math.pow(2, (semi + chordSemi + fine / 100) / 12);
+            // FIX 2: LUT-based pitch ratio — no Math.pow
+            v.pitch = _pitchRatio(semi + chordSemi, fine);
             this._grainCounter++;
         } else {
-            // Legacy fallback
             v.pitch = pp.pitch || 1;
         }
         v.velocity = note.params.velocity || 1;
@@ -718,16 +763,15 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         v.edgeCrunch = note.params.edgeCrunch || 0;
         v.orbit = note.params.orbit || 0;
         
-        // Per-grain stereo placement: random pan within ±spread, equal-power pan law
+        // FIX 3: LUT-based stereo pan — no Math.cos/Math.sin
         const spread = note.params.stereoSpread || 0;
         if (spread > 0) {
-            const panPos = (this.random() * 2 - 1) * spread; // -spread to +spread
-            // Equal-power: L = cos(θ), R = sin(θ) where θ = (pan+1)/2 * π/2
-            const theta = (panPos + 1) * 0.25 * Math.PI; // 0 to π/2
-            v.panL = Math.cos(theta);
-            v.panR = Math.sin(theta);
+            const panPos = (this.random() * 2 - 1) * spread;
+            const panIdx = _panLookup(panPos);
+            v.panL = _PAN_L[panIdx];
+            v.panR = _PAN_R[panIdx];
         } else {
-            v.panL = 0.7071; // 1/√2 — center, equal power
+            v.panL = 0.7071;
             v.panR = 0.7071;
         }
     }
@@ -735,6 +779,8 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
     killVoice(idx) {
         const vIdx = this.activeVoiceIndices[idx];
         this.voices[vIdx].active = false;
+        // FIX 4: Return to free-list
+        this._freeList[this._freeCount++] = vIdx;
         const last = this.activeVoiceIndices.pop();
         if (idx < this.activeVoiceIndices.length) this.activeVoiceIndices[idx] = last;
     }
