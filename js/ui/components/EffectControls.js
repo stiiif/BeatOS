@@ -1,5 +1,6 @@
 // js/ui/components/EffectControls.js
 import { LFO } from '../../modules/LFO.js';
+import { createLfoRateSlider, createLfoSyncCell } from '../shared/LfoRateSlider.js';
 
 export class EffectControls {
     constructor(effectsManager) {
@@ -154,25 +155,32 @@ export class EffectControls {
             grid.appendChild(cell);
         });
         
-        // -- ROW 3: SYNC (New) --
+        // -- ROW 3: SYNC --
         const lblSync = document.createElement('div');
         lblSync.className = 'grid-cell label-cell border-t border-neutral-800';
         lblSync.innerText = 'SYNC';
         grid.appendChild(lblSync);
         
         state.lfos.forEach((lfo, i) => {
-            this.createSyncCell(grid, lfo, config.lfoColors[i], (key, val) => this.manager.setLfoParam(fxId, i, key, val));
+            const displayId = `fx-lfo-rate-${fxId}-${i}`;
+            createLfoSyncCell(grid, lfo, displayId, config.lfoColors[i], () => {
+                this.manager.setLfoParam(fxId, i, 'sync', lfo.sync);
+                this.render();
+            });
         });
 
-        // -- ROW 4: RATE (Dual Sliders) --
+        // -- ROW 4: RATE (Single slider) --
         const lblRate = document.createElement('div');
         lblRate.className = 'grid-cell label-cell';
-        lblRate.style.height = '40px'; 
         lblRate.innerText = 'RATE';
         grid.appendChild(lblRate);
         
         state.lfos.forEach((lfo, i) => {
-            this.createRateCell(grid, lfo, config.lfoColors[i], (key, val) => this.manager.setLfoParam(fxId, i, key, val));
+            const displayId = `fx-lfo-rate-${fxId}-${i}`;
+            createLfoRateSlider(grid, lfo, displayId, config.lfoColors[i],
+                (key, val) => this.manager.setLfoParam(fxId, i, key, val),
+                () => this.render()
+            );
         });
 
         // -- ROW 5: AMOUNT -- 
@@ -205,132 +213,6 @@ export class EffectControls {
 
         wrapper.appendChild(grid);
         return wrapper;
-    }
-
-    createSyncCell(grid, lfo, colorClass, setter) {
-        const cell = document.createElement('div');
-        cell.className = `grid-cell p-0 ${colorClass}`;
-        
-        const content = document.createElement('div');
-        content.className = 'sync-cell-content';
-        
-        // 1. Sync Button
-        const btn = document.createElement('div');
-        btn.className = `sync-btn ${lfo.sync ? 'active' : ''}`;
-        btn.innerText = 'SYNC';
-        btn.onclick = () => {
-            setter('sync', !lfo.sync);
-            this.render();
-        };
-        
-        // 2. Gross Value Display
-        const grossVal = document.createElement('div');
-        grossVal.className = 'sync-val';
-        if (lfo.sync) {
-            grossVal.innerText = LFO.SYNC_RATES[lfo.syncRateIndex].label;
-        } else {
-            grossVal.innerText = lfo.rate.toFixed(1) + 'Hz';
-        }
-        
-        // 3. Fine Value Display
-        const fineVal = document.createElement('div');
-        fineVal.className = 'sync-val';
-        fineVal.style.fontSize = "6px";
-        if (lfo.sync) {
-            const type = LFO.SYNC_RATES[lfo.syncRateIndex].type;
-            if (type === 'triplet') { fineVal.innerText = '+T'; fineVal.style.color = '#60a5fa'; }
-            else if (type === 'dotted') { fineVal.innerText = '+D'; fineVal.style.color = '#f472b6'; }
-            else if (type === 'quintuplet') { fineVal.innerText = '+Q'; fineVal.style.color = '#a78bfa'; }
-            else if (type === 'septuplet') { fineVal.innerText = '+S'; fineVal.style.color = '#fbbf24'; }
-            else { fineVal.innerText = '•'; fineVal.style.color = '#444'; }
-        } else {
-            fineVal.innerText = 'FINE';
-        }
-
-        content.appendChild(btn);
-        content.appendChild(grossVal);
-        content.appendChild(fineVal);
-        cell.appendChild(content);
-        grid.appendChild(cell);
-    }
-
-    createRateCell(grid, lfo, colorClass, setter) {
-        const cell = document.createElement('div');
-        cell.className = `grid-cell ${colorClass}`;
-        
-        const stack = document.createElement('div');
-        stack.className = 'rate-cell-stack';
-        
-        // --- 1. GROSS SLIDER ---
-        const gross = document.createElement('input');
-        gross.type = 'range';
-        gross.className = 'micro-slider';
-        
-        if (lfo.sync) {
-            gross.min = 0; 
-            gross.max = LFO.SYNC_RATES.length - 1; 
-            gross.step = 1;
-            gross.value = lfo.syncRateIndex;
-            
-            gross.oninput = (e) => {
-                let targetIdx = parseInt(e.target.value);
-                // Snap to nearest 'straight' type
-                let found = -1;
-                let range = 5; 
-                if (LFO.SYNC_RATES[targetIdx].type === 'straight') found = targetIdx;
-                else {
-                    for(let i=1; i<=range; i++) {
-                        if(LFO.SYNC_RATES[targetIdx-i] && LFO.SYNC_RATES[targetIdx-i].type === 'straight') { found = targetIdx-i; break; }
-                        if(LFO.SYNC_RATES[targetIdx+i] && LFO.SYNC_RATES[targetIdx+i].type === 'straight') { found = targetIdx+i; break; }
-                    }
-                }
-                
-                if(found !== -1) setter('syncRateIndex', found);
-                else setter('syncRateIndex', targetIdx);
-            };
-            gross.onchange = () => this.render();
-        } else {
-            // Hz Gross
-            gross.min = 0.1; gross.max = 20; gross.step = 0.1;
-            gross.value = lfo.rate;
-            gross.oninput = (e) => {
-                setter('rate', parseFloat(e.target.value));
-            };
-            gross.onchange = () => this.render();
-        }
-
-        // --- 2. FINE SLIDER ---
-        const fine = document.createElement('input');
-        fine.type = 'range';
-        fine.className = 'micro-slider';
-        
-        if (lfo.sync) {
-            fine.min = 0; 
-            fine.max = LFO.SYNC_RATES.length - 1;
-            fine.step = 1;
-            fine.value = lfo.syncRateIndex;
-            
-            fine.oninput = (e) => {
-                setter('syncRateIndex', parseInt(e.target.value));
-            };
-            fine.onchange = () => this.render();
-        } else {
-            // Hz Fine
-            fine.min = lfo.rate - 0.5;
-            fine.max = lfo.rate + 0.5;
-            fine.step = 0.001;
-            fine.value = lfo.rate;
-            
-            fine.oninput = (e) => {
-                setter('rate', parseFloat(e.target.value));
-            };
-            fine.onchange = () => this.render();
-        }
-
-        stack.appendChild(gross);
-        stack.appendChild(fine);
-        cell.appendChild(stack);
-        grid.appendChild(cell);
     }
 
     createSliderRow(grid, label, lfos, colors, getter, setter, min, max, step) {

@@ -1,6 +1,7 @@
 // js/ui/components/AutomationPanel.js
 import { NUM_LFOS, MODULATION_TARGETS } from '../../utils/constants.js';
 import { LFO } from '../../modules/LFO.js'; 
+import { createLfoRateSlider, createLfoSyncCell } from '../shared/LfoRateSlider.js';
 
 export class AutomationPanel {
     constructor() {
@@ -132,7 +133,7 @@ export class AutomationPanel {
             grid.appendChild(cell);
         });
 
-        // 3. SYNC ROW (New)
+        // 3. SYNC ROW
         const lblSync = document.createElement('div');
         lblSync.className = 'grid-cell label-cell border-t border-neutral-800';
         lblSync.innerText = 'SYNC';
@@ -141,10 +142,10 @@ export class AutomationPanel {
         track.lfos.forEach((lfo, i) => {
             if (i >= NUM_LFOS) return;
             const colorClass = this.lfoColors[i % 3] || 'c-amber';
-            this.createSyncCell(grid, lfo, i, colorClass);
+            createLfoSyncCell(grid, lfo, `lfo-rate-val-${i}`, colorClass, () => this.render());
         });
 
-        // 4. RATE ROW (Dual Sliders)
+        // 4. RATE ROW (Single slider)
         const lblRate = document.createElement('div');
         lblRate.className = 'grid-cell label-cell';
         lblRate.innerText = 'RATE';
@@ -153,7 +154,7 @@ export class AutomationPanel {
         track.lfos.forEach((lfo, i) => {
             if (i >= NUM_LFOS) return;
             const colorClass = this.lfoColors[i % 3] || 'c-amber';
-            this.createRateCell(grid, lfo, i, colorClass);
+            createLfoRateSlider(grid, lfo, `lfo-rate-val-${i}`, colorClass, null, () => this.render());
         });
 
         // 5. AMOUNT ROW
@@ -212,114 +213,6 @@ export class AutomationPanel {
 
         monolith.appendChild(grid);
         contentWrapper.appendChild(monolith);
-    }
-
-    createSyncCell(grid, lfo, index, colorClass) {
-        const cell = document.createElement('div');
-        cell.className = `grid-cell p-0 ${colorClass}`;
-        
-        const content = document.createElement('div');
-        content.className = 'sync-cell-content';
-        
-        // 1. Sync Button
-        const btn = document.createElement('div');
-        btn.className = `sync-btn ${lfo.sync ? 'active' : ''}`;
-        btn.innerText = 'SYNC';
-        btn.onclick = () => {
-            lfo.sync = !lfo.sync;
-            this.render();
-        };
-        
-        // 2. Rate Value Display (single unified display)
-        const rateVal = document.createElement('div');
-        rateVal.className = 'sync-val';
-        rateVal.id = `lfo-rate-val-${index}`;
-        if (lfo.sync) {
-            const entry = LFO.SYNC_RATES[lfo.syncRateIndex];
-            rateVal.innerText = entry.label;
-            const type = entry.type;
-            if (type === 'triplet') rateVal.style.color = '#60a5fa';
-            else if (type === 'dotted') rateVal.style.color = '#f472b6';
-            else if (type === 'quintuplet') rateVal.style.color = '#a78bfa';
-            else if (type === 'septuplet') rateVal.style.color = '#fbbf24';
-            else rateVal.style.color = '';
-        } else {
-            rateVal.innerText = lfo.rate < 1 ? lfo.rate.toFixed(2) + 'Hz' : lfo.rate.toFixed(1) + 'Hz';
-        }
-
-        content.appendChild(btn);
-        content.appendChild(rateVal);
-        cell.appendChild(content);
-        grid.appendChild(cell);
-    }
-
-    createRateCell(grid, lfo, index, colorClass) {
-        const cell = document.createElement('div');
-        cell.className = `grid-cell ${colorClass}`;
-        
-        const updateDisplay = () => {
-            const el = document.getElementById(`lfo-rate-val-${index}`);
-            if (!el) return;
-            if (lfo.sync) {
-                const entry = LFO.SYNC_RATES[lfo.syncRateIndex];
-                el.innerText = entry.label;
-                const type = entry.type;
-                if (type === 'triplet') el.style.color = '#60a5fa';
-                else if (type === 'dotted') el.style.color = '#f472b6';
-                else if (type === 'quintuplet') el.style.color = '#a78bfa';
-                else if (type === 'septuplet') el.style.color = '#fbbf24';
-                else el.style.color = '';
-            } else {
-                el.innerText = lfo.rate < 1 ? lfo.rate.toFixed(2) + 'Hz' : lfo.rate.toFixed(1) + 'Hz';
-                el.style.color = '';
-            }
-        };
-
-        const slider = document.createElement('input');
-        slider.type = 'range';
-        slider.className = 'micro-slider';
-
-        if (lfo.sync) {
-            // Sync mode: step through all SYNC_RATES entries
-            slider.min = 0;
-            slider.max = LFO.SYNC_RATES.length - 1;
-            slider.step = 1;
-            slider.value = lfo.syncRateIndex;
-
-            slider.oninput = (e) => {
-                lfo.syncRateIndex = parseInt(e.target.value);
-                updateDisplay();
-            };
-            slider.onchange = () => this.render();
-        } else {
-            // Free mode: logarithmic scale 0.05Hz - 20Hz
-            // Map slider 0-1000 → log(0.05) to log(20)
-            const LOG_MIN = Math.log(0.05);
-            const LOG_MAX = Math.log(20);
-            const STEPS = 1000;
-
-            const rateToSlider = (rate) => {
-                const clamped = Math.max(0.05, Math.min(20, rate));
-                return Math.round(((Math.log(clamped) - LOG_MIN) / (LOG_MAX - LOG_MIN)) * STEPS);
-            };
-            const sliderToRate = (val) => {
-                return Math.exp(LOG_MIN + (val / STEPS) * (LOG_MAX - LOG_MIN));
-            };
-
-            slider.min = 0;
-            slider.max = STEPS;
-            slider.step = 1;
-            slider.value = rateToSlider(lfo.rate);
-
-            slider.oninput = (e) => {
-                lfo.rate = parseFloat(sliderToRate(parseInt(e.target.value)).toFixed(3));
-                updateDisplay();
-            };
-            slider.onchange = () => this.render();
-        }
-
-        cell.appendChild(slider);
-        grid.appendChild(cell);
     }
 
     createSingleSliderRow(grid, label, lfos, getter, setter, min, max, step) {
