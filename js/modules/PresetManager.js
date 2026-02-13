@@ -1,6 +1,7 @@
 // Preset Manager Module
 import { NUM_LFOS } from '../utils/constants.js';
 import { AudioUtils } from '../utils/AudioUtils.js';
+import { Modulator } from './modulators/Modulator.js';
 
 export class PresetManager {
     // --- SAVE LOGIC ---
@@ -20,12 +21,12 @@ export class PresetManager {
                 muted: t.muted, 
                 soloed: t.soloed, 
                 stepLock: t.stepLock,
-                lfos: t.lfos.map(l => ({ 
+                lfos: t.lfos.map(l => l.serialize ? l.serialize() : { 
                     wave: l.wave, 
                     rate: l.rate, 
                     amount: l.amount, 
-                    targets: l.targets // Changed target to targets array
-                })),
+                    targets: l.targets
+                }),
                 samplePath: null // Will be filled if custom sample exists
             };
 
@@ -143,17 +144,21 @@ export class PresetManager {
             
             if (trackData.lfos) trackData.lfos.forEach((lData, lIdx) => {
                 if(lIdx < NUM_LFOS) {
-                    t.lfos[lIdx].wave = lData.wave; 
-                    t.lfos[lIdx].rate = lData.rate;
-                    t.lfos[lIdx].amount = lData.amount; 
-                    
-                    // Backward Compatibility for loading old presets
-                    if (lData.targets) {
-                        t.lfos[lIdx].targets = [...lData.targets];
-                    } else if (lData.target) {
-                        t.lfos[lIdx].targets = [lData.target];
+                    // Use deserialize for full modulator type support
+                    if (lData.type !== undefined) {
+                        t.lfos[lIdx] = Modulator.deserialize(lData);
                     } else {
-                        t.lfos[lIdx].targets = [];
+                        // Legacy LFO data
+                        t.lfos[lIdx].wave = lData.wave; 
+                        t.lfos[lIdx].rate = lData.rate;
+                        t.lfos[lIdx].amount = lData.amount; 
+                        if (lData.targets) {
+                            t.lfos[lIdx].targets = [...lData.targets];
+                        } else if (lData.target) {
+                            t.lfos[lIdx].targets = [lData.target];
+                        } else {
+                            t.lfos[lIdx].targets = [];
+                        }
                     }
                 }
             });

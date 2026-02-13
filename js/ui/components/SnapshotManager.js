@@ -1,5 +1,6 @@
 // js/ui/components/SnapshotManager.js
 import { NUM_STEPS, NUM_LFOS } from '../../utils/constants.js';
+import { Modulator } from '../../modules/modulators/Modulator.js';
 
 export class SnapshotManager {
     constructor() {
@@ -60,10 +61,10 @@ export class SnapshotManager {
                 // Fallback: save all track params and LFOs
                 snapObj.fallbackTracks = this.tracks.map(t => ({
                     params: {...t.params},
-                    lfos: t.lfos.map(l => ({ 
+                    lfos: t.lfos.map(l => l.serialize ? l.serialize() : { 
                         wave: l.wave, rate: l.rate, amount: l.amount, 
                         target: l.target, targets: l.targets ? [...l.targets] : []
-                    }))
+                    })
                 }));
             }
 
@@ -122,12 +123,16 @@ export class SnapshotManager {
                         Object.assign(t.params, tData.params);
                         tData.lfos.forEach((lData, lIdx) => {
                             if (lIdx < NUM_LFOS) {
-                                const lfo = t.lfos[lIdx];
-                                lfo.wave = lData.wave;
-                                lfo.rate = lData.rate;
-                                lfo.amount = lData.amount;
-                                lfo.target = lData.target;
-                                if (lData.targets) lfo.targets = [...lData.targets];
+                                if (lData.type !== undefined) {
+                                    t.lfos[lIdx] = Modulator.deserialize(lData);
+                                } else {
+                                    const lfo = t.lfos[lIdx];
+                                    lfo.wave = lData.wave;
+                                    lfo.rate = lData.rate;
+                                    lfo.amount = lData.amount;
+                                    lfo.target = lData.target;
+                                    if (lData.targets) lfo.targets = [...lData.targets];
+                                }
                             }
                         });
                         if (t.bus.hp) t.bus.hp.frequency.value = t.params.hpFilter;

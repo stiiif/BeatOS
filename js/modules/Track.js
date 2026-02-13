@@ -1,5 +1,5 @@
 // Track Module
-import { LFO } from './LFO.js';
+import { LFO } from './modulators/LFO.js';
 import { NUM_STEPS, NUM_LFOS } from '../utils/constants.js';
 
 export class Track {
@@ -13,6 +13,7 @@ export class Track {
         this.rmsMap = []; 
         this.steps = new Uint8Array(NUM_STEPS).fill(0);
         this.microtiming = new Float32Array(NUM_STEPS).fill(0);
+        // Modulator slots — backward compat: .lfos still works
         this.lfos = Array.from({ length: NUM_LFOS }, () => new LFO());
         
         this.playhead = 0; 

@@ -7,8 +7,9 @@ export class AudioEngine {
         this.onBpmChange = null;
         this.masterBus = null;
         this.groupBuses = [];
-        this.returnBuses = []; // New Return Buses
+        this.returnBuses = [];
         this.driveCurves = {};
+        this._tracks = null; // Reference for modulator context (set externally)
         
         // Caching for generated buffers to reduce CPU load
         this.bufferCache = new Map();

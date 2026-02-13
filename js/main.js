@@ -17,6 +17,9 @@ import { EffectControls } from './ui/components/EffectControls.js';
 import { Randomizer } from './modules/Randomizer.js';
 import { RenderLoop } from './core/RenderLoop.js';
 
+// Import all modulator types to ensure they register in the factory
+import './modules/modulators/index.js';
+
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
 
@@ -46,6 +49,7 @@ const tracks = trackManager.getTracks();
 uiManager.setTracks(tracks);
 uiManager.setTrackManager(trackManager);
 visualizer.setTracks(tracks);
+audioEngine._tracks = tracks; // For modulator context (EnvelopeFollower)
 
 scheduler.setUpdateMatrixHeadCallback((step, total) => uiManager.updateMatrixHead(step, total));
 scheduler.setRandomChokeCallback(() => uiManager.getRandomChokeInfo());

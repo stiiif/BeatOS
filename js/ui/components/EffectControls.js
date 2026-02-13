@@ -1,6 +1,8 @@
 // js/ui/components/EffectControls.js
-import { LFO } from '../../modules/LFO.js';
+import { LFO } from '../../modules/modulators/LFO.js';
+import { Modulator, MOD_TYPE } from '../../modules/modulators/Modulator.js';
 import { createLfoRateSlider, createLfoSyncCell } from '../shared/LfoRateSlider.js';
+import { getModulatorUI, MOD_TYPE_LABELS } from '../shared/modulators/ModulatorUIRegistry.js';
 
 export class EffectControls {
     constructor(effectsManager) {
@@ -94,7 +96,37 @@ export class EffectControls {
         grid.className = 'synthi-grid';
         grid.style.gridTemplateColumns = '70px repeat(3, 1fr)';
 
-        // -- ROW 1: SOURCE (L1, L2, L3) --
+        // -- ROW 0: TYPE SELECTOR --
+        const lblType = document.createElement('div');
+        lblType.className = 'grid-cell label-cell bg-[#181818]';
+        lblType.innerText = 'TYPE';
+        grid.appendChild(lblType);
+
+        state.lfos.forEach((mod, i) => {
+            const cell = document.createElement('div');
+            cell.className = `grid-cell ${config.lfoColors[i]}`;
+            const btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex; gap:1px; width:100%;';
+            MOD_TYPE_LABELS.forEach(({ type, label, color }) => {
+                const btn = document.createElement('div');
+                const isActive = (mod.getType ? mod.getType() : MOD_TYPE.LFO) === type;
+                btn.className = `wave-btn ${isActive ? 'active' : ''}`;
+                btn.innerText = label;
+                btn.style.cssText = `font-size:7px; flex:1; text-align:center; padding:1px 0; ${isActive ? `color:${color};` : ''}`;
+                btn.onclick = () => {
+                    if ((mod.getType ? mod.getType() : MOD_TYPE.LFO) === type) return;
+                    const newMod = Modulator.create(type);
+                    newMod.amount = mod.amount;
+                    state.lfos[i] = newMod;
+                    this.render();
+                };
+                btnRow.appendChild(btn);
+            });
+            cell.appendChild(btnRow);
+            grid.appendChild(cell);
+        });
+
+        // -- ROW 1: SOURCE (M1, M2, M3) --
         const lblSrc = document.createElement('div');
         lblSrc.className = 'grid-cell label-cell bg-[#181818]';
         lblSrc.innerText = 'SOURCE';
@@ -103,85 +135,70 @@ export class EffectControls {
         state.lfos.forEach((lfo, i) => {
             const cell = document.createElement('div');
             cell.className = `grid-cell ${config.lfoColors[i]}`;
-            
             const btn = document.createElement('div');
             const isOn = lfo.amount > 0;
             btn.className = `lfo-switch ${isOn ? 'on' : ''}`;
-            btn.innerText = `L${i+1}`;
-            
+            btn.innerText = `M${i+1}`;
             btn.onclick = () => {
-                if (lfo.amount > 0) {
-                    lfo._lastAmt = lfo.amount;
-                    lfo.amount = 0;
-                } else {
-                    lfo.amount = lfo._lastAmt || 0.5;
-                }
+                if (lfo.amount > 0) { lfo._lastAmt = lfo.amount; lfo.amount = 0; }
+                else { lfo.amount = lfo._lastAmt || 0.5; }
                 this.render(); 
             };
-            
             cell.appendChild(btn);
             grid.appendChild(cell);
         });
 
-        // -- ROW 2: WAVE --
-        const lblWave = document.createElement('div');
-        lblWave.className = 'grid-cell label-cell';
-        lblWave.style.height = '48px';
-        lblWave.innerText = 'WAVE';
-        grid.appendChild(lblWave);
+        // -- TYPE-SPECIFIC ROWS --
+        // For each slot, render type-specific UI into temp containers, then interleave
+        const typeRowLabels = {
+            [MOD_TYPE.LFO]:         ['WAVE', 'SYNC', 'RATE'],
+            [MOD_TYPE.ENV_FOLLOW]:  ['SRC', 'ATK', 'REL', 'INV'],
+            [MOD_TYPE.COMPARATOR]:  ['A × B', 'MODE', 'THRESH', 'R / SM'],
+            [MOD_TYPE.PHYSICS]:     ['MODE', 'GRAV', 'DAMP', 'TRIG'],
+        };
 
-        const waves = ['sine', 'square', 'sawtooth', 'triangle', 'pulse', 'random'];
-        const waveLabels = ['SIN', 'SQR', 'SAW', 'TRI', 'PLS', 'RND'];
+        let maxRows = 0;
+        state.lfos.forEach(mod => {
+            const t = mod.getType ? mod.getType() : MOD_TYPE.LFO;
+            const labels = typeRowLabels[t] || [];
+            maxRows = Math.max(maxRows, labels.length);
+        });
 
-        state.lfos.forEach((lfo, i) => {
-            const cell = document.createElement('div');
-            cell.className = `grid-cell p-0 ${config.lfoColors[i]}`;
-            
-            const microGrid = document.createElement('div');
-            microGrid.className = 'wave-micro-grid';
-            
-            waves.forEach((w, idx) => {
-                const b = document.createElement('div');
-                const active = lfo.wave === w;
-                b.className = `wave-btn ${active ? 'active' : ''}`;
-                b.innerText = waveLabels[idx];
-                b.onclick = () => {
-                    this.manager.setLfoParam(fxId, i, 'wave', w);
-                    this.render();
-                };
-                microGrid.appendChild(b);
+        // Pre-render all type-specific cells
+        state.lfos.forEach((mod, i) => {
+            const t = mod.getType ? mod.getType() : MOD_TYPE.LFO;
+            const renderFn = getModulatorUI(t);
+            const tempGrid = document.createElement('div');
+            renderFn(tempGrid, mod, i, config.lfoColors[i], () => this.render(), `fx${fxId}-mod`);
+            mod._uiCells = Array.from(tempGrid.children);
+        });
+
+        for (let row = 0; row < maxRows; row++) {
+            let labelText = '';
+            for (let i = 0; i < state.lfos.length; i++) {
+                const t = state.lfos[i].getType ? state.lfos[i].getType() : MOD_TYPE.LFO;
+                const labels = typeRowLabels[t] || [];
+                if (labels[row]) { labelText = labels[row]; break; }
+            }
+            const lbl = document.createElement('div');
+            lbl.className = 'grid-cell label-cell';
+            lbl.innerText = labelText;
+            grid.appendChild(lbl);
+
+            state.lfos.forEach((mod, i) => {
+                const t = mod.getType ? mod.getType() : MOD_TYPE.LFO;
+                const labels = typeRowLabels[t] || [];
+                if (row < labels.length && mod._uiCells && mod._uiCells[row]) {
+                    grid.appendChild(mod._uiCells[row]);
+                } else {
+                    const empty = document.createElement('div');
+                    empty.className = `grid-cell ${config.lfoColors[i]}`;
+                    grid.appendChild(empty);
+                }
             });
-            cell.appendChild(microGrid);
-            grid.appendChild(cell);
-        });
-        
-        // -- ROW 3: SYNC --
-        const lblSync = document.createElement('div');
-        lblSync.className = 'grid-cell label-cell border-t border-neutral-800';
-        lblSync.innerText = 'SYNC';
-        grid.appendChild(lblSync);
-        
-        state.lfos.forEach((lfo, i) => {
-            const displayId = `fx-lfo-rate-${fxId}-${i}`;
-            createLfoSyncCell(grid, lfo, displayId, config.lfoColors[i], () => {
-                this.manager.setLfoParam(fxId, i, 'sync', lfo.sync);
-                this.render();
-            });
-        });
+        }
 
-        // -- ROW 4: RATE (Single slider) --
-        const lblRate = document.createElement('div');
-        lblRate.className = 'grid-cell label-cell';
-        lblRate.innerText = 'RATE';
-        grid.appendChild(lblRate);
-        
-        state.lfos.forEach((lfo, i) => {
-            const displayId = `fx-lfo-rate-${fxId}-${i}`;
-            createLfoRateSlider(grid, lfo, displayId, config.lfoColors[i],
-                (key, val) => this.manager.setLfoParam(fxId, i, key, val),
-                () => this.render()
-            );
-        });
+        state.lfos.forEach(mod => { delete mod._uiCells; });
 
         // -- ROW 5: AMOUNT -- 
         const amtDef = LFO.PARAM_DEFS.amount;

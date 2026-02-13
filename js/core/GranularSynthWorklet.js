@@ -100,9 +100,11 @@ export class GranularSynthWorklet {
         const p = track.params;
 
         let mod = { filter: 0, hpFilter: 0, volume: 0, pan: 0 };
-        track.lfos.forEach(lfo => {
+        const modCtx = { siblings: track.lfos, audioEngine: this.audioEngine, tracks: this.audioEngine._tracks };
+        track.lfos.forEach((lfo, idx) => {
             if (lfo.amount === 0) return;
-            const v = lfo.getValue(now);
+            modCtx.selfIndex = idx;
+            const v = lfo.getValue(now, 120, modCtx);
             if (lfo.targets && lfo.targets.length > 0) {
                 lfo.targets.forEach(target => {
                     if (target === 'filter') mod.filter += v * 5000; 
@@ -156,8 +158,10 @@ export class GranularSynthWorklet {
         this.syncTrackBusParams(track, time);
 
         let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0, relGrain:0, edgeCrunch: 0, orbit: 0, stereoSpread: 0 };
-        track.lfos.forEach(lfo => {
-            const v = lfo.getValue(time);
+        const noteModCtx = { siblings: track.lfos, audioEngine: this.audioEngine, tracks: this.audioEngine._tracks, stepIndex: stepIndex };
+        track.lfos.forEach((lfo, idx) => {
+            noteModCtx.selfIndex = idx;
+            const v = lfo.getValue(time, 120, noteModCtx);
             if (lfo.targets && lfo.targets.length > 0) {
                 lfo.targets.forEach(target => {
                     if(mod[target] !== undefined) mod[target] += v;

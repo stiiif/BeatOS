@@ -1,28 +1,19 @@
 // js/ui/components/AutomationPanel.js
 import { NUM_LFOS, MODULATION_TARGETS } from '../../utils/constants.js';
-import { LFO } from '../../modules/LFO.js'; 
-import { createLfoRateSlider, createLfoSyncCell } from '../shared/LfoRateSlider.js';
+import { Modulator, MOD_TYPE } from '../../modules/modulators/Modulator.js';
+import { LFO } from '../../modules/modulators/LFO.js';
+import { getModulatorUI, MOD_TYPE_LABELS } from '../shared/modulators/ModulatorUIRegistry.js';
 
 export class AutomationPanel {
     constructor() {
         this.tracks = [];
         this.selectedTrackIndex = 0;
-        // Colors for Granular LFOs (Emerald, Blue, Purple)
         this.lfoColors = ['c-emerald', 'c-blue', 'c-purple'];
     }
 
-    setTracks(tracks) {
-        this.tracks = tracks;
-    }
-
-    setSelectedTrackIndex(idx) {
-        this.selectedTrackIndex = idx;
-        this.render();
-    }
-
-    initialize(onSetSelectedLfoIndex, onUpdateLfoUI) {
-        this.render();
-    }
+    setTracks(tracks) { this.tracks = tracks; }
+    setSelectedTrackIndex(idx) { this.selectedTrackIndex = idx; this.render(); }
+    initialize(onSetSelectedLfoIndex, onUpdateLfoUI) { this.render(); }
 
     render() {
         const container = document.getElementById('lfoSection');
@@ -30,20 +21,17 @@ export class AutomationPanel {
         
         const track = this.tracks[this.selectedTrackIndex];
         if (!track || track.type !== 'granular') {
-            container.innerHTML = ''; // Clear if not granular
+            container.innerHTML = '';
             return;
         }
 
-        // Check/Create Shell
+        // Shell
         let contentWrapper = document.getElementById('modulatorContent');
         if (!contentWrapper) {
             container.innerHTML = ''; 
             const header = document.createElement('div');
             header.className = 'flex justify-between items-center mb-2 cursor-pointer select-none group';
-            header.onclick = () => {
-                if (window.toggleSection) window.toggleSection('modulatorContent', header);
-            };
-            
+            header.onclick = () => { if (window.toggleSection) window.toggleSection('modulatorContent', header); };
             header.innerHTML = `
                 <label class="text-[10px] text-neutral-500 uppercase font-bold group-hover:text-neutral-300 transition-colors pointer-events-none cursor-pointer">
                     <i class="fas fa-wave-square mr-1"></i> MODULATORS
@@ -51,161 +39,207 @@ export class AutomationPanel {
                 <i class="fas fa-chevron-down text-[10px] text-neutral-600 transition-transform duration-200"></i>
             `;
             container.appendChild(header);
-
             contentWrapper = document.createElement('div');
             contentWrapper.id = 'modulatorContent';
             contentWrapper.className = 'transition-all duration-300 origin-top block';
             container.appendChild(contentWrapper);
         }
 
-        // Render Monolith into wrapper
         contentWrapper.innerHTML = '';
-        
         const monolith = document.createElement('div');
         monolith.className = 'monolith-container border-neutral-800';
-
         const grid = document.createElement('div');
         grid.className = 'synthi-grid';
-        // 70px Label + 3 LFO Columns
         grid.style.gridTemplateColumns = `70px repeat(${NUM_LFOS}, 1fr)`;
 
-        // 1. SOURCE ROW
-        const lblSrc = document.createElement('div');
-        lblSrc.className = 'grid-cell label-cell bg-[#181818]';
-        lblSrc.innerText = 'SOURCE';
-        grid.appendChild(lblSrc);
+        // === ROW: TYPE SELECTOR ===
+        const lblType = document.createElement('div');
+        lblType.className = 'grid-cell label-cell bg-[#181818]';
+        lblType.innerText = 'TYPE';
+        grid.appendChild(lblType);
 
-        track.lfos.forEach((lfo, i) => {
+        track.lfos.forEach((mod, i) => {
             if (i >= NUM_LFOS) return;
-            const colorClass = this.lfoColors[i % 3] || 'c-amber';
+            const colorClass = this.lfoColors[i % 3];
             const cell = document.createElement('div');
             cell.className = `grid-cell ${colorClass}`;
-            
+            const btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex; gap:1px; width:100%;';
+
+            MOD_TYPE_LABELS.forEach(({ type, label, color }) => {
+                const btn = document.createElement('div');
+                const isActive = mod.getType() === type;
+                btn.className = `wave-btn ${isActive ? 'active' : ''}`;
+                btn.innerText = label;
+                btn.style.cssText = `font-size:7px; flex:1; text-align:center; padding:1px 0; ${isActive ? `color:${color};` : ''}`;
+                btn.onclick = () => {
+                    if (mod.getType() === type) return;
+                    const newMod = Modulator.create(type);
+                    newMod.amount = mod.amount;
+                    newMod.targets = [...mod.targets];
+                    track.lfos[i] = newMod;
+                    this.render();
+                };
+                btnRow.appendChild(btn);
+            });
+            cell.appendChild(btnRow);
+            grid.appendChild(cell);
+        });
+
+        // === ROW: SOURCE (on/off toggle) ===
+        const lblSrc = document.createElement('div');
+        lblSrc.className = 'grid-cell label-cell';
+        lblSrc.innerText = 'ON/OFF';
+        grid.appendChild(lblSrc);
+
+        track.lfos.forEach((mod, i) => {
+            if (i >= NUM_LFOS) return;
+            const colorClass = this.lfoColors[i % 3];
+            const cell = document.createElement('div');
+            cell.className = `grid-cell ${colorClass}`;
             const btn = document.createElement('div');
-            const isOn = lfo.amount > 0;
+            const isOn = mod.amount > 0;
             btn.className = `lfo-switch ${isOn ? 'on' : ''}`;
-            btn.innerText = `L${i+1}`;
-            
+            btn.innerText = `M${i+1}`;
             btn.onclick = () => {
-                if (lfo.amount > 0) {
-                    lfo._lastAmt = lfo.amount;
-                    lfo.amount = 0;
-                } else {
-                    lfo.amount = lfo._lastAmt || 0.5;
-                }
+                if (mod.amount > 0) { mod._lastAmt = mod.amount; mod.amount = 0; }
+                else { mod.amount = mod._lastAmt || 0.5; }
                 this.render();
             };
             cell.appendChild(btn);
             grid.appendChild(cell);
         });
 
-        // 2. WAVE ROW
-        const lblWave = document.createElement('div');
-        lblWave.className = 'grid-cell label-cell';
-        lblWave.style.height = '48px';
-        lblWave.innerText = 'WAVE';
-        grid.appendChild(lblWave);
+        // === TYPE-SPECIFIC ROWS ===
+        // Each modulator type renders its own parameter rows via the registry.
+        // We add labels on the left for each type's rows.
 
-        const waves = ['sine', 'square', 'sawtooth', 'triangle', 'pulse', 'random'];
-        const waveLabels = ['SIN', 'SQR', 'SAW', 'TRI', 'PLS', 'RND'];
+        // Collect max row count across all slots for label alignment
+        const typeRowLabels = {
+            [MOD_TYPE.LFO]:         ['WAVE', 'SYNC', 'RATE'],
+            [MOD_TYPE.ENV_FOLLOW]:  ['SRC', 'ATK', 'REL', 'INV'],
+            [MOD_TYPE.COMPARATOR]:  ['A × B', 'MODE', 'THRESH', 'R / SM'],
+            [MOD_TYPE.PHYSICS]:     ['MODE', 'GRAV', 'DAMP', 'TRIG'],
+        };
 
-        track.lfos.forEach((lfo, i) => {
+        // Find the max number of type-specific rows across all slots
+        let maxRows = 0;
+        track.lfos.forEach((mod, i) => {
             if (i >= NUM_LFOS) return;
-            const colorClass = this.lfoColors[i % 3] || 'c-amber';
-            const cell = document.createElement('div');
-            cell.className = `grid-cell p-0 ${colorClass}`;
-            
-            const microGrid = document.createElement('div');
-            microGrid.className = 'wave-micro-grid';
-            
-            waves.forEach((w, idx) => {
-                const b = document.createElement('div');
-                const active = lfo.wave === w;
-                b.className = `wave-btn ${active ? 'active' : ''}`;
-                b.innerText = waveLabels[idx];
-                b.onclick = () => {
-                    lfo.wave = w;
-                    this.render();
-                };
-                microGrid.appendChild(b);
+            const labels = typeRowLabels[mod.getType()] || [];
+            maxRows = Math.max(maxRows, labels.length);
+        });
+
+        // Render row by row
+        for (let row = 0; row < maxRows; row++) {
+            // Label: use the first slot that has a label for this row
+            let labelText = '';
+            for (let i = 0; i < Math.min(NUM_LFOS, track.lfos.length); i++) {
+                const labels = typeRowLabels[track.lfos[i].getType()] || [];
+                if (labels[row]) { labelText = labels[row]; break; }
+            }
+            const lbl = document.createElement('div');
+            lbl.className = 'grid-cell label-cell';
+            lbl.innerText = labelText;
+            grid.appendChild(lbl);
+
+            // Each slot renders its row (or empty cell if fewer rows)
+            track.lfos.forEach((mod, i) => {
+                if (i >= NUM_LFOS) return;
+                const colorClass = this.lfoColors[i % 3];
+                const labels = typeRowLabels[mod.getType()] || [];
+                if (row < labels.length) {
+                    const renderFn = getModulatorUI(mod.getType());
+                    // Render only the specific row — we call the full render but only take one row at a time
+                    // To do this efficiently, we render into a temp grid and extract cells
+                    if (row === 0) {
+                        // Render all type-specific rows at once into a temp container, then distribute
+                        const tempGrid = document.createElement('div');
+                        renderFn(tempGrid, mod, i, colorClass, () => this.render(), 'gran-mod');
+                        // Store rendered cells on the mod for later rows
+                        mod._uiCells = Array.from(tempGrid.children);
+                    }
+                    // Append the cell for this row
+                    if (mod._uiCells && mod._uiCells[row]) {
+                        grid.appendChild(mod._uiCells[row]);
+                    } else {
+                        // Empty placeholder
+                        const empty = document.createElement('div');
+                        empty.className = `grid-cell ${colorClass}`;
+                        grid.appendChild(empty);
+                    }
+                } else {
+                    // Empty cell for this slot (fewer rows than max)
+                    const empty = document.createElement('div');
+                    empty.className = `grid-cell ${colorClass}`;
+                    grid.appendChild(empty);
+                }
             });
-            cell.appendChild(microGrid);
+        }
+
+        // Clean up temp cells
+        track.lfos.forEach(mod => { delete mod._uiCells; });
+
+        // === ROW: AMOUNT ===
+        const lblAmt = document.createElement('div');
+        lblAmt.className = 'grid-cell label-cell';
+        lblAmt.innerText = 'AMOUNT';
+        grid.appendChild(lblAmt);
+
+        track.lfos.forEach((mod, i) => {
+            if (i >= NUM_LFOS) return;
+            const colorClass = this.lfoColors[i % 3];
+            const cell = document.createElement('div');
+            cell.className = `grid-cell ${colorClass}`;
+            const input = document.createElement('input');
+            input.type = 'range'; input.className = 'micro-slider';
+            input.min = 0; input.max = 1; input.step = 0.001;
+            input.value = mod.amount;
+            input.title = mod.amount.toFixed(3);
+            input.oninput = (e) => { mod.amount = parseFloat(e.target.value); input.title = mod.amount.toFixed(3); };
+            input.onchange = () => this.render();
+            cell.appendChild(input);
             grid.appendChild(cell);
         });
 
-        // 3. SYNC ROW
-        const lblSync = document.createElement('div');
-        lblSync.className = 'grid-cell label-cell border-t border-neutral-800';
-        lblSync.innerText = 'SYNC';
-        grid.appendChild(lblSync);
-        
-        track.lfos.forEach((lfo, i) => {
-            if (i >= NUM_LFOS) return;
-            const colorClass = this.lfoColors[i % 3] || 'c-amber';
-            createLfoSyncCell(grid, lfo, `lfo-rate-val-${i}`, colorClass, () => this.render());
-        });
-
-        // 4. RATE ROW (Single slider)
-        const lblRate = document.createElement('div');
-        lblRate.className = 'grid-cell label-cell';
-        lblRate.innerText = 'RATE';
-        grid.appendChild(lblRate);
-        
-        track.lfos.forEach((lfo, i) => {
-            if (i >= NUM_LFOS) return;
-            const colorClass = this.lfoColors[i % 3] || 'c-amber';
-            createLfoRateSlider(grid, lfo, `lfo-rate-val-${i}`, colorClass, null, () => this.render());
-        });
-
-        // 5. AMOUNT ROW
-        const amtDef = LFO.PARAM_DEFS.amount;
-        this.createSingleSliderRow(grid, 'AMOUNT', track.lfos, (lfo) => lfo.amount, (lfo, val) => lfo.amount = val, amtDef.min, amtDef.max, amtDef.step);
-
-        // 6. CLEAR ROW
+        // === ROW: CLEAR ===
         const lblClear = document.createElement('div');
         lblClear.className = 'grid-cell label-cell bg-[#222] text-[7px] h-6';
         lblClear.innerText = 'CLEAR';
         grid.appendChild(lblClear);
 
-        track.lfos.forEach((lfo, i) => {
+        track.lfos.forEach((mod, i) => {
             if (i >= NUM_LFOS) return;
             const cell = document.createElement('div');
             cell.className = 'grid-cell bg-[#222] h-6 cursor-pointer hover:text-red-500 text-neutral-600 transition';
             cell.innerHTML = '<i class="fas fa-trash text-[8px]"></i>';
-            cell.onclick = () => {
-                lfo.targets = []; 
-                this.render();
-            };
+            cell.onclick = () => { mod.targets = []; mod.amount = 0; this.render(); };
             grid.appendChild(cell);
         });
 
-        // 7. DESTINATIONS
+        // === DESTINATIONS ===
         MODULATION_TARGETS.forEach(target => {
             const lbl = document.createElement('div');
             lbl.className = 'grid-cell label-cell border-t border-neutral-800';
             lbl.innerText = target.name.toUpperCase();
             grid.appendChild(lbl);
 
-            track.lfos.forEach((lfo, i) => {
+            track.lfos.forEach((mod, i) => {
                 if (i >= NUM_LFOS) return;
-                const colorClass = this.lfoColors[i % 3] || 'c-amber';
+                const colorClass = this.lfoColors[i % 3];
                 const cell = document.createElement('div');
                 cell.className = `grid-cell border-t border-neutral-800 ${colorClass}`;
-                
-                const isActive = lfo.targets.includes(target.id);
-                
+                const isActive = mod.targets.includes(target.id);
                 const node = document.createElement('div');
                 node.className = `circuit-node ${isActive ? 'node-active' : ''}`;
-                
                 cell.onclick = () => {
-                    if (lfo.targets.includes(target.id)) {
-                        lfo.targets = lfo.targets.filter(t => t !== target.id);
+                    if (mod.targets.includes(target.id)) {
+                        mod.targets = mod.targets.filter(t => t !== target.id);
                     } else {
-                        lfo.targets.push(target.id);
+                        mod.targets.push(target.id);
                     }
                     this.render();
                 };
-
                 cell.appendChild(node);
                 grid.appendChild(cell);
             });
@@ -213,35 +247,5 @@ export class AutomationPanel {
 
         monolith.appendChild(grid);
         contentWrapper.appendChild(monolith);
-    }
-
-    createSingleSliderRow(grid, label, lfos, getter, setter, min, max, step) {
-        const lbl = document.createElement('div');
-        lbl.className = 'grid-cell label-cell';
-        lbl.innerText = label;
-        grid.appendChild(lbl);
-
-        lfos.forEach((lfo, i) => {
-            if (i >= NUM_LFOS) return;
-            const colorClass = this.lfoColors[i % 3] || 'c-amber';
-            const cell = document.createElement('div');
-            cell.className = `grid-cell ${colorClass}`;
-            
-            const input = document.createElement('input');
-            input.type = 'range';
-            input.className = 'micro-slider';
-            input.min = min; input.max = max; input.step = step;
-            input.value = getter(lfo);
-            input.title = getter(lfo).toFixed(step < 0.01 ? 3 : 2);
-            
-            input.oninput = (e) => {
-                setter(lfo, parseFloat(e.target.value));
-                input.title = parseFloat(e.target.value).toFixed(step < 0.01 ? 3 : 2);
-            };
-            input.onchange = () => this.render();
-
-            cell.appendChild(input);
-            grid.appendChild(cell);
-        });
     }
 }

@@ -2,7 +2,7 @@
 // Shared factory for LFO rate slider UI.
 // Single source of truth — used by AutomationPanel and EffectControls.
 
-import { LFO } from '../../modules/LFO.js';
+import { LFO } from '../../modules/modulators/LFO.js';
 
 /**
  * Create a rate slider cell for an LFO.

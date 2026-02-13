@@ -1,4 +1,4 @@
-import { LFO } from './LFO.js';
+import { LFO } from './modulators/LFO.js';
 
 export class EffectsManager {
     constructor(audioEngine) {
@@ -40,9 +40,12 @@ export class EffectsManager {
 
     update(time) {
         this.effects.forEach((fx, fxIndex) => {
-            // 1. Calculate Source Values
-            // Pass currentBpm to LFO.getValue for sync
-            const lfoValues = fx.lfos.map(lfo => lfo.getValue(time, this.currentBpm));
+            // 1. Calculate Source Values with context
+            const modCtx = { siblings: fx.lfos, audioEngine: this.audioEngine };
+            const lfoValues = fx.lfos.map((lfo, idx) => {
+                modCtx.selfIndex = idx;
+                return lfo.getValue(time, this.currentBpm, modCtx);
+            });
             
             // 2. Initialize Modulators Accumulator (13 targets)
             let modulations = new Float32Array(13);
