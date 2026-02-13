@@ -86,6 +86,13 @@ export class MixerAutomation {
 
         // Write current value at current step
         lane.data[step256] = value;
+        
+        // Forward-fill: set all steps ahead of current position to this value
+        // This prevents the knob from jumping back to old values after the recorded section
+        for (let i = step256 + 1; i < this.RESOLUTION; i++) {
+            lane.data[i] = value;
+        }
+
         this._recordingLanes.add(key);
     }
 

@@ -144,11 +144,14 @@ export class Mixer {
         if (!this._scheduler || !this._scheduler.getIsPlaying()) return;
 
         const fraction = this._getLoopFraction();
+        const isRecording = this.mixerAutomation.isRecording;
+        const recordingLanes = this.mixerAutomation._recordingLanes;
 
-        // Update knobs — skip any that are being actively dragged
+        // Update knobs — skip any being dragged or actively recorded
         for (let i = 0; i < this._autoKnobs.length; i++) {
             const ak = this._autoKnobs[i];
-            if (ak.isDragging && ak.isDragging()) continue; // Don't fight the user's mouse
+            if (ak.isDragging && ak.isDragging()) continue;
+            if (isRecording && recordingLanes.has(ak.key)) continue;
             const val = this.mixerAutomation.getValue(ak.key, fraction);
             if (val !== null) {
                 ak.setCurrentValue(val);
@@ -157,10 +160,11 @@ export class Mixer {
             }
         }
 
-        // Update faders — skip actively dragged
+        // Update faders — skip actively dragged or recorded
         for (let i = 0; i < this._autoFaders.length; i++) {
             const af = this._autoFaders[i];
             if (af.isDragging && af.isDragging()) continue;
+            if (isRecording && recordingLanes.has(af.key)) continue;
             const val = this.mixerAutomation.getValue(af.key, fraction);
             if (val !== null) {
                 af.fader.value = val;
