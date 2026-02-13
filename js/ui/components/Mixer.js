@@ -1,6 +1,7 @@
 // js/ui/components/Mixer.js
 import { TRACKS_PER_GROUP } from '../../utils/constants.js';
 import { globalBus } from '../../events/EventBus.js';
+import { MixerAutomation } from '../../modules/MixerAutomation.js';
 
 export class Mixer {
     constructor(containerSelector, trackManager, audioEngine) {
@@ -8,6 +9,14 @@ export class Mixer {
         this.trackManager = trackManager;
         this.audioEngine = audioEngine;
         this.isRendered = false;
+
+        // Mixer Automation
+        this.mixerAutomation = new MixerAutomation();
+        this._isStarHeld = false;
+        this._autoKnobs = [];
+        this._autoFaders = [];
+        this._scheduler = null; // Set by main.js
+        this._headerEls = new Map(); // stripType:stripId -> header span element
         this.driveModes = [
             'Soft Clipping', 'Hard Clipping', 'Tube', 'Sigmoid', 
             'Arctan', 'Exponential', 'Cubic', 'Diode', 
@@ -65,6 +74,92 @@ export class Mixer {
         document.addEventListener('visibilitychange', () => {
             this.isVisible = !document.hidden;
         });
+
+        // * key for automation record
+        document.addEventListener('keydown', (e) => {
+            if (e.key === '*' && !this._isStarHeld) {
+                this._isStarHeld = true;
+                this.mixerAutomation.startRecording();
+                this._updateHeaderRecordState(true);
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            if (e.key === '*') {
+                this._isStarHeld = false;
+                this.mixerAutomation.stopRecording();
+                this._updateHeaderRecordState(false);
+            }
+        });
+    }
+
+    setScheduler(scheduler) {
+        this._scheduler = scheduler;
+    }
+
+    _getCurrentStep256() {
+        if (!this._scheduler || !this._scheduler.getIsPlaying()) return 0;
+        const step = this._scheduler.getCurrentStep();
+        // Approximate sub-step fraction from audio context timing
+        const ctx = this.audioEngine.getContext();
+        if (!ctx) return MixerAutomation.getStep256(step);
+        const bpm = this._scheduler.getBPM();
+        const secPerStep = 60.0 / bpm / 4;
+        const nextNoteTime = this._scheduler.nextNoteTime;
+        const elapsed = ctx.currentTime - (nextNoteTime - secPerStep);
+        const frac = Math.max(0, Math.min(1, elapsed / secPerStep));
+        return MixerAutomation.getStep256(step, frac);
+    }
+
+    _getLoopFraction() {
+        if (!this._scheduler || !this._scheduler.getIsPlaying()) return 0;
+        const step = this._scheduler.getCurrentStep();
+        const ctx = this.audioEngine.getContext();
+        if (!ctx) return MixerAutomation.getLoopFraction(step);
+        const bpm = this._scheduler.getBPM();
+        const secPerStep = 60.0 / bpm / 4;
+        const nextNoteTime = this._scheduler.nextNoteTime;
+        const elapsed = ctx.currentTime - (nextNoteTime - secPerStep);
+        const frac = Math.max(0, Math.min(1, elapsed / secPerStep));
+        return MixerAutomation.getLoopFraction(step, frac);
+    }
+
+    _updateHeaderRecordState(isRecording) {
+        this._headerEls.forEach((el, key) => {
+            if (el) {
+                el.style.color = isRecording ? '#ef4444' : ''; // Red when recording
+            }
+        });
+    }
+
+    /**
+     * Called from RenderLoop to apply automation playback to knobs/faders
+     */
+    updateAutomation() {
+        if (!this.mixerAutomation || this.mixerAutomation.lanes.size === 0) return;
+        if (!this._scheduler || !this._scheduler.getIsPlaying()) return;
+
+        const fraction = this._getLoopFraction();
+
+        // Update knobs
+        for (let i = 0; i < this._autoKnobs.length; i++) {
+            const ak = this._autoKnobs[i];
+            const val = this.mixerAutomation.getValue(ak.key, fraction);
+            if (val !== null) {
+                ak.setCurrentValue(val);
+                ak.updateRotation(val);
+                ak.onChange(val);
+            }
+        }
+
+        // Update faders
+        for (let i = 0; i < this._autoFaders.length; i++) {
+            const af = this._autoFaders[i];
+            const val = this.mixerAutomation.getValue(af.key, fraction);
+            if (val !== null) {
+                af.fader.value = val;
+                af.onChange(val);
+            }
+        }
     }
 
     setCallbacks(onMute, onSolo, onMuteGroup, onSoloGroup, onSelect) {
@@ -113,6 +208,9 @@ export class Mixer {
         this.trackStripElements.clear(); 
         this.groupStripElements.clear(); 
         this.meterRegistry.clear();
+        this._autoKnobs = [];
+        this._autoFaders = [];
+        this._headerEls.clear();
         
         const mixerContainer = document.createElement('div');
         mixerContainer.className = 'mixer-container custom-scrollbar';
@@ -300,7 +398,7 @@ export class Mixer {
         }
     }
 
-    createKnob(label, value, min, max, step, onChange, colorClass = '', showLabel = false) {
+    createKnob(label, value, min, max, step, onChange, colorClass = '', showLabel = false, autoKey = null) {
         const wrapper = document.createElement('div');
         wrapper.className = 'mixer-pot track-item';
         
@@ -341,9 +439,34 @@ export class Mixer {
             tooltip.innerText = val.toFixed(step < 1 ? 2 : 0);
         };
 
+        // Automation border update
+        const updateAutoBorder = () => {
+            if (autoKey && this.mixerAutomation && this.mixerAutomation.hasAutomation(autoKey)) {
+                knobOuter.style.boxShadow = '0 0 0 1.5px #f5f0e0';
+            } else {
+                knobOuter.style.boxShadow = '';
+            }
+        };
+
         updateRotation(currentValue);
 
+        // Store references for playback updates
+        if (autoKey) {
+            if (!this._autoKnobs) this._autoKnobs = [];
+            this._autoKnobs.push({ key: autoKey, updateRotation, updateAutoBorder, knobOuter, onChange, min, max, step, getCurrentValue: () => currentValue, setCurrentValue: (v) => { currentValue = v; } });
+            updateAutoBorder();
+        }
+
         knobOuter.addEventListener('mousedown', (e) => {
+            // * + click = clear automation
+            if (autoKey && this._isStarHeld && this.mixerAutomation) {
+                this.mixerAutomation.clearLane(autoKey);
+                updateAutoBorder();
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+
             isDragging = true;
             startY = e.clientY;
             startVal = currentValue;
@@ -363,9 +486,23 @@ export class Mixer {
             newVal = Math.max(min, Math.min(max, newVal));
             if (step > 0) newVal = Math.round(newVal / step) * step;
             if (newVal !== currentValue) {
+                // If has automation and not recording, apply as offset
+                if (autoKey && this.mixerAutomation && this.mixerAutomation.hasAutomation(autoKey) && !this._isStarHeld) {
+                    const delta = newVal - currentValue;
+                    this.mixerAutomation.addOffset(autoKey, delta);
+                    currentValue = newVal;
+                    // Don't call onChange here — playback loop handles it
+                    return;
+                }
                 currentValue = newVal;
                 updateRotation(currentValue);
                 onChange(currentValue);
+                // Record if * is held
+                if (autoKey && this._isStarHeld && this.mixerAutomation && this.mixerAutomation.isRecording) {
+                    const step256 = this._getCurrentStep256();
+                    this.mixerAutomation.recordValue(autoKey, currentValue, step256, min, max);
+                    updateAutoBorder();
+                }
             }
         };
 
@@ -391,7 +528,7 @@ export class Mixer {
         return wrapper;
     }
 
-    createFaderSection(busObject, onChange, idForMeter) {
+    createFaderSection(busObject, onChange, idForMeter, autoKey = null) {
         const section = document.createElement('div');
         section.className = 'strip-fader-section';
 
@@ -446,7 +583,54 @@ export class Mixer {
         fader.className = 'v-fader';
         fader.min = 0; fader.max = 1.2; fader.step = 0.01;
         fader.value = busObject && busObject.params ? busObject.params.volume : (busObject && busObject.volume ? busObject.volume.gain.value : 1.0);
-        fader.oninput = (e) => onChange(parseFloat(e.target.value));
+
+        const updateAutoBorder = () => {
+            if (autoKey && this.mixerAutomation && this.mixerAutomation.hasAutomation(autoKey)) {
+                fader.style.outline = '1.5px solid #f5f0e0';
+                fader.style.outlineOffset = '-1px';
+            } else {
+                fader.style.outline = '';
+                fader.style.outlineOffset = '';
+            }
+        };
+
+        let faderDragging = false;
+
+        fader.oninput = (e) => {
+            const val = parseFloat(e.target.value);
+            // If has automation and not recording, apply as offset
+            if (autoKey && this.mixerAutomation && this.mixerAutomation.hasAutomation(autoKey) && !this._isStarHeld) {
+                // Offset mode handled in playback — just record delta
+                return;
+            }
+            onChange(val);
+            // Record if * held
+            if (autoKey && this._isStarHeld && this.mixerAutomation && this.mixerAutomation.isRecording) {
+                const step256 = this._getCurrentStep256();
+                this.mixerAutomation.recordValue(autoKey, val, step256, 0, 1.2);
+                updateAutoBorder();
+            }
+        };
+
+        fader.addEventListener('mousedown', (e) => {
+            // * + click = clear automation
+            if (autoKey && this._isStarHeld && this.mixerAutomation) {
+                this.mixerAutomation.clearLane(autoKey);
+                updateAutoBorder();
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            faderDragging = true;
+        });
+        fader.addEventListener('mouseup', () => { faderDragging = false; });
+
+        // Store for playback
+        if (autoKey) {
+            if (!this._autoFaders) this._autoFaders = [];
+            this._autoFaders.push({ key: autoKey, fader, updateAutoBorder, onChange });
+            updateAutoBorder();
+        }
         
         wrapper.appendChild(fader);
         section.appendChild(wrapper);
@@ -518,28 +702,42 @@ export class Mixer {
 
         const header = document.createElement('div');
         header.className = 'strip-header';
-        header.style.cursor = 'pointer'; // Make it clickable
-        header.innerHTML = `<span class="strip-num">${track.id + 1}</span>`;
-        header.onclick = () => { if (this.onSelect) this.onSelect(track.id); }; // Handle Selection
+        header.style.cursor = 'pointer';
+        const headerSpan = document.createElement('span');
+        headerSpan.className = 'strip-num';
+        headerSpan.innerText = track.id + 1;
+        header.appendChild(headerSpan);
+        this._headerEls.set(`track:${track.id}`, headerSpan);
+        header.onclick = () => {
+            if (this._isStarHeld && this.mixerAutomation) {
+                // * + click on header = clear all automation for this track
+                const cleared = this.mixerAutomation.clearStrip('track', track.id);
+                // Update borders for all cleared knobs
+                this._autoKnobs.forEach(ak => { if (cleared.includes(ak.key)) ak.updateAutoBorder(); });
+                this._autoFaders.forEach(af => { if (cleared.includes(af.key)) af.updateAutoBorder(); });
+                return;
+            }
+            if (this.onSelect) this.onSelect(track.id);
+        };
         strip.appendChild(header);
 
         const controls = document.createElement('div');
         controls.className = 'strip-controls'; 
-        // Match background for inner controls container to blend seamlessly
         controls.style.background = `linear-gradient(180deg, hsl(${hue}, 20%, 12%) 0%, hsl(${hue}, 20%, 10%) 100%)`;
 
         const getBus = () => track.bus;
+        const tk = (param) => MixerAutomation.laneKey('track', track.id, param);
 
-        controls.appendChild(this.createKnob('Gain', track.params.gain || 1, 0, 2, 0.01, (v) => { track.params.gain = v; const bus = getBus(); if(bus && bus.trim) bus.trim.gain.value = v; }, 'knob-color-green'));
-        controls.appendChild(this.createKnob('Hi', track.params.eqHigh || 0, -15, 15, 0.1, (v) => { track.params.eqHigh = v; const bus = getBus(); if(bus && bus.eq && bus.eq.high) bus.eq.high.gain.value = v; }, 'knob-color-blue'));
-        controls.appendChild(this.createKnob('Mid', track.params.eqMid || 0, -15, 15, 0.1, (v) => { track.params.eqMid = v; const bus = getBus(); if(bus && bus.eq && bus.eq.mid) bus.eq.mid.gain.value = v; }, 'knob-color-green'));
-        controls.appendChild(this.createKnob('Freq', track.params.eqMidFreq || 1000, 200, 5000, 10, (v) => { track.params.eqMidFreq = v; const bus = getBus(); if(bus && bus.eq && bus.eq.mid) bus.eq.mid.frequency.value = v; }, 'knob-color-green'));
-        controls.appendChild(this.createKnob('Lo', track.params.eqLow || 0, -15, 15, 0.1, (v) => { track.params.eqLow = v; const bus = getBus(); if(bus && bus.eq && bus.eq.low) bus.eq.low.gain.value = v; }, 'knob-color-red'));
-        controls.appendChild(this.createKnob('A', track.params.sendA || 0, 0, 1, 0.01, (v) => { track.params.sendA = v; if(track.bus && track.bus.sendA) track.bus.sendA.gain.value = v; }, 'knob-color-yellow'));
-        controls.appendChild(this.createKnob('B', track.params.sendB || 0, 0, 1, 0.01, (v) => { track.params.sendB = v; if(track.bus && track.bus.sendB) track.bus.sendB.gain.value = v; }, 'knob-color-yellow'));
-        controls.appendChild(this.createKnob('Drive', track.params.drive || 0, 0, 1, 0.01, (v) => { track.params.drive = v; const bus = getBus(); if(bus && bus.drive && bus.drive.input) this.audioEngine.setDriveAmount(bus.drive.input, v); }, 'knob-color-red'));
-        controls.appendChild(this.createKnob('Comp', track.params.comp || 0, 0, 1, 0.01, (v) => { track.params.comp = v; const bus = getBus(); if(bus && bus.comp) this.audioEngine.setCompAmount(bus.comp, v); }, 'knob-color-purple'));
-        controls.appendChild(this.createKnob('Pan', track.params.pan, -1, 1, 0.01, (v) => { track.params.pan = v; const bus = getBus(); if(bus && bus.pan) bus.pan.pan.value = v; }, 'knob-color-blue'));
+        controls.appendChild(this.createKnob('Gain', track.params.gain || 1, 0, 2, 0.01, (v) => { track.params.gain = v; const bus = getBus(); if(bus && bus.trim) bus.trim.gain.value = v; }, 'knob-color-green', false, tk('gain')));
+        controls.appendChild(this.createKnob('Hi', track.params.eqHigh || 0, -15, 15, 0.1, (v) => { track.params.eqHigh = v; const bus = getBus(); if(bus && bus.eq && bus.eq.high) bus.eq.high.gain.value = v; }, 'knob-color-blue', false, tk('eqHigh')));
+        controls.appendChild(this.createKnob('Mid', track.params.eqMid || 0, -15, 15, 0.1, (v) => { track.params.eqMid = v; const bus = getBus(); if(bus && bus.eq && bus.eq.mid) bus.eq.mid.gain.value = v; }, 'knob-color-green', false, tk('eqMid')));
+        controls.appendChild(this.createKnob('Freq', track.params.eqMidFreq || 1000, 200, 5000, 10, (v) => { track.params.eqMidFreq = v; const bus = getBus(); if(bus && bus.eq && bus.eq.mid) bus.eq.mid.frequency.value = v; }, 'knob-color-green', false, tk('eqMidFreq')));
+        controls.appendChild(this.createKnob('Lo', track.params.eqLow || 0, -15, 15, 0.1, (v) => { track.params.eqLow = v; const bus = getBus(); if(bus && bus.eq && bus.eq.low) bus.eq.low.gain.value = v; }, 'knob-color-red', false, tk('eqLow')));
+        controls.appendChild(this.createKnob('A', track.params.sendA || 0, 0, 1, 0.01, (v) => { track.params.sendA = v; if(track.bus && track.bus.sendA) track.bus.sendA.gain.value = v; }, 'knob-color-yellow', false, tk('sendA')));
+        controls.appendChild(this.createKnob('B', track.params.sendB || 0, 0, 1, 0.01, (v) => { track.params.sendB = v; if(track.bus && track.bus.sendB) track.bus.sendB.gain.value = v; }, 'knob-color-yellow', false, tk('sendB')));
+        controls.appendChild(this.createKnob('Drive', track.params.drive || 0, 0, 1, 0.01, (v) => { track.params.drive = v; const bus = getBus(); if(bus && bus.drive && bus.drive.input) this.audioEngine.setDriveAmount(bus.drive.input, v); }, 'knob-color-red', false, tk('drive')));
+        controls.appendChild(this.createKnob('Comp', track.params.comp || 0, 0, 1, 0.01, (v) => { track.params.comp = v; const bus = getBus(); if(bus && bus.comp) this.audioEngine.setCompAmount(bus.comp, v); }, 'knob-color-purple', false, tk('comp')));
+        controls.appendChild(this.createKnob('Pan', track.params.pan, -1, 1, 0.01, (v) => { track.params.pan = v; const bus = getBus(); if(bus && bus.pan) bus.pan.pan.value = v; }, 'knob-color-blue', false, tk('pan')));
 
         strip.appendChild(controls);
 
@@ -547,7 +745,7 @@ export class Mixer {
             track.params.volume = v;
             const bus = getBus();
             if(bus && bus.vol) bus.vol.gain.value = v;
-        }, track.id); 
+        }, track.id, tk('volume')); 
 
         faderComp.muteBtn.className += ` ${track.muted ? 'active' : ''}`;
         faderComp.muteBtn.onclick = () => { if (this.onMute) this.onMute(track.id); };
@@ -565,10 +763,24 @@ export class Mixer {
         const strip = document.createElement('div');
         strip.className = 'mixer-strip group-strip';
         const getBus = () => this.audioEngine.groupBuses[index];
+        const gk = (param) => MixerAutomation.laneKey('group', index, param);
         
         const header = document.createElement('div');
         header.className = 'strip-header';
-        header.innerHTML = `<span class="strip-name" style="color:#10b981">GRP ${index+1}</span>`;
+        const headerSpan = document.createElement('span');
+        headerSpan.className = 'strip-name';
+        headerSpan.style.color = '#10b981';
+        headerSpan.innerText = `GRP ${index+1}`;
+        header.appendChild(headerSpan);
+        this._headerEls.set(`group:${index}`, headerSpan);
+        header.style.cursor = 'pointer';
+        header.onclick = () => {
+            if (this._isStarHeld && this.mixerAutomation) {
+                const cleared = this.mixerAutomation.clearStrip('group', index);
+                this._autoKnobs.forEach(ak => { if (cleared.includes(ak.key)) ak.updateAutoBorder(); });
+                this._autoFaders.forEach(af => { if (cleared.includes(af.key)) af.updateAutoBorder(); });
+            }
+        };
         strip.appendChild(header);
 
         const controls = document.createElement('div');
@@ -576,7 +788,7 @@ export class Mixer {
 
         controls.appendChild(this.createKnob('Comp', 0, 0, 1, 0.01, (v) => {
             const bus = getBus(); if(bus && bus.comp) this.audioEngine.setCompAmount(bus.comp, v);
-        }, 'knob-color-purple', true));
+        }, 'knob-color-purple', true, gk('comp')));
 
         const driveDiv = document.createElement('div');
         driveDiv.className = 'eq-section';
@@ -592,14 +804,14 @@ export class Mixer {
         driveDiv.appendChild(driveSel);
         driveDiv.appendChild(this.createKnob('Amt', 0, 0, 1, 0.01, (v) => {
             const bus = getBus(); if(bus && bus.drive && bus.drive.input) this.audioEngine.setDriveAmount(bus.drive.input, v);
-        }, 'knob-color-red', true));
+        }, 'knob-color-red', true, gk('driveAmt')));
         controls.appendChild(driveDiv);
 
         const sendSec = document.createElement('div');
         sendSec.className = 'eq-section';
         sendSec.innerHTML = `<div class="section-label">SENDS</div>`;
-        sendSec.appendChild(this.createKnob('A', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus && bus.sendA) bus.sendA.gain.value = v; }, 'knob-color-yellow', true));
-        sendSec.appendChild(this.createKnob('B', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus && bus.sendB) bus.sendB.gain.value = v; }, 'knob-color-yellow', true));
+        sendSec.appendChild(this.createKnob('A', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus && bus.sendA) bus.sendA.gain.value = v; }, 'knob-color-yellow', true, gk('sendA')));
+        sendSec.appendChild(this.createKnob('B', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus && bus.sendB) bus.sendB.gain.value = v; }, 'knob-color-yellow', true, gk('sendB')));
         controls.appendChild(sendSec);
 
         const eqSec = document.createElement('div');
@@ -627,7 +839,7 @@ export class Mixer {
 
         const faderComp = this.createFaderSection(this.audioEngine.groupBuses[index], (v) => {
             const bus = getBus(); if(bus && bus.volume) bus.volume.gain.value = v;
-        }, `group_${index}`);
+        }, `group_${index}`, gk('volume'));
 
         faderComp.muteBtn.onclick = () => { if (this.onMuteGroup) this.onMuteGroup(index); };
         faderComp.soloBtn.onclick = () => { if (this.onSoloGroup) this.onSoloGroup(index); };
@@ -654,37 +866,51 @@ export class Mixer {
         header.className = 'strip-header';
         const label = index === 0 ? 'RTN A' : 'RTN B';
         const color = index === 0 ? '#10b981' : '#a855f7';
-        header.innerHTML = `<span class="strip-name" style="color:${color}">${label}</span>`;
+        const headerSpan = document.createElement('span');
+        headerSpan.className = 'strip-name';
+        headerSpan.style.color = color;
+        headerSpan.innerText = label;
+        header.appendChild(headerSpan);
+        this._headerEls.set(`return:${index}`, headerSpan);
+        header.style.cursor = 'pointer';
+        header.onclick = () => {
+            if (this._isStarHeld && this.mixerAutomation) {
+                const cleared = this.mixerAutomation.clearStrip('return', index);
+                this._autoKnobs.forEach(ak => { if (cleared.includes(ak.key)) ak.updateAutoBorder(); });
+                this._autoFaders.forEach(af => { if (cleared.includes(af.key)) af.updateAutoBorder(); });
+            }
+        };
         strip.appendChild(header);
 
         const controls = document.createElement('div');
         controls.className = 'strip-controls'; 
 
         const getBus = () => busObject;
+        const rk = (param) => MixerAutomation.laneKey('return', index, param);
 
         controls.appendChild(this.createKnob('Gain', 1.0, 0, 2, 0.01, (v) => { 
             const bus = getBus(); 
             if(bus.input) bus.input.gain.value = v; 
-        }, 'knob-color-green', true));
+        }, 'knob-color-green', true, rk('gain')));
 
-        controls.appendChild(this.createKnob('Hi', 0, -15, 15, 0.1, (v) => { const bus = getBus(); if(bus.eq) bus.eq.high.gain.value = v; }, 'knob-color-blue', true));
-        controls.appendChild(this.createKnob('Mid', 0, -15, 15, 0.1, (v) => { const bus = getBus(); if(bus.eq) bus.eq.mid.gain.value = v; }, 'knob-color-green', true));
-        controls.appendChild(this.createKnob('Freq', 1000, 200, 5000, 10, (v) => { const bus = getBus(); if(bus.eq) bus.eq.mid.frequency.value = v; }, 'knob-color-green', true));
-        controls.appendChild(this.createKnob('Lo', 0, -15, 15, 0.1, (v) => { const bus = getBus(); if(bus.eq) bus.eq.low.gain.value = v; }, 'knob-color-red', true));
+        controls.appendChild(this.createKnob('Hi', 0, -15, 15, 0.1, (v) => { const bus = getBus(); if(bus.eq) bus.eq.high.gain.value = v; }, 'knob-color-blue', true, rk('eqHigh')));
+        controls.appendChild(this.createKnob('Mid', 0, -15, 15, 0.1, (v) => { const bus = getBus(); if(bus.eq) bus.eq.mid.gain.value = v; }, 'knob-color-green', true, rk('eqMid')));
+        controls.appendChild(this.createKnob('Freq', 1000, 200, 5000, 10, (v) => { const bus = getBus(); if(bus.eq) bus.eq.mid.frequency.value = v; }, 'knob-color-green', true, rk('eqMidFreq')));
+        controls.appendChild(this.createKnob('Lo', 0, -15, 15, 0.1, (v) => { const bus = getBus(); if(bus.eq) bus.eq.low.gain.value = v; }, 'knob-color-red', true, rk('eqLow')));
         
-        controls.appendChild(this.createKnob('A', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus.sendA) bus.sendA.gain.value = v; }, 'knob-color-yellow', true));
-        controls.appendChild(this.createKnob('B', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus.sendB) bus.sendB.gain.value = v; }, 'knob-color-yellow', true));
+        controls.appendChild(this.createKnob('A', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus.sendA) bus.sendA.gain.value = v; }, 'knob-color-yellow', true, rk('sendA')));
+        controls.appendChild(this.createKnob('B', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus.sendB) bus.sendB.gain.value = v; }, 'knob-color-yellow', true, rk('sendB')));
         
-        controls.appendChild(this.createKnob('Drive', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus.drive) this.audioEngine.setDriveAmount(bus.drive.input, v); }, 'knob-color-red', true));
-        controls.appendChild(this.createKnob('Comp', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus.comp) this.audioEngine.setCompAmount(bus.comp, v); }, 'knob-color-purple', true));
+        controls.appendChild(this.createKnob('Drive', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus.drive) this.audioEngine.setDriveAmount(bus.drive.input, v); }, 'knob-color-red', true, rk('drive')));
+        controls.appendChild(this.createKnob('Comp', 0, 0, 1, 0.01, (v) => { const bus = getBus(); if(bus.comp) this.audioEngine.setCompAmount(bus.comp, v); }, 'knob-color-purple', true, rk('comp')));
         
-        controls.appendChild(this.createKnob('Pan', 0, -1, 1, 0.01, (v) => { const bus = getBus(); if(bus.pan) bus.pan.pan.value = v; }, 'knob-color-blue', true));
+        controls.appendChild(this.createKnob('Pan', 0, -1, 1, 0.01, (v) => { const bus = getBus(); if(bus.pan) bus.pan.pan.value = v; }, 'knob-color-blue', true, rk('pan')));
 
         strip.appendChild(controls);
 
         const faderComp = this.createFaderSection(busObject, (v) => {
             if(busObject.volume) busObject.volume.gain.value = v;
-        }, `return_${index}`);
+        }, `return_${index}`, rk('volume'));
 
         faderComp.muteBtn.onclick = () => { 
             const isMuted = faderComp.muteBtn.classList.toggle('active');

@@ -116,6 +116,11 @@ renderLoop.register('mixerMeters', (ts) => {
     if (uiManager.mixer) uiManager.mixer.animateMeters(ts);
 }, 33);
 
+// 5. Mixer automation playback (every frame — smooth knob/fader motion)
+renderLoop.register('mixerAutomation', () => {
+    if (uiManager.mixer) uiManager.mixer.updateAutomation();
+}, 0);
+
 document.getElementById('initAudioBtn').addEventListener('click', async () => {
     console.log("[Main] Init audio clicked.");
     await audioEngine.initialize();
@@ -131,6 +136,7 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     // Refresh Mixer to ensure it binds to the newly created Audio Buses
     if (uiManager.mixer) {
         console.log("[Main] Refreshing Mixer...");
+        uiManager.mixer.setScheduler(scheduler);
         uiManager.mixer.render();
     }
 
