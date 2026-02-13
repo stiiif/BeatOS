@@ -1,5 +1,5 @@
 // js/ui/components/AutomationPanel.js
-import { NUM_LFOS, MODULATION_TARGETS } from '../../utils/constants.js';
+import { MODULATION_TARGETS, MAX_MODULATORS } from '../../utils/constants.js';
 import { Modulator, MOD_TYPE } from '../../modules/modulators/Modulator.js';
 import { LFO } from '../../modules/modulators/LFO.js';
 import { getModulatorUI, MOD_TYPE_LABELS } from '../shared/modulators/ModulatorUIRegistry.js';
@@ -25,18 +25,27 @@ export class AutomationPanel {
             return;
         }
 
+        const numMods = track.lfos.length;
+
         // Shell
         let contentWrapper = document.getElementById('modulatorContent');
         if (!contentWrapper) {
             container.innerHTML = ''; 
             const header = document.createElement('div');
             header.className = 'flex justify-between items-center mb-2 cursor-pointer select-none group';
-            header.onclick = () => { if (window.toggleSection) window.toggleSection('modulatorContent', header); };
+            header.onclick = (e) => {
+                // Don't toggle if clicking +/- buttons
+                if (e.target.closest('.mod-add-remove')) return;
+                if (window.toggleSection) window.toggleSection('modulatorContent', header);
+            };
             header.innerHTML = `
                 <label class="text-[10px] text-neutral-500 uppercase font-bold group-hover:text-neutral-300 transition-colors pointer-events-none cursor-pointer">
                     <i class="fas fa-wave-square mr-1"></i> MODULATORS
                 </label>
-                <i class="fas fa-chevron-down text-[10px] text-neutral-600 transition-transform duration-200"></i>
+                <div class="flex items-center gap-1">
+                    <div class="mod-add-remove flex items-center gap-1" style="pointer-events:auto;"></div>
+                    <i class="fas fa-chevron-down text-[10px] text-neutral-600 transition-transform duration-200"></i>
+                </div>
             `;
             container.appendChild(header);
             contentWrapper = document.createElement('div');
@@ -45,12 +54,37 @@ export class AutomationPanel {
             container.appendChild(contentWrapper);
         }
 
+        // Update +/- buttons in header
+        const addRemoveContainer = container.querySelector('.mod-add-remove');
+        if (addRemoveContainer) {
+            addRemoveContainer.innerHTML = '';
+            const minusBtn = document.createElement('div');
+            minusBtn.className = 'text-[10px] px-1 rounded cursor-pointer transition';
+            minusBtn.style.cssText = `color:${numMods <= 1 ? '#333' : '#999'}; pointer-events:${numMods <= 1 ? 'none' : 'auto'};`;
+            minusBtn.innerHTML = '<i class="fas fa-minus"></i>';
+            minusBtn.onclick = (e) => { e.stopPropagation(); Modulator.removeModulator(track.lfos); this.render(); };
+
+            const countLabel = document.createElement('span');
+            countLabel.className = 'text-[9px] text-neutral-500 font-mono';
+            countLabel.innerText = numMods;
+
+            const plusBtn = document.createElement('div');
+            plusBtn.className = 'text-[10px] px-1 rounded cursor-pointer transition';
+            plusBtn.style.cssText = `color:${numMods >= MAX_MODULATORS ? '#333' : '#999'}; pointer-events:${numMods >= MAX_MODULATORS ? 'none' : 'auto'};`;
+            plusBtn.innerHTML = '<i class="fas fa-plus"></i>';
+            plusBtn.onclick = (e) => { e.stopPropagation(); Modulator.addModulator(track.lfos, MAX_MODULATORS); this.render(); };
+
+            addRemoveContainer.appendChild(minusBtn);
+            addRemoveContainer.appendChild(countLabel);
+            addRemoveContainer.appendChild(plusBtn);
+        }
+
         contentWrapper.innerHTML = '';
         const monolith = document.createElement('div');
         monolith.className = 'monolith-container border-neutral-800';
         const grid = document.createElement('div');
         grid.className = 'synthi-grid';
-        grid.style.gridTemplateColumns = `70px repeat(${NUM_LFOS}, 1fr)`;
+        grid.style.gridTemplateColumns = `70px repeat(${numMods}, 1fr)`;
 
         // === ROW: TYPE SELECTOR ===
         const lblType = document.createElement('div');
@@ -59,8 +93,7 @@ export class AutomationPanel {
         grid.appendChild(lblType);
 
         track.lfos.forEach((mod, i) => {
-            if (i >= NUM_LFOS) return;
-            const colorClass = this.lfoColors[i % 3];
+            const colorClass = this.lfoColors[i % this.lfoColors.length];
             const cell = document.createElement('div');
             cell.className = `grid-cell ${colorClass}`;
             const btnRow = document.createElement('div');
@@ -86,15 +119,14 @@ export class AutomationPanel {
             grid.appendChild(cell);
         });
 
-        // === ROW: SOURCE (on/off toggle) ===
+        // === ROW: ON/OFF ===
         const lblSrc = document.createElement('div');
         lblSrc.className = 'grid-cell label-cell';
         lblSrc.innerText = 'ON/OFF';
         grid.appendChild(lblSrc);
 
         track.lfos.forEach((mod, i) => {
-            if (i >= NUM_LFOS) return;
-            const colorClass = this.lfoColors[i % 3];
+            const colorClass = this.lfoColors[i % this.lfoColors.length];
             const cell = document.createElement('div');
             cell.className = `grid-cell ${colorClass}`;
             const btn = document.createElement('div');
@@ -111,10 +143,6 @@ export class AutomationPanel {
         });
 
         // === TYPE-SPECIFIC ROWS ===
-        // Each modulator type renders its own parameter rows via the registry.
-        // We add labels on the left for each type's rows.
-
-        // Collect max row count across all slots for label alignment
         const typeRowLabels = {
             [MOD_TYPE.LFO]:         ['WAVE', 'SYNC', 'RATE'],
             [MOD_TYPE.ENV_FOLLOW]:  ['SRC', 'ATK', 'REL', 'INV'],
@@ -122,19 +150,24 @@ export class AutomationPanel {
             [MOD_TYPE.PHYSICS]:     ['MODE', 'GRAV', 'DAMP', 'TRIG'],
         };
 
-        // Find the max number of type-specific rows across all slots
         let maxRows = 0;
-        track.lfos.forEach((mod, i) => {
-            if (i >= NUM_LFOS) return;
+        track.lfos.forEach(mod => {
             const labels = typeRowLabels[mod.getType()] || [];
             maxRows = Math.max(maxRows, labels.length);
         });
 
-        // Render row by row
+        // Pre-render type-specific cells
+        track.lfos.forEach((mod, i) => {
+            const colorClass = this.lfoColors[i % this.lfoColors.length];
+            const renderFn = getModulatorUI(mod.getType());
+            const tempGrid = document.createElement('div');
+            renderFn(tempGrid, mod, i, colorClass, () => this.render(), 'gran-mod');
+            mod._uiCells = Array.from(tempGrid.children);
+        });
+
         for (let row = 0; row < maxRows; row++) {
-            // Label: use the first slot that has a label for this row
             let labelText = '';
-            for (let i = 0; i < Math.min(NUM_LFOS, track.lfos.length); i++) {
+            for (let i = 0; i < track.lfos.length; i++) {
                 const labels = typeRowLabels[track.lfos[i].getType()] || [];
                 if (labels[row]) { labelText = labels[row]; break; }
             }
@@ -143,41 +176,18 @@ export class AutomationPanel {
             lbl.innerText = labelText;
             grid.appendChild(lbl);
 
-            // Each slot renders its row (or empty cell if fewer rows)
             track.lfos.forEach((mod, i) => {
-                if (i >= NUM_LFOS) return;
-                const colorClass = this.lfoColors[i % 3];
+                const colorClass = this.lfoColors[i % this.lfoColors.length];
                 const labels = typeRowLabels[mod.getType()] || [];
-                if (row < labels.length) {
-                    const renderFn = getModulatorUI(mod.getType());
-                    // Render only the specific row — we call the full render but only take one row at a time
-                    // To do this efficiently, we render into a temp grid and extract cells
-                    if (row === 0) {
-                        // Render all type-specific rows at once into a temp container, then distribute
-                        const tempGrid = document.createElement('div');
-                        renderFn(tempGrid, mod, i, colorClass, () => this.render(), 'gran-mod');
-                        // Store rendered cells on the mod for later rows
-                        mod._uiCells = Array.from(tempGrid.children);
-                    }
-                    // Append the cell for this row
-                    if (mod._uiCells && mod._uiCells[row]) {
-                        grid.appendChild(mod._uiCells[row]);
-                    } else {
-                        // Empty placeholder
-                        const empty = document.createElement('div');
-                        empty.className = `grid-cell ${colorClass}`;
-                        grid.appendChild(empty);
-                    }
+                if (row < labels.length && mod._uiCells && mod._uiCells[row]) {
+                    grid.appendChild(mod._uiCells[row]);
                 } else {
-                    // Empty cell for this slot (fewer rows than max)
                     const empty = document.createElement('div');
                     empty.className = `grid-cell ${colorClass}`;
                     grid.appendChild(empty);
                 }
             });
         }
-
-        // Clean up temp cells
         track.lfos.forEach(mod => { delete mod._uiCells; });
 
         // === ROW: AMOUNT ===
@@ -187,8 +197,7 @@ export class AutomationPanel {
         grid.appendChild(lblAmt);
 
         track.lfos.forEach((mod, i) => {
-            if (i >= NUM_LFOS) return;
-            const colorClass = this.lfoColors[i % 3];
+            const colorClass = this.lfoColors[i % this.lfoColors.length];
             const cell = document.createElement('div');
             cell.className = `grid-cell ${colorClass}`;
             const input = document.createElement('input');
@@ -209,7 +218,6 @@ export class AutomationPanel {
         grid.appendChild(lblClear);
 
         track.lfos.forEach((mod, i) => {
-            if (i >= NUM_LFOS) return;
             const cell = document.createElement('div');
             cell.className = 'grid-cell bg-[#222] h-6 cursor-pointer hover:text-red-500 text-neutral-600 transition';
             cell.innerHTML = '<i class="fas fa-trash text-[8px]"></i>';
@@ -225,8 +233,7 @@ export class AutomationPanel {
             grid.appendChild(lbl);
 
             track.lfos.forEach((mod, i) => {
-                if (i >= NUM_LFOS) return;
-                const colorClass = this.lfoColors[i % 3];
+                const colorClass = this.lfoColors[i % this.lfoColors.length];
                 const cell = document.createElement('div');
                 cell.className = `grid-cell border-t border-neutral-800 ${colorClass}`;
                 const isActive = mod.targets.includes(target.id);

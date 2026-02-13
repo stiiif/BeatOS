@@ -53,11 +53,24 @@ export class Modulator {
         const type = data.type !== undefined ? data.type : MOD_TYPE.LFO;
         const Cls = _registry.get(type);
         if (Cls && Cls.fromData) return Cls.fromData(data);
-        // Fallback: create default and apply base fields
         const mod = Modulator.create(type);
         if (data.amount !== undefined) mod.amount = data.amount;
         if (data.targets) mod.targets = [...data.targets];
         if (data.target !== undefined) mod.target = data.target;
         return mod;
+    }
+
+    /** Add a new modulator to an array. Returns true if added. */
+    static addModulator(arr, maxCount = 8) {
+        if (arr.length >= maxCount) return false;
+        arr.push(Modulator.create(MOD_TYPE.LFO));
+        return true;
+    }
+
+    /** Remove the last modulator from an array. Returns true if removed. Min 1. */
+    static removeModulator(arr) {
+        if (arr.length <= 1) return false;
+        arr.pop();
+        return true;
     }
 }

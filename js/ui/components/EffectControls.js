@@ -91,10 +91,38 @@ export class EffectControls {
         });
         wrapper.appendChild(macros);
 
-        // 3. MODULATOR MATRIX
+        const numMods = state.lfos.length;
+
+        // 3. MODULATOR SECTION HEADER with +/- buttons
+        const modHeader = document.createElement('div');
+        modHeader.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:2px 4px;';
+        const modLabel = document.createElement('span');
+        modLabel.style.cssText = 'font-size:8px; color:#666; text-transform:uppercase;';
+        modLabel.innerText = 'Modulators';
+        modHeader.appendChild(modLabel);
+
+        const addRemove = document.createElement('div');
+        addRemove.style.cssText = 'display:flex; align-items:center; gap:4px;';
+        const mkBtn = (icon, enabled, onClick) => {
+            const b = document.createElement('div');
+            b.style.cssText = `font-size:9px; cursor:${enabled ? 'pointer' : 'default'}; color:${enabled ? '#999' : '#333'}; padding:0 2px;`;
+            b.innerHTML = `<i class="fas fa-${icon}"></i>`;
+            if (enabled) b.onclick = onClick;
+            return b;
+        };
+        addRemove.appendChild(mkBtn('minus', numMods > 1, () => { this.manager.removeFxModulator(fxId); this.render(); }));
+        const cnt = document.createElement('span');
+        cnt.style.cssText = 'font-size:8px; color:#555; font-family:monospace;';
+        cnt.innerText = numMods;
+        addRemove.appendChild(cnt);
+        addRemove.appendChild(mkBtn('plus', numMods < 8, () => { this.manager.addFxModulator(fxId, 8); this.render(); }));
+        modHeader.appendChild(addRemove);
+        wrapper.appendChild(modHeader);
+
+        // 4. MODULATOR MATRIX
         const grid = document.createElement('div');
         grid.className = 'synthi-grid';
-        grid.style.gridTemplateColumns = '70px repeat(3, 1fr)';
+        grid.style.gridTemplateColumns = `70px repeat(${numMods}, 1fr)`;
 
         // -- ROW 0: TYPE SELECTOR --
         const lblType = document.createElement('div');
@@ -169,7 +197,8 @@ export class EffectControls {
             const t = mod.getType ? mod.getType() : MOD_TYPE.LFO;
             const renderFn = getModulatorUI(t);
             const tempGrid = document.createElement('div');
-            renderFn(tempGrid, mod, i, config.lfoColors[i], () => this.render(), `fx${fxId}-mod`);
+            const color = config.lfoColors[i % config.lfoColors.length];
+            renderFn(tempGrid, mod, i, color, () => this.render(), `fx${fxId}-mod`);
             mod._uiCells = Array.from(tempGrid.children);
         });
 
@@ -192,7 +221,7 @@ export class EffectControls {
                     grid.appendChild(mod._uiCells[row]);
                 } else {
                     const empty = document.createElement('div');
-                    empty.className = `grid-cell ${config.lfoColors[i]}`;
+                    empty.className = `grid-cell ${config.lfoColors[i % config.lfoColors.length]}`;
                     grid.appendChild(empty);
                 }
             });
@@ -215,8 +244,10 @@ export class EffectControls {
             cell.className = 'grid-cell bg-[#222] h-6 cursor-pointer hover:text-red-500 text-neutral-600 transition';
             cell.innerHTML = '<i class="fas fa-trash text-[8px]"></i>';
             cell.onclick = () => {
-                for(let t=0; t<13; t++) {
-                    state.matrix[i][t] = 0;
+                if (state.matrix[i]) {
+                    for(let t = 0; t < state.matrix[i].length; t++) {
+                        state.matrix[i][t] = 0;
+                    }
                 }
                 this.render();
             };
@@ -240,7 +271,7 @@ export class EffectControls {
 
         lfos.forEach((lfo, i) => {
             const cell = document.createElement('div');
-            cell.className = `grid-cell ${colors[i]}`;
+            cell.className = `grid-cell ${colors[i % colors.length]}`;
             
             const input = document.createElement('input');
             input.type = 'range';
@@ -266,11 +297,11 @@ export class EffectControls {
         lbl.innerText = label;
         grid.appendChild(lbl);
 
-        for(let lfoIdx=0; lfoIdx<3; lfoIdx++) {
+        for(let lfoIdx = 0; lfoIdx < state.lfos.length; lfoIdx++) {
             const cell = document.createElement('div');
-            cell.className = `grid-cell border-t border-neutral-800 ${colors[lfoIdx]}`;
+            cell.className = `grid-cell border-t border-neutral-800 ${colors[lfoIdx % colors.length]}`;
             
-            const isActive = state.matrix[lfoIdx][targetIdx];
+            const isActive = state.matrix[lfoIdx] && state.matrix[lfoIdx][targetIdx];
             
             const node = document.createElement('div');
             node.className = `circuit-node ${isActive ? 'node-active' : ''}`;

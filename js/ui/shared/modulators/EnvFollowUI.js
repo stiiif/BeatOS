@@ -1,20 +1,38 @@
 // js/ui/shared/modulators/EnvFollowUI.js
+import { TRACKS_PER_GROUP } from '../../../utils/constants.js';
+
+/**
+ * Build source options dynamically from actual tracks/groups/returns.
+ */
+function _buildSourceOptions() {
+    const options = [{ value: 'master', label: 'Master' }];
+
+    // Tracks — read actual count from DOM or TrackManager via global
+    const trackEls = document.querySelectorAll('.mixer-strip:not(.master-strip):not(.group-strip):not(.return-strip)');
+    const trackCount = Math.max(trackEls.length, 8); // fallback min 8
+    for (let i = 0; i < trackCount; i++) {
+        options.push({ value: `track:${i}`, label: `Trk ${i + 1}` });
+    }
+
+    // Groups — derive from track count
+    const groupCount = Math.ceil(trackCount / TRACKS_PER_GROUP);
+    for (let i = 0; i < groupCount; i++) {
+        options.push({ value: `group:${i}`, label: `Grp ${i + 1}` });
+    }
+
+    // Returns — currently fixed at 2 (Delay/Reverb)
+    options.push({ value: 'return:0', label: 'Ret A' });
+    options.push({ value: 'return:1', label: 'Ret B' });
+
+    return options;
+}
 
 /**
  * Render EnvelopeFollower-specific controls.
  */
 export function renderEnvFollowUI(grid, mod, slotIndex, colorClass, onRender, idPrefix) {
-    // Row 1: SOURCE selector
-    _addSelectRow(grid, colorClass, mod.source, [
-        { value: 'master', label: 'Master' },
-        { value: 'track:0', label: 'Trk 1' }, { value: 'track:1', label: 'Trk 2' },
-        { value: 'track:2', label: 'Trk 3' }, { value: 'track:3', label: 'Trk 4' },
-        { value: 'track:4', label: 'Trk 5' }, { value: 'track:5', label: 'Trk 6' },
-        { value: 'track:6', label: 'Trk 7' }, { value: 'track:7', label: 'Trk 8' },
-        { value: 'group:0', label: 'Grp 1' }, { value: 'group:1', label: 'Grp 2' },
-        { value: 'group:2', label: 'Grp 3' }, { value: 'group:3', label: 'Grp 4' },
-        { value: 'return:0', label: 'Ret A' }, { value: 'return:1', label: 'Ret B' },
-    ], (v) => { mod.source = v; onRender(); });
+    // Row 1: SOURCE selector (built dynamically)
+    _addSelectRow(grid, colorClass, mod.source, _buildSourceOptions(), (v) => { mod.source = v; onRender(); });
 
     // Row 2: ATK slider (1-500ms)
     _addSliderRow(grid, colorClass, mod.attack, 1, 500, 1, (v) => { mod.attack = v; }, 'ms');
