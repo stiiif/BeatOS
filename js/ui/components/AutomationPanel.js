@@ -147,7 +147,6 @@ export class AutomationPanel {
         // 4. RATE ROW (Dual Sliders)
         const lblRate = document.createElement('div');
         lblRate.className = 'grid-cell label-cell';
-        lblRate.style.height = '40px'; 
         lblRate.innerText = 'RATE';
         grid.appendChild(lblRate);
         
@@ -231,38 +230,25 @@ export class AutomationPanel {
             this.render();
         };
         
-        // 2. Gross Value Display (with ID for live update)
-        const grossVal = document.createElement('div');
-        grossVal.className = 'sync-val';
-        grossVal.id = `lfo-gross-val-${index}`;
+        // 2. Rate Value Display (single unified display)
+        const rateVal = document.createElement('div');
+        rateVal.className = 'sync-val';
+        rateVal.id = `lfo-rate-val-${index}`;
         if (lfo.sync) {
-            grossVal.innerText = LFO.SYNC_RATES[lfo.syncRateIndex].label;
+            const entry = LFO.SYNC_RATES[lfo.syncRateIndex];
+            rateVal.innerText = entry.label;
+            const type = entry.type;
+            if (type === 'triplet') rateVal.style.color = '#60a5fa';
+            else if (type === 'dotted') rateVal.style.color = '#f472b6';
+            else if (type === 'quintuplet') rateVal.style.color = '#a78bfa';
+            else if (type === 'septuplet') rateVal.style.color = '#fbbf24';
+            else rateVal.style.color = '';
         } else {
-            // Unsynced Gross: Show integer part
-            grossVal.innerText = Math.floor(lfo.rate) + 'Hz';
-        }
-        
-        // 3. Fine Value Display (with ID for live update)
-        const fineVal = document.createElement('div');
-        fineVal.className = 'sync-val';
-        fineVal.id = `lfo-fine-val-${index}`;
-        fineVal.style.fontSize = "10px";
-        if (lfo.sync) {
-            const type = LFO.SYNC_RATES[lfo.syncRateIndex].type;
-            if (type === 'triplet') { fineVal.innerText = '+T'; fineVal.style.color = '#60a5fa'; }
-            else if (type === 'dotted') { fineVal.innerText = '+D'; fineVal.style.color = '#f472b6'; }
-            else if (type === 'quintuplet') { fineVal.innerText = '+Q'; fineVal.style.color = '#a78bfa'; }
-            else if (type === 'septuplet') { fineVal.innerText = '+S'; fineVal.style.color = '#fbbf24'; }
-            else { fineVal.innerText = '•'; fineVal.style.color = '#444'; }
-        } else {
-            // Unsynced Fine: Show fractional part (the +offset)
-            const finePart = (lfo.rate % 1).toFixed(3).substring(1); 
-            fineVal.innerText = (finePart === '.000' ? '' : '+') + finePart; 
+            rateVal.innerText = lfo.rate < 1 ? lfo.rate.toFixed(2) + 'Hz' : lfo.rate.toFixed(1) + 'Hz';
         }
 
         content.appendChild(btn);
-        content.appendChild(grossVal);
-        content.appendChild(fineVal);
+        content.appendChild(rateVal);
         cell.appendChild(content);
         grid.appendChild(cell);
     }
@@ -271,137 +257,68 @@ export class AutomationPanel {
         const cell = document.createElement('div');
         cell.className = `grid-cell ${colorClass}`;
         
-        const stack = document.createElement('div');
-        stack.className = 'rate-cell-stack';
-        
-        // --- 1. GROSS SLIDER ---
-        const gross = document.createElement('input');
-        gross.type = 'range';
-        gross.className = 'micro-slider';
-        
-        // Helper to find closest straight index
-        const findClosestStraight = (idx) => {
-            let minDist = Infinity;
-            let closest = idx;
-            for(let i=0; i<LFO.SYNC_RATES.length; i++) {
-                if (LFO.SYNC_RATES[i].type === 'straight') {
-                    const dist = Math.abs(i - idx);
-                    if (dist < minDist) { minDist = dist; closest = i; }
-                }
-            }
-            return closest;
-        };
-
-        // Update helpers
-        const updateGrossDisplay = () => {
-            const el = document.getElementById(`lfo-gross-val-${index}`);
-            if (el) {
-                if (lfo.sync) el.innerText = LFO.SYNC_RATES[lfo.syncRateIndex].label;
-                else el.innerText = Math.floor(lfo.rate) + 'Hz';
+        const updateDisplay = () => {
+            const el = document.getElementById(`lfo-rate-val-${index}`);
+            if (!el) return;
+            if (lfo.sync) {
+                const entry = LFO.SYNC_RATES[lfo.syncRateIndex];
+                el.innerText = entry.label;
+                const type = entry.type;
+                if (type === 'triplet') el.style.color = '#60a5fa';
+                else if (type === 'dotted') el.style.color = '#f472b6';
+                else if (type === 'quintuplet') el.style.color = '#a78bfa';
+                else if (type === 'septuplet') el.style.color = '#fbbf24';
+                else el.style.color = '';
+            } else {
+                el.innerText = lfo.rate < 1 ? lfo.rate.toFixed(2) + 'Hz' : lfo.rate.toFixed(1) + 'Hz';
+                el.style.color = '';
             }
         };
 
-        const updateFineDisplay = () => {
-            const el = document.getElementById(`lfo-fine-val-${index}`);
-            if (el) {
-                if (lfo.sync) {
-                    const type = LFO.SYNC_RATES[lfo.syncRateIndex].type;
-                    if (type === 'triplet') { el.innerText = '+T'; el.style.color = '#60a5fa'; }
-                    else if (type === 'dotted') { el.innerText = '+D'; el.style.color = '#f472b6'; }
-                    else if (type === 'quintuplet') { el.innerText = '+Q'; el.style.color = '#a78bfa'; }
-                    else if (type === 'septuplet') { el.innerText = '+S'; el.style.color = '#fbbf24'; }
-                    else { el.innerText = '•'; el.style.color = '#444'; }
-                } else {
-                    const finePart = (lfo.rate % 1).toFixed(3).substring(1); 
-                    el.innerText = (finePart === '.000' ? '' : '+') + finePart; 
-                }
-            }
-        };
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.className = 'micro-slider';
 
         if (lfo.sync) {
-            gross.min = 0; 
-            gross.max = LFO.SYNC_RATES.length - 1; 
-            gross.step = 1;
-            
-            const currentAnchor = findClosestStraight(lfo.syncRateIndex);
-            gross.value = currentAnchor;
-            
-            gross.oninput = (e) => {
-                let targetIdx = parseInt(e.target.value);
-                const newAnchor = findClosestStraight(targetIdx);
-                lfo.syncRateIndex = newAnchor;
-                
-                // Live Update Display
-                updateGrossDisplay();
-                updateFineDisplay(); // Fine display might change if anchor changes type? Usually no, but safe.
+            // Sync mode: step through all SYNC_RATES entries
+            slider.min = 0;
+            slider.max = LFO.SYNC_RATES.length - 1;
+            slider.step = 1;
+            slider.value = lfo.syncRateIndex;
+
+            slider.oninput = (e) => {
+                lfo.syncRateIndex = parseInt(e.target.value);
+                updateDisplay();
             };
-            gross.onchange = () => this.render();
+            slider.onchange = () => this.render();
         } else {
-            // Hz Gross
-            const intPart = Math.floor(lfo.rate);
-            gross.min = 0; gross.max = 20; gross.step = 1;
-            gross.value = intPart;
-            
-            gross.oninput = (e) => {
-                const newInt = parseInt(e.target.value);
-                const currentDec = lfo.rate % 1;
-                lfo.rate = newInt + currentDec;
-                
-                // Live Update
-                updateGrossDisplay();
+            // Free mode: logarithmic scale 0.05Hz - 20Hz
+            // Map slider 0-1000 → log(0.05) to log(20)
+            const LOG_MIN = Math.log(0.05);
+            const LOG_MAX = Math.log(20);
+            const STEPS = 1000;
+
+            const rateToSlider = (rate) => {
+                const clamped = Math.max(0.05, Math.min(20, rate));
+                return Math.round(((Math.log(clamped) - LOG_MIN) / (LOG_MAX - LOG_MIN)) * STEPS);
             };
-            gross.onchange = () => this.render();
+            const sliderToRate = (val) => {
+                return Math.exp(LOG_MIN + (val / STEPS) * (LOG_MAX - LOG_MIN));
+            };
+
+            slider.min = 0;
+            slider.max = STEPS;
+            slider.step = 1;
+            slider.value = rateToSlider(lfo.rate);
+
+            slider.oninput = (e) => {
+                lfo.rate = parseFloat(sliderToRate(parseInt(e.target.value)).toFixed(3));
+                updateDisplay();
+            };
+            slider.onchange = () => this.render();
         }
 
-        // --- 2. FINE SLIDER ---
-        const fine = document.createElement('input');
-        fine.type = 'range';
-        fine.className = 'micro-slider';
-        
-        if (lfo.sync) {
-            const currentAnchor = findClosestStraight(lfo.syncRateIndex);
-            const currentOffset = lfo.syncRateIndex - currentAnchor;
-            
-            fine.min = -5;
-            fine.max = 5;
-            fine.step = 1;
-            fine.value = currentOffset;
-            
-            fine.oninput = (e) => {
-                const offset = parseInt(e.target.value);
-                let newIndex = currentAnchor + offset;
-                // Boundary check
-                if (newIndex < 0) newIndex = 0;
-                if (newIndex >= LFO.SYNC_RATES.length) newIndex = LFO.SYNC_RATES.length - 1;
-                
-                lfo.syncRateIndex = newIndex;
-                
-                // Live Update
-                // Updating syncRateIndex affects the Label displayed in GrossVal
-                updateGrossDisplay(); 
-                updateFineDisplay();
-            };
-            fine.onchange = () => this.render();
-        } else {
-            // Hz Fine
-            const decPart = lfo.rate % 1;
-            fine.min = 0.0; fine.max = 0.999; fine.step = 0.001;
-            fine.value = decPart;
-            
-            fine.oninput = (e) => {
-                const newDec = parseFloat(e.target.value);
-                const currentInt = Math.floor(lfo.rate);
-                lfo.rate = currentInt + newDec;
-                
-                // Live Update
-                updateFineDisplay();
-            };
-            fine.onchange = () => this.render();
-        }
-
-        stack.appendChild(gross);
-        stack.appendChild(fine);
-        cell.appendChild(stack);
+        cell.appendChild(slider);
         grid.appendChild(cell);
     }
 
