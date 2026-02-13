@@ -146,7 +146,15 @@ input[type=range]::-moz-range-track {
     background: #6ee7b7;
 }
 
-/* Existing Knob Container Legacy Support (Keep if needed elsewhere, but param-grid replaces it for granular) */
+/* Pitch section slider color override */
+.param-grid input[type=range][data-param="pitchSemi"]::-webkit-slider-thumb { background: #818cf8; box-shadow: 0 0 8px rgba(129,140,248,0.4); }
+.param-grid input[type=range][data-param="pitchSemi"]::-moz-range-thumb { background: #818cf8; box-shadow: 0 0 8px rgba(129,140,248,0.4); }
+.param-grid input[type=range][data-param="pitchFine"]::-webkit-slider-thumb { background: #818cf8; box-shadow: 0 0 8px rgba(129,140,248,0.4); }
+.param-grid input[type=range][data-param="pitchFine"]::-moz-range-thumb { background: #818cf8; box-shadow: 0 0 8px rgba(129,140,248,0.4); }
+.param-grid input[type=range][data-param="pitchSemi"]:hover::-webkit-slider-thumb { background: #a5b4fc; }
+.param-grid input[type=range][data-param="pitchFine"]:hover::-webkit-slider-thumb { background: #a5b4fc; }
+
+/* Existing Knob Container Legacy Support */
 .knob-container {
     display: flex;
     flex-direction: column;

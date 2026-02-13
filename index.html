@@ -378,23 +378,29 @@
                                     class="param-slider accent-cyan-500">
                                 <div class="value-display">0%</div>
 
-                                <label>Pitch (ST)</label>
-                                <input type="range" min="-24" max="24" step="1" data-param="pitchSemi"
-                                    class="param-slider">
-                                <div class="value-display">0st</div>
-
-                                <label>Fine (ct)</label>
-                                <input type="range" min="-100" max="100" step="1" data-param="pitchFine"
-                                    class="param-slider accent-cyan-500">
-                                <div class="value-display">0ct</div>
-
-                                <!-- Pitch Harmony Controls (built by JS) -->
-                                <div id="pitchHarmonySection"></div>
-
                                 <label>Rel Dur</label>
                                 <input type="range" min="0.01" max="5.0" step="0.01" data-param="relGrain"
                                     class="param-slider">
                                 <div class="value-display">2.00s</div>
+
+                                <!-- PITCH SECTION -->
+                                <div class="section-header" id="pitchSectionHeader" style="color:#818cf8; border-bottom-color:rgba(129,140,248,0.2); display:flex; justify-content:space-between; align-items:center;">
+                                    <span>PITCH</span>
+                                    <button id="pitchSnapBtn" class="wave-btn" style="font-size:7px; padding:1px 6px; font-weight:800; letter-spacing:0.5px;">SNAP ●</button>
+                                </div>
+
+                                <label>Pitch (ST)</label>
+                                <input type="range" min="-24" max="24" step="1" data-param="pitchSemi"
+                                    class="param-slider" style="accent-color:#818cf8;">
+                                <div class="value-display">0st</div>
+
+                                <label>Fine (ct)</label>
+                                <input type="range" min="-100" max="100" step="1" data-param="pitchFine"
+                                    class="param-slider" style="accent-color:#818cf8;">
+                                <div class="value-display">0ct</div>
+
+                                <!-- Pitch Harmony Controls (SRoot, SType, CType, Voice — built by JS) -->
+                                <div id="pitchHarmonySection" style="grid-column: 1 / -1;"></div>
 
                                 <!-- ENVELOPE SECTION -->
                                 <div class="section-header">ENV (ADR)</div>
