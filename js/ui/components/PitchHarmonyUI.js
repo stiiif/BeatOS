@@ -111,7 +111,19 @@ export class PitchHarmonyUI {
         btn.className = `wave-btn ${p.pitchSnap ? 'active' : ''}`;
         btn.innerText = p.pitchSnap ? 'SNAP \u25CF' : 'SNAP \u25CB';
         btn.style.cssText = `font-size:7px; padding:1px 6px; font-weight:800; letter-spacing:0.5px; cursor:pointer; ${p.pitchSnap ? 'color:#a5b4fc; background:#1e1b4b; border:1px solid #4338ca;' : 'color:#444; background:#111; border:1px solid #333;'}`;
-        btn.onclick = () => { p.pitchSnap = !p.pitchSnap; this.render(); };
+        btn.onclick = () => { p.pitchSnap = !p.pitchSnap; this._wireSnap(p); this._updateSliderStep(p); };
+        this._updateSliderStep(p);
+    }
+
+    _updateSliderStep(p) {
+        const slider = document.querySelector('input[data-param="pitchSemi"]');
+        if (!slider) return;
+        slider.step = p.pitchSnap ? '1' : '0.01';
+        // When snapping on, round current value to nearest integer
+        if (p.pitchSnap) {
+            p.pitchSemi = Math.round(p.pitchSemi);
+            slider.value = p.pitchSemi;
+        }
     }
 }
 

@@ -312,18 +312,17 @@ function _buildVoicings(chord, inv, spread) {
 class BeatOSGranularProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        this.MAX_VOICES = 64;
-        this.safetyLimit = 400;
+        this.MAX_VOICES = 256;
+        this.safetyLimit = 800;
         this._grainCounter = 0; // for chord cycle mode
 
-        // OPT: Pre-allocate voice pool as flat typed arrays for cache-friendly access
-        // Each voice has fixed-size properties stored contiguously
+        // Pre-allocate voice pool
         this.voices = Array(this.MAX_VOICES).fill(null).map((_, id) => ({
             id, active: false, buffer: null, bufferLength: 0,
             position: 0, phase: 0, grainLength: 0, pitch: 1.0, velocity: 1.0,
             trackId: 0, releasing: false, releaseAmp: 1.0, invGrainLength: 0,
             cleanMode: false, edgeCrunch: 0.0, orbit: 0.0,
-            panL: 1.0, panR: 1.0 // Equal-power pan gains
+            panL: 1.0, panR: 1.0
         }));
         this.activeVoiceIndices = [];
         this.activeNotes = [];
@@ -332,14 +331,11 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         this.lastReportedCount = 0;
         this._rngState = 0xCAFEBABE;
         
-        // Smoothed voice count for amplitude scaling (avoids crackle from instant jumps)
-        this._smoothedVoiceCount = 0;
+        // Per-track smoothed voice counts for independent amplitude scaling
+        this._perTrackSmoothed = new Float32Array(32); // up to 32 tracks
+        this._perTrackCount = new Uint16Array(32);     // actual count per block
 
-        // OPT: Track which output indices have active voices this block
-        // Avoids clearing/clipping all 32 outputs when only a few are active
         this._dirtyOutputs = new Uint8Array(32);
-
-        // OPT: Free-list for activeNotes to avoid splice() GC pressure
         this._notePool = [];
 
         this.LUT_SIZE = 4096;
@@ -368,7 +364,21 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
                 case 'setBuffer': this.trackBuffers.set(Number(data.trackId), data.buffer); break;
                 case 'stopAll': this.stopAllVoices(); this.activeNotes.length = 0; break;
                 case 'stopTrack': this.stopTrack(Number(data.trackId)); break;
-                case 'setMaxGrains': this.safetyLimit = data.max; break;
+                case 'setMaxGrains': 
+                    this.safetyLimit = data.max;
+                    // Grow voice pool if needed
+                    while (this.voices.length < data.max && this.voices.length < 1024) {
+                        const id = this.voices.length;
+                        this.voices.push({
+                            id, active: false, buffer: null, bufferLength: 0,
+                            position: 0, phase: 0, grainLength: 0, pitch: 1.0, velocity: 1.0,
+                            trackId: 0, releasing: false, releaseAmp: 1.0, invGrainLength: 0,
+                            cleanMode: false, edgeCrunch: 0.0, orbit: 0.0,
+                            panL: 1.0, panR: 1.0
+                        });
+                    }
+                    this.MAX_VOICES = Math.min(data.max, this.voices.length);
+                    break;
             }
         };
     }
@@ -454,13 +464,17 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
 
         if (this.activeVoiceIndices.length === 0) return true;
 
-        // Smooth voice count to prevent amplitude jumps (crackle source)
-        const actualCount = this.activeVoiceIndices.length;
-        this._smoothedVoiceCount += (actualCount - this._smoothedVoiceCount) * 0.05; // ~20ms smoothing
-        const smoothCount = Math.max(1, this._smoothedVoiceCount);
+        // Per-track voice counting
+        this._perTrackCount.fill(0);
+        for (let i = 0; i < this.activeVoiceIndices.length; i++) {
+            const tId = this.voices[this.activeVoiceIndices[i]].trackId;
+            if (tId < 32) this._perTrackCount[tId]++;
+        }
         
-        const normalScale = 1.0 / (1.0 + (smoothCount * 0.15));
-        const cleanScale = 1.0 / smoothCount;
+        // Per-track smoothed counts for amplitude scaling
+        for (let t = 0; t < 32; t++) {
+            this._perTrackSmoothed[t] += (this._perTrackCount[t] - this._perTrackSmoothed[t]) * 0.05;
+        }
 
         // --- 2. DSP LOOP ---
         const wLUT = this.windowLUT;
@@ -489,7 +503,13 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
             const pitch = voice.pitch, gLen = voice.grainLength, invGL = voice.invGrainLength;
             const start = voice.position * bufLen;
             const baseAmp = voice.velocity;
+            
+            // Per-track amplitude scaling based on this track's voice count only
+            const trackSmoothed = Math.max(1, this._perTrackSmoothed[tId] || 1);
+            const normalScale = 1.0 / (1.0 + (trackSmoothed * 0.15));
+            const cleanScale = 1.0 / trackSmoothed;
             const trackScale = voice.cleanMode ? cleanScale : normalScale;
+            
             const vPanL = voice.panL, vPanR = voice.panR;
 
             // OPT: Pre-compute edgeCrunch outside inner loop

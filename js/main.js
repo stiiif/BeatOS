@@ -808,7 +808,7 @@ const maxGrainsInput = document.getElementById('maxGrainsInput');
 if (maxGrainsInput) {
     maxGrainsInput.addEventListener('change', (e) => {
         let val = parseInt(e.target.value);
-        if (isNaN(val) || val < 10) val = 400;
+        if (isNaN(val) || val < 10) val = 800;
         granularSynth.setMaxGrains(val);
     });
 }
