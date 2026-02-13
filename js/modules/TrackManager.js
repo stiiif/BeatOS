@@ -62,7 +62,7 @@ export class TrackManager {
         t.params.spray = Math.random() * 0.1;
         t.params.grainSize = 0.05 + Math.random() * 0.25;
         t.params.stereoSpread = Math.random() * 0.8;
-        t.params.filter = 2000 + Math.random() * 10000;
+        t.params.filter = 2000 + Math.random() * 18000;
         t.params.hpFilter = 20 + Math.random() * 500;
         t.params.pitch = 0.5 + Math.random() * 1.5;
         
@@ -238,7 +238,7 @@ export class TrackManager {
             params.density = 10;
             params.pitch = 1.0;
             params.relGrain = 0.8;
-            params.filter = 10000;
+            params.filter = 20000;
             params.hpFilter = 100;
         } else {
             // Default Fallback (Percussion/Misc)

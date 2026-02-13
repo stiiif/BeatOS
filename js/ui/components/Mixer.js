@@ -940,18 +940,24 @@ export class Mixer {
 
         const controls = document.createElement('div');
         controls.className = 'strip-controls';
-        const limiterDiv = document.createElement('div');
-        limiterDiv.className = 'mixer-pot';
-        limiterDiv.style.height = "auto";
-        limiterDiv.innerHTML = `
-            <label style="color:#ef4444; font-size:0.5rem;">LIMITER</label>
-            <div class="knob-outer" style="opacity:0.8; width:28px; height:28px;">
-                <div class="knob-inner" style="transform:rotate(135deg)">
-                    <div class="knob-line" style="background:#ef4444;box-shadow:0 0 5px red"></div>
-                </div>
-            </div>
-        `;
-        controls.appendChild(limiterDiv);
+
+        // Functional limiter knob: 0 = off (threshold 0dB, ratio 1), 1 = hard limit (threshold -20dB, ratio 20)
+        controls.appendChild(this.createKnob('Limit', 1.0, 0, 1, 0.01, (v) => {
+            const limiter = this.audioEngine.masterBus?.limiter;
+            if (!limiter) return;
+            if (v < 0.01) {
+                // Off: bypass by setting ratio to 1
+                limiter.threshold.value = 0;
+                limiter.ratio.value = 1;
+            } else {
+                // threshold: 0dB at v=0 down to -20dB at v=1
+                limiter.threshold.value = -20 * v;
+                limiter.ratio.value = 4 + (v * 16); // 4:1 at low, 20:1 at max
+                limiter.attack.value = 0.003;
+                limiter.release.value = 0.1 + (1 - v) * 0.15; // faster release at higher settings
+            }
+        }, 'knob-color-red', true));
+
         strip.appendChild(controls);
 
         const faderComp = this.createFaderSection(this.audioEngine.masterBus, (v) => {

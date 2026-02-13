@@ -74,7 +74,7 @@ export class Track {
             
             // --- Track Bus (Mixer) ---
             hpFilter: 20,
-            filter: 10000, 
+            filter: 20000, 
             volume: 0.8, 
             pan: 0,
             

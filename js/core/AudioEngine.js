@@ -487,7 +487,7 @@ export class AudioEngine {
     getMappedFrequency(value, type) {
         let min, max;
         if (type === 'hp') { min = 20; max = 5000; }
-        else { min = 100; max = 10000; }
+        else { min = 100; max = 20000; }
         let norm = (value - min) / (max - min);
         norm = Math.max(0, Math.min(1, norm));
         if (type === 'lp') return min + (max - min) * Math.pow(norm, 3);

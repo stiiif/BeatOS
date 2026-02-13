@@ -326,7 +326,7 @@ input[type=range].micro-slider::-webkit-slider-thumb {
 }
 
 .sync-btn {
-    width: 40%;
+    width: 33.33%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -348,7 +348,7 @@ input[type=range].micro-slider::-webkit-slider-thumb {
 .c-amber .sync-btn.active { background: #78350f; }
 
 .sync-val {
-    width: 60%;
+    width: 33.33%;
     display: flex;
     align-items: center;
     justify-content: center;
