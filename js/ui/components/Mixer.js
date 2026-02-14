@@ -2,6 +2,7 @@
 import { TRACKS_PER_GROUP } from '../../utils/constants.js';
 import { globalBus } from '../../events/EventBus.js';
 import { MixerAutomation } from '../../modules/MixerAutomation.js';
+import { getEngineColor, hasTrigs, hasEngine } from '../../utils/engineColors.js';
 
 export class Mixer {
     constructor(containerSelector, trackManager, audioEngine) {
@@ -131,6 +132,34 @@ export class Mixer {
         });
     }
 
+    /**
+     * Refresh track strip header colors (engine type) and no-trig dimming.
+     * Call this after step changes, engine changes, or mute toggles.
+     */
+    refreshTrackVisuals() {
+        if (!this.container) return;
+        const tracks = this.trackManager.getTracks();
+        const strips = this.container.querySelectorAll('.track-strip');
+        tracks.forEach((track, i) => {
+            const strip = strips[i];
+            if (!strip) return;
+
+            // Update header color
+            const headerSpan = this._headerEls.get(`track:${track.id}`);
+            if (headerSpan) {
+                const ec = getEngineColor(track);
+                headerSpan.style.color = ec.text;
+            }
+
+            // Dim if no trigs and not muted
+            if (!track.muted) {
+                strip.style.opacity = hasTrigs(track) ? '1' : '0.4';
+            } else {
+                strip.style.opacity = '0.4';
+            }
+        });
+    }
+
     /** Check if a lane was written to during the current record pass */
     _recordingLanes_has(key) {
         return this.mixerAutomation && this.mixerAutomation._recordingLanes.has(key);
@@ -247,7 +276,12 @@ export class Mixer {
         });
 
         for(let i=0; i<4; i++) {
-            mixerContainer.appendChild(this.createGroupStrip(i));
+            // Only show group if it has at least one track
+            const startTrack = i * TRACKS_PER_GROUP;
+            const endTrack = Math.min(startTrack + TRACKS_PER_GROUP, tracks.length);
+            if (startTrack < tracks.length) {
+                mixerContainer.appendChild(this.createGroupStrip(i));
+            }
         }
 
         if (this.audioEngine.returnBuses) {
@@ -730,9 +764,19 @@ export class Mixer {
         header.style.cursor = 'pointer';
         const headerSpan = document.createElement('span');
         headerSpan.className = 'strip-num';
+
+        // Color header by engine type
+        const ec = getEngineColor(track);
+        headerSpan.style.color = ec.text;
         headerSpan.innerText = track.id + 1;
+
         header.appendChild(headerSpan);
         this._headerEls.set(`track:${track.id}`, headerSpan);
+
+        // Dim entire strip if no trigs (and not muted — mute dimming is handled elsewhere)
+        if (!hasTrigs(track) && !track.muted) {
+            strip.style.opacity = '0.4';
+        }
         header.onclick = () => {
             if (this._isStarHeld && this.mixerAutomation) {
                 // * + click on header = clear all automation for this track
@@ -787,6 +831,12 @@ export class Mixer {
     createGroupStrip(index) {
         const strip = document.createElement('div');
         strip.className = 'mixer-strip group-strip';
+
+        // Color group strip with the same group color as the sequencer
+        const hue = index * 45;
+        strip.style.backgroundColor = `hsl(${hue}, 25%, 12%)`;
+        strip.style.borderColor = `hsl(${hue}, 40%, 25%)`;
+
         const getBus = () => this.audioEngine.groupBuses[index];
         const gk = (param) => MixerAutomation.laneKey('group', index, param);
         
@@ -794,7 +844,7 @@ export class Mixer {
         header.className = 'strip-header';
         const headerSpan = document.createElement('span');
         headerSpan.className = 'strip-name';
-        headerSpan.style.color = '#10b981';
+        headerSpan.style.color = `hsl(${hue}, 70%, 60%)`;
         headerSpan.innerText = `GRP ${index+1}`;
         header.appendChild(headerSpan);
         this._headerEls.set(`group:${index}`, headerSpan);

@@ -1,5 +1,6 @@
 // js/ui/components/SequencerGrid.js
 import { NUM_STEPS, TRACKS_PER_GROUP } from '../../utils/constants.js';
+import { getEngineColor, hasTrigs } from '../../utils/engineColors.js';
 
 export class SequencerGrid {
     constructor() {
@@ -115,6 +116,34 @@ export class SequencerGrid {
                 }
             }
         });
+    }
+
+    /**
+     * Refresh visual state for all tracks:
+     * - Label color matches engine type (orange=909, blue=sample, grey=generated, purple=auto)
+     * - Rows with no trigs are dimmed like muted tracks
+     */
+    refreshTrackVisuals() {
+        for (let i = 0; i < this.tracks.length; i++) {
+            const t = this.tracks[i];
+            const label = this.trackLabelElements[i];
+            const row = this.trackRowElements[i];
+            if (!label) continue;
+
+            // Engine color on label
+            const ec = getEngineColor(t);
+            label.style.color = ec.text;
+            label.style.backgroundColor = ec.bg;
+
+            // No-trig dimming (don't override if actually muted)
+            if (row && !t.muted) {
+                const trigs = hasTrigs(t);
+                row.forEach(el => {
+                    if (el !== label) el.style.opacity = trigs ? '1.0' : '0.35';
+                });
+                label.style.opacity = trigs ? '1.0' : '0.5';
+            }
+        }
     }
 
     appendTrackRow(trk, visualizerCallback, randomChokeMode, randomChokeGroups, onToggleStep, onToggleMute, onToggleSolo, onToggleStepLock, onToggleMuteGroup, onToggleSoloGroup, onClearTrack, onClearGroup, onToggleIgnoreRandom, onToggleIgnoreVelocityParams, onRandomizeTrack, onSelectTrack) {

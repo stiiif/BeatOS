@@ -138,6 +138,7 @@ export class UIManager {
     toggleStep(trk, step) {
         const randomChokeInfo = this.trackOps.getRandomChokeInfo();
         this.grid.toggleStep(trk, step, () => this.trackOps.applyRandomChokeDimming(), randomChokeInfo.mode);
+        if (this._onStepToggle) this._onStepToggle(trk, step);
     }
 
     updateMatrixHead(currentStep, totalStepsPlayed) { this.grid.updateMatrixHead(currentStep, totalStepsPlayed); }

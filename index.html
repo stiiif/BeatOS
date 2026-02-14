@@ -213,8 +213,8 @@
                 <!-- Row 2: Reset + Actions -->
                 <div class="flex gap-1 w-full justify-between items-center">
 
-                    <!-- NEW GENERATOR ROW -->
-                    <div class="flex gap-1 flex-1">
+                    <!-- ENGINE TYPE SELECTOR (collapses after selection) -->
+                    <div id="engineTypeSelector" class="flex gap-1 flex-1">
                         <!-- Granular Synth (Grey) -->
                         <button
                             class="granular-gen-btn text-[9px] font-bold bg-neutral-800 hover:bg-neutral-700 text-neutral-400 border border-neutral-700 hover:text-white px-1 py-1 rounded transition flex-1 text-center"
@@ -252,6 +252,11 @@
                         <!-- Auto (Purple) -->
                         <button id="btnOTO"
                             class="text-[9px] font-bold bg-indigo-900/30 text-indigo-400 border border-indigo-900/50 hover:bg-indigo-800 hover:text-white px-1 py-1 rounded transition flex-1 text-center">OTO</button>
+                    </div>
+                    <!-- Collapsed engine indicator (shown after engine is selected) -->
+                    <div id="engineCollapsed" class="hidden flex gap-1 flex-1 items-center">
+                        <span id="engineColLabel" class="text-[9px] font-bold px-2 py-1 rounded border" style="min-width:40px; text-align:center;">—</span>
+                        <button id="engineExpandBtn" class="text-[9px] text-neutral-500 hover:text-white px-1 py-0.5 rounded border border-neutral-700 hover:border-neutral-500 transition" title="Change engine">CHG</button>
                     </div>
                 </div>
                 <div id="chokeGroupContainer" class="flex gap-0.5 w-full">

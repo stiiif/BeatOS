@@ -18,6 +18,7 @@ import { Randomizer } from './modules/Randomizer.js';
 import { RenderLoop } from './core/RenderLoop.js';
 import { SnapshotBank } from './modules/SnapshotBank.js';
 import { SnapshotBankUI } from './ui/components/SnapshotBankUI.js';
+import { getEngineColor, hasEngine } from './utils/engineColors.js';
 import { SongSequencer } from './modules/SongSequencer.js';
 import { SongPanel } from './ui/components/SongPanel.js';
 import { MorphEngine } from './modules/MorphEngine.js';
@@ -71,7 +72,53 @@ scheduler.setRandomizer(randomizer, { audioEngine, effectsManager, selectedTrack
 
 function updateTrackControlsVisibility() {
     uiManager.updateTrackControlsVisibility();
+    updateEngineSelector();
 }
+
+/** Update engine selector collapse state and colors for current track */
+function updateEngineSelector() {
+    const t = tracks[uiManager.getSelectedTrackIndex()];
+    if (!t) return;
+    const selector = document.getElementById('engineTypeSelector');
+    const collapsed = document.getElementById('engineCollapsed');
+    const colLabel = document.getElementById('engineColLabel');
+    if (!selector || !collapsed || !colLabel) return;
+
+    if (hasEngine(t)) {
+        // Collapse — show compact label
+        selector.classList.add('hidden');
+        collapsed.classList.remove('hidden');
+        const ec = getEngineColor(t);
+        colLabel.style.color = ec.text;
+        colLabel.style.backgroundColor = ec.bg;
+        colLabel.style.borderColor = ec.border;
+        // Build label text
+        let name = ec.label;
+        if (t.type === 'simple-drum') name = '909';
+        else if (t.type === 'automation') name = 'AUTO';
+        else if (t.customSample) name = 'SMP';
+        else if (t.buffer) name = 'GEN';
+        colLabel.textContent = name;
+    } else {
+        // No engine — show full selector
+        selector.classList.remove('hidden');
+        collapsed.classList.add('hidden');
+    }
+}
+
+/** Refresh visual state for sequencer grid and mixer (engine colors + no-trig dimming) */
+function refreshAllTrackVisuals() {
+    if (uiManager.sequencerGrid) uiManager.sequencerGrid.refreshTrackVisuals();
+    if (uiManager.mixer) uiManager.mixer.refreshTrackVisuals();
+}
+
+// Expand engine selector on CHG button click
+document.getElementById('engineExpandBtn')?.addEventListener('click', () => {
+    const selector = document.getElementById('engineTypeSelector');
+    const collapsed = document.getElementById('engineCollapsed');
+    if (selector) selector.classList.remove('hidden');
+    if (collapsed) collapsed.classList.add('hidden');
+});
 
 // Wire step pitch lane toggle
 const pitchLaneBtn = document.getElementById('togglePitchLane');
@@ -83,6 +130,11 @@ const originalSelectTrack = uiManager.selectTrack.bind(uiManager);
 uiManager.selectTrack = (idx, cb) => {
     originalSelectTrack(idx, cb);
     updateTrackControlsVisibility();
+};
+
+// Refresh visuals after step toggles (for no-trig dimming)
+uiManager._onStepToggle = (trk, step) => {
+    refreshAllTrackVisuals();
 };
 
 function addTrack() {
@@ -284,6 +336,7 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     visualizer.triggerRedraw();
     updateTrackControlsVisibility();
     uiManager.updateLfoUI();
+    refreshAllTrackVisuals();
 });
 
 document.getElementById('playBtn').addEventListener('click', () => {
@@ -525,6 +578,7 @@ document.querySelectorAll('.granular-gen-btn').forEach(btn => {
             const originalBg = e.target.style.backgroundColor;
             e.target.style.backgroundColor = '#059669';
             setTimeout(() => { e.target.style.backgroundColor = originalBg; }, 200);
+            refreshAllTrackVisuals();
         }
     });
 });
@@ -575,6 +629,7 @@ document.querySelectorAll('.type-909-btn').forEach(btn => {
         const originalBg = e.target.style.backgroundColor;
         e.target.style.backgroundColor = '#ea580c'; // Orange-600
         setTimeout(() => { e.target.style.backgroundColor = originalBg; }, 200);
+        refreshAllTrackVisuals();
     });
 });
 
@@ -639,6 +694,7 @@ if (btnOTO) {
         const originalBg = btnOTO.style.backgroundColor;
         btnOTO.style.backgroundColor = '#4f46e5';
         setTimeout(() => { btnOTO.style.backgroundColor = originalBg; }, 200);
+        refreshAllTrackVisuals();
     });
 }
 
@@ -668,6 +724,7 @@ if (sampleInput) {
             btn.innerHTML = 'SMP'; // Reset text
             btn.classList.add('bg-sky-600');
             setTimeout(() => { btn.classList.remove('bg-sky-600'); btn.disabled = false; }, 1500);
+            refreshAllTrackVisuals();
         } catch (err) { alert('Failed: ' + err.message); btn.innerHTML = originalText; btn.disabled = false; }
         e.target.value = '';
     });
@@ -724,6 +781,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
                 if (typeof effectControls !== 'undefined' && effectControls.render) effectControls.render();
                 tracks.forEach(t => granularSynth.syncTrackBusParams(t));
                 snapshotBankUI.refreshAll();
+                refreshAllTrackVisuals();
             }
         });
     }
