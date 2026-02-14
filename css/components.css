@@ -57,3 +57,109 @@
     70% { box-shadow: 0 0 0 4px rgba(139, 92, 246, 0); }
     100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
 }
+
+/* ============================================================================
+   SNAPSHOT BANK — 16-slot header buttons
+   ============================================================================ */
+
+.snap-slot {
+    width: 24px;
+    height: 18px;
+    font-size: 9px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    border: 1px solid #333;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.15s;
+    padding: 0;
+    line-height: 1;
+    text-align: center;
+}
+
+.snap-slot.snap-empty {
+    background: #1a1a1a;
+    color: #444;
+    border-color: #2a2a2a;
+}
+.snap-slot.snap-empty:hover {
+    background: #222;
+    color: #555;
+}
+
+.snap-slot.snap-occupied {
+    background: #164e63;
+    color: #67e8f9;
+    border-color: #0e7490;
+}
+.snap-slot.snap-occupied:hover {
+    background: #155e75;
+    border-color: #22d3ee;
+}
+
+.snap-slot.snap-active {
+    background: #0e7490 !important;
+    color: #fff !important;
+    border-color: #22d3ee !important;
+    box-shadow: 0 0 6px rgba(34, 211, 238, 0.4);
+    animation: snap-pulse 2s infinite;
+}
+
+.snap-slot.snap-clearing {
+    background: #7f1d1d !important;
+    color: #fca5a5 !important;
+    border-color: #ef4444 !important;
+    transform: scale(0.9);
+}
+
+.snap-slot.snap-just-saved {
+    background: #14532d !important;
+    color: #4ade80 !important;
+    border-color: #22c55e !important;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+}
+
+@keyframes snap-pulse {
+    0% { box-shadow: 0 0 4px rgba(34, 211, 238, 0.4); }
+    50% { box-shadow: 0 0 8px rgba(34, 211, 238, 0.2); }
+    100% { box-shadow: 0 0 4px rgba(34, 211, 238, 0.4); }
+}
+
+.snap-add-btn {
+    width: 24px;
+    height: 38px;
+    font-size: 10px;
+    background: #1c1c1c;
+    color: #10b981;
+    border: 1px solid #333;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.snap-add-btn:hover {
+    background: #14532d;
+    border-color: #22c55e;
+    color: #4ade80;
+}
+.snap-add-btn.snap-no-mem {
+    background: #7f1d1d !important;
+    border-color: #ef4444 !important;
+    color: #fca5a5 !important;
+    animation: shake 0.3s;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-3px); }
+    75% { transform: translateX(3px); }
+}
+
+/* Snap button "UNDO" state (has last live) */
+#snapshotBtn.snap-has-live {
+    background-color: #92400e !important;
+    color: #fbbf24 !important;
+    border-color: #d97706 !important;
+}

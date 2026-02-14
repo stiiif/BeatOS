@@ -19,7 +19,8 @@
 <body class="h-screen flex flex-col overflow-hidden">
 
     <header
-        class="h-12 bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-4 shrink-0 z-20">
+        class="bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-4 shrink-0 z-20"
+        style="min-height:52px; padding-top:4px; padding-bottom:4px;">
         <div class="flex items-center gap-4">
             <h1 class="text-emerald-500 font-bold text-lg"><i class="fas fa-cubes mr-2"></i>GRAIN-DYN</h1>
             <div class="h-6 w-px bg-neutral-700"></div>
@@ -42,7 +43,8 @@
                     class="bg-transparent border-none w-10 text-xs text-center focus:outline-none text-neutral-400 font-mono focus:text-white hover:text-neutral-200 transition">
             </div>
         </div>
-        <div class="flex items-center gap-2">
+        <!-- Snapshot bank buttons injected here by SnapshotBankUI.render() -->
+        <div id="headerRightSection" class="flex items-center gap-2">
             <button id="snapshotBtn"
                 class="text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2 py-1 rounded transition border border-neutral-700 w-16">Snap</button>
             <button id="rndChokeBtn"

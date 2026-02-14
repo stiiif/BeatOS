@@ -65,8 +65,10 @@ export class PresetManager {
 
         const presetData = {
             bpm: bpm,
-            version: "3.0",
+            version: "4.0",
             tracks: tracksData,
+            // Snapshot Bank (16 slots)
+            snapshots: extraState.snapshotBank ? extraState.snapshotBank.serialize() : [],
             // FX Engines
             effectsManager: extraState.effectsManager ? extraState.effectsManager.effects.map(fx => ({
                 id: fx.id,
@@ -336,6 +338,11 @@ export class PresetManager {
         // --- RESTORE MASTER VOLUME ---
         if (data.masterVolume !== undefined && audioEngine.masterBus && audioEngine.masterBus.volume) {
             audioEngine.masterBus.volume.gain.value = data.masterVolume;
+        }
+
+        // --- RESTORE SNAPSHOT BANK ---
+        if (data.snapshots && extraState.snapshotBank) {
+            extraState.snapshotBank.deserialize(data.snapshots);
         }
 
         // Signal that a full refresh is needed (mixer, FX UI)

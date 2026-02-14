@@ -16,6 +16,8 @@ import { EffectsManager } from './modules/EffectsManager.js';
 import { EffectControls } from './ui/components/EffectControls.js';
 import { Randomizer } from './modules/Randomizer.js';
 import { RenderLoop } from './core/RenderLoop.js';
+import { SnapshotBank } from './modules/SnapshotBank.js';
+import { SnapshotBankUI } from './ui/components/SnapshotBankUI.js';
 
 // Import all modulator types to ensure they register in the factory
 import './modules/modulators/index.js';
@@ -39,6 +41,10 @@ const randomizer = new Randomizer();
 randomizer.loadConfig('./js/config/randomization-config.json').catch(e => console.warn('[Randomizer] Config load failed, falling back to defaults:', e));
 
 const layoutManager = new LayoutManager();
+
+// Snapshot Bank (16 slots)
+const snapshotBank = new SnapshotBank();
+const snapshotBankUI = new SnapshotBankUI(snapshotBank);
 
 scheduler.setTrackManager(trackManager);
 scheduler.setTracks(trackManager.getTracks());
@@ -168,6 +174,45 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
 
     // Wire snapshot context so Snap/Restore covers all Rand Prms params
     uiManager.setSnapshotContext(randomizer, audioEngine, effectsManager);
+
+    // Wire SnapshotBank context
+    snapshotBank.setContext({
+        tracks,
+        audioEngine,
+        effectsManager,
+        mixerAutomation: uiManager.mixer ? uiManager.mixer.mixerAutomation : null,
+        scheduler
+    });
+    snapshotBank.setUIRefreshCallback(() => {
+        // Full UI refresh after snapshot recall
+        for (let i = 0; i < tracks.length; i++) {
+            uiManager.updateTrackStateUI(i);
+            // Refresh grid step buttons
+            const matrixEls = uiManager.matrixStepElements;
+            for (let s = 0; s < tracks[i].steps.length; s++) {
+                const btn = matrixEls[i]?.[s];
+                if (!btn) continue;
+                btn.className = 'step-btn';
+                if (tracks[i].type === 'automation') {
+                    if (tracks[i].steps[s] > 0) btn.classList.add('active', `auto-level-${tracks[i].steps[s]}`);
+                } else {
+                    if (tracks[i].steps[s] > 0) btn.classList.add(`vel-${tracks[i].steps[s]}`);
+                }
+            }
+        }
+        uiManager.selectTrack(uiManager.getSelectedTrackIndex(), () => {
+            visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex());
+            visualizer.triggerRedraw();
+        });
+        if (uiManager.mixer) uiManager.mixer.render();
+        effectControls.render();
+        updateTrackControlsVisibility();
+    });
+
+    // Render Snapshot Bank UI into header
+    const header = document.querySelector('header');
+    const rightSection = document.getElementById('headerRightSection');
+    snapshotBankUI.render(header, rightSection);
 
     uiManager.selectTrack(0, () => {
         visualizer.setSelectedTrackIndex(0);
@@ -567,7 +612,16 @@ if (sampleInput) {
 }
 
 document.getElementById('clearTrackBtn').addEventListener('click', () => { uiManager.clearTrack(uiManager.getSelectedTrackIndex()); });
-document.getElementById('snapshotBtn').addEventListener('click', () => { uiManager.toggleSnapshot(); });
+document.getElementById('snapshotBtn').addEventListener('click', () => {
+    // If snapshot bank has a "last live" state (auto-saved before recall), restore it
+    if (snapshotBank.hasLastLive()) {
+        snapshotBank.restoreLastLive();
+        snapshotBankUI.refreshAll();
+    } else {
+        // Fall back to old toggle snapshot behavior
+        uiManager.toggleSnapshot();
+    }
+});
 document.getElementById('rndChokeBtn').addEventListener('click', () => { uiManager.toggleRandomChoke(); });
 
 document.getElementById('saveBtn').addEventListener('click', async () => {
@@ -577,7 +631,8 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     try { await presetManager.savePreset(tracks, scheduler.getBPM(), {
         effectsManager,
         mixerAutomation: uiManager.mixer ? uiManager.mixer.mixerAutomation : null,
-        audioEngine
+        audioEngine,
+        snapshotBank
     }); } catch (e) { console.error(e); alert("Save failed"); }
     finally { btn.innerHTML = originalHtml; btn.disabled = false; }
 });
@@ -593,13 +648,12 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
             effectsManager,
             mixerAutomation: uiManager.mixer ? uiManager.mixer.mixerAutomation : null,
             audioEngine,
+            snapshotBank,
             onLoadComplete: () => {
-                // Re-render mixer to sync knobs/faders with restored params
                 if (uiManager.mixer) uiManager.mixer.render();
-                // Re-render FX controls
                 if (typeof effectControls !== 'undefined' && effectControls.render) effectControls.render();
-                // Sync track bus AudioNodes
                 tracks.forEach(t => granularSynth.syncTrackBusParams(t));
+                snapshotBankUI.refreshAll();
             }
         });
     }
