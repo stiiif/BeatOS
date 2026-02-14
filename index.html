@@ -487,7 +487,7 @@
                                 <button id="samplerSrcBtn"
                                     class="text-[9px] bg-emerald-900/40 hover:bg-emerald-800 text-emerald-300 px-2 py-1 rounded transition border border-emerald-900/50">SRC</button>
                             </div>
-                            <div class="param-grid">
+                            <div class="param-grid smp-grid">
                                 <div class="section-header">SAMPLE</div>
 
                                 <label>Start</label>
@@ -499,12 +499,16 @@
                                 <div class="smp-val">1.000</div>
 
                                 <label>Loop</label>
-                                <select data-smp="loopMode" class="smp-select" style="font-size:9px; background:#1a1a1a; color:#ccc; border:1px solid #333; border-radius:3px; padding:2px 4px; width:100%;">
+                                <select data-smp="loopMode" class="smp-select" style="font-size:8px; background:#1a1a1a; color:#ccc; border:1px solid #333; border-radius:3px; padding:1px 3px; width:100%;">
                                     <option value="off">Off</option>
                                     <option value="forward">Forward</option>
                                     <option value="pingpong">Ping-Pong</option>
                                 </select>
                                 <div class="smp-val"></div>
+
+                                <label>Voices</label>
+                                <input type="range" min="1" max="8" step="1" data-smp="voices" class="smp-slider" value="4">
+                                <div class="smp-val">4</div>
 
                                 <div class="section-header">PITCH</div>
 
@@ -519,11 +523,11 @@
                                 <div class="section-header">FILTER</div>
 
                                 <label>LPF</label>
-                                <input type="range" min="20" max="20000" step="1" data-smp="lpf" class="smp-slider" value="20000">
+                                <input type="range" min="0" max="1" step="0.001" data-smp="lpf" data-log="1" class="smp-slider" value="1">
                                 <div class="smp-val">20000</div>
 
                                 <label>HPF</label>
-                                <input type="range" min="20" max="20000" step="1" data-smp="hpf" class="smp-slider" value="20">
+                                <input type="range" min="0" max="1" step="0.001" data-smp="hpf" data-log="1" class="smp-slider" value="0">
                                 <div class="smp-val">20</div>
 
                                 <div class="section-header">AMP</div>

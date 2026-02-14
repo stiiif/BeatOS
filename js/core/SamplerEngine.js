@@ -1,21 +1,29 @@
 // js/core/SamplerEngine.js
 // Classic sampler engine — one-shot or looped sample playback with ADSR envelope,
-// per-step pitch, velocity layers, LPF/HPF, and full modulator integration.
+// per-step pitch, velocity layers, LPF/HPF, polyphony, and full modulator integration.
 
 export class SamplerEngine {
     constructor(audioEngine) {
         this.audioEngine = audioEngine;
         this._modCtx = { siblings: null, audioEngine: null, tracks: null, selfIndex: 0, stepIndex: 0, globalStepFrac: 0 };
+        this._reverseCache = new WeakMap();
+        this._activeVoices = new Map();
     }
 
-    /**
-     * Schedule a sampler note.
-     * @param {Object} track - Track object with buffer, params, bus, lfos
-     * @param {number} time - Audio context time to play at
-     * @param {Function} scheduleVisualDrawCallback
-     * @param {number} velocity - 1 (low), 2 (med), 3 (high)
-     * @param {number} stepIndex - Current step index
-     */
+    _getReversedBuffer(buf, ctx) {
+        if (this._reverseCache.has(buf)) return this._reverseCache.get(buf);
+        const rev = ctx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
+        for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+            const src = buf.getChannelData(ch);
+            const dst = rev.getChannelData(ch);
+            for (let i = 0; i < src.length; i++) {
+                dst[i] = src[src.length - 1 - i];
+            }
+        }
+        this._reverseCache.set(buf, rev);
+        return rev;
+    }
+
     scheduleNote(track, time, scheduleVisualDrawCallback, velocity = 3, stepIndex = 0) {
         const ctx = this.audioEngine.getContext();
         if (!ctx || !track.buffer || !track.bus || !track.bus.input) return;
@@ -24,8 +32,18 @@ export class SamplerEngine {
         const sp = p.sampler || {};
         const buf = track.buffer;
 
+        // --- Polyphony ---
+        const maxVoices = sp.voices !== undefined ? sp.voices : 4;
+        let voices = this._activeVoices.get(track.id);
+        if (!voices) { voices = new Set(); this._activeVoices.set(track.id, voices); }
+        while (voices.size >= maxVoices) {
+            const oldest = voices.values().next().value;
+            try { oldest.stop(time); } catch(e) {}
+            voices.delete(oldest);
+        }
+
         // --- Modulation ---
-        const mod = { pitch: 0, filter: 0, hpFilter: 0, volume: 0, pan: 0, attack: 0, decay: 0, sustain: 0, release: 0 };
+        const mod = { pitch: 0, filter: 0, hpFilter: 0, volume: 0, attack: 0, decay: 0, sustain: 0, release: 0 };
         const modCtx = this._modCtx;
         modCtx.siblings = track.lfos;
         modCtx.audioEngine = this.audioEngine;
@@ -42,130 +60,124 @@ export class SamplerEngine {
             if (targets && targets.length > 0) {
                 for (let t = 0; t < targets.length; t++) {
                     const tgt = targets[t];
-                    if (tgt === 'smp_pitch') mod.pitch += v * 12;          // semitones
-                    else if (tgt === 'smp_filter') mod.filter += v * 5000;
-                    else if (tgt === 'smp_hpFilter') mod.hpFilter += v * 2000;
+                    if (tgt === 'smp_pitch') mod.pitch += v * 12;
+                    else if (tgt === 'smp_filter') mod.filter += v * 8000;
+                    else if (tgt === 'smp_hpFilter') mod.hpFilter += v * 4000;
                     else if (tgt === 'smp_volume') mod.volume += v * 0.5;
                     else if (tgt === 'smp_attack') mod.attack += v * 0.5;
                     else if (tgt === 'smp_decay') mod.decay += v * 0.5;
                     else if (tgt === 'smp_sustain') mod.sustain += v * 0.5;
                     else if (tgt === 'smp_release') mod.release += v * 0.5;
-                    // Also support generic targets for bus params
-                    else if (tgt === 'filter') mod.filter += v * 5000;
-                    else if (tgt === 'hpFilter') mod.hpFilter += v * 2000;
+                    else if (tgt === 'filter') mod.filter += v * 8000;
+                    else if (tgt === 'hpFilter') mod.hpFilter += v * 4000;
                     else if (tgt === 'volume') mod.volume += v * 0.5;
-                    else if (tgt === 'pan') mod.pan += v;
                 }
             }
         }
 
         // --- Velocity ---
         const velGain = velocity === 1 ? 0.33 : velocity === 2 ? 0.66 : 1.0;
-        const velFilter = velocity === 1 ? 0.5 : velocity === 2 ? 0.75 : 1.0;
+        const velFilterMult = velocity === 1 ? 0.5 : velocity === 2 ? 0.75 : 1.0;
 
         // --- Sample region ---
-        let startPos = sp.start !== undefined ? sp.start : 0;
-        let endPos = sp.end !== undefined ? sp.end : 1;
-        const isReverse = startPos > endPos;
-        if (isReverse) { [startPos, endPos] = [endPos, startPos]; }
-
-        const startSample = Math.floor(startPos * buf.length);
-        const endSample = Math.floor(endPos * buf.length);
-        const regionLength = endSample - startSample;
+        const rawStart = sp.start !== undefined ? sp.start : 0;
+        const rawEnd = sp.end !== undefined ? sp.end : 1;
+        const isReverse = rawStart > rawEnd;
+        const regionStart = Math.min(rawStart, rawEnd);
+        const regionEnd = Math.max(rawStart, rawEnd);
+        const regionLength = Math.floor((regionEnd - regionStart) * buf.length);
         if (regionLength <= 0) return;
 
         // --- Pitch ---
         let pitchSemi = (sp.pitchSemi || 0) + mod.pitch;
-        const pitchFine = (sp.pitchFine || 0);
-        // Per-step pitch override
+        const pitchFine = sp.pitchFine || 0;
         const stepPitch = track.stepPitches ? track.stepPitches[stepIndex] : null;
-        if (stepPitch !== null && stepPitch !== undefined) {
-            pitchSemi += stepPitch;
-        }
-        const playbackRate = Math.pow(2, (pitchSemi + pitchFine / 100) / 12) * (isReverse ? -1 : 1);
+        if (stepPitch !== null && stepPitch !== undefined) pitchSemi += stepPitch;
+        const playbackRate = Math.pow(2, (pitchSemi + pitchFine / 100) / 12);
 
         // --- ADSR ---
         const attack = Math.max(0.001, (sp.attack || 0.005) + mod.attack);
         const decay = Math.max(0.001, (sp.decay || 0.1) + mod.decay);
-        const sustain = Math.max(0, Math.min(1, (sp.sustain !== undefined ? sp.sustain : 0.8) + mod.sustain));
-        const release = Math.max(0.001, (sp.release || 0.1) + mod.release);
+        const sustain = Math.max(0.001, Math.min(1, (sp.sustain !== undefined ? sp.sustain : 0.8) + mod.sustain));
+        const release = Math.max(0.005, (sp.release || 0.1) + mod.release);
         const volume = Math.max(0, Math.min(1.5, (sp.volume !== undefined ? sp.volume : 0.8) + mod.volume)) * velGain;
 
-        // --- Loop mode ---
-        const loopMode = sp.loopMode || 'off'; // 'off', 'forward', 'pingpong'
+        // --- Loop & duration ---
+        const loopMode = sp.loopMode || 'off';
+        const sampleDuration = regionLength / ctx.sampleRate / playbackRate;
+        const holdDuration = loopMode === 'off' ? sampleDuration : (sampleDuration * 8);
 
-        // --- Duration ---
-        const sampleDuration = regionLength / ctx.sampleRate / Math.abs(playbackRate);
-        const noteDuration = loopMode === 'off' ? sampleDuration : (sampleDuration * 4); // Loops play longer
-        const totalDuration = noteDuration + release;
+        // --- Buffer (forward or reversed) ---
+        let playBuf = buf;
+        let offset = regionStart * buf.duration;
+        if (isReverse) {
+            playBuf = this._getReversedBuffer(buf, ctx);
+            offset = (1 - regionEnd) * buf.duration;
+        }
 
-        // --- Create source ---
+        // --- Source ---
         const source = ctx.createBufferSource();
-        source.buffer = buf;
-        source.playbackRate.value = Math.abs(playbackRate);
+        source.buffer = playBuf;
+        source.playbackRate.value = playbackRate;
 
-        if (loopMode === 'forward') {
+        if (loopMode === 'forward' || loopMode === 'pingpong') {
             source.loop = true;
-            source.loopStart = startPos * buf.duration;
-            source.loopEnd = endPos * buf.duration;
-        } else if (loopMode === 'pingpong') {
-            // Web Audio doesn't natively support ping-pong; use forward loop as approximation
-            source.loop = true;
-            source.loopStart = startPos * buf.duration;
-            source.loopEnd = endPos * buf.duration;
+            source.loopStart = isReverse ? (1 - regionEnd) * playBuf.duration : regionStart * playBuf.duration;
+            source.loopEnd = isReverse ? (1 - regionStart) * playBuf.duration : regionEnd * playBuf.duration;
         }
 
         // --- Envelope ---
         const envGain = ctx.createGain();
-        envGain.gain.setValueAtTime(0, time);
-        // Attack
-        envGain.gain.linearRampToValueAtTime(volume, time + attack);
-        // Decay → Sustain
-        envGain.gain.linearRampToValueAtTime(volume * sustain, time + attack + decay);
-        // Hold at sustain until note end
-        const noteEnd = time + noteDuration;
-        envGain.gain.setValueAtTime(volume * sustain, noteEnd);
-        // Release
-        envGain.gain.linearRampToValueAtTime(0.001, noteEnd + release);
+        const t0 = time;
+        const t1 = t0 + attack;
+        const t2 = t1 + decay;
+        const tEnd = t0 + holdDuration;
+        const tRelEnd = tEnd + release;
+        const susLevel = Math.max(0.0001, volume * sustain);
 
-        // --- Filters ---
-        const lpFreq = Math.max(20, Math.min(20000, (sp.lpf !== undefined ? sp.lpf : 20000) + mod.filter)) * velFilter;
-        const hpFreq = Math.max(20, Math.min(20000, (sp.hpf !== undefined ? sp.hpf : 20) + mod.hpFilter));
+        envGain.gain.setValueAtTime(0.0001, t0);
+        envGain.gain.linearRampToValueAtTime(volume, t1);
+        envGain.gain.exponentialRampToValueAtTime(susLevel, t2);
+        if (tEnd > t2 + 0.001) {
+            envGain.gain.setValueAtTime(susLevel, tEnd);
+        }
+        envGain.gain.exponentialRampToValueAtTime(0.0001, tRelEnd);
+
+        // --- Filters (stored as log-mapped Hz, applied directly) ---
+        const rawLpf = sp.lpf !== undefined ? sp.lpf : 20000;
+        const rawHpf = sp.hpf !== undefined ? sp.hpf : 20;
+        const lpFreq = Math.max(20, Math.min(20000, (rawLpf + mod.filter) * velFilterMult));
+        const hpFreq = Math.max(20, Math.min(20000, rawHpf + mod.hpFilter));
 
         const lpFilter = ctx.createBiquadFilter();
         lpFilter.type = 'lowpass';
         lpFilter.frequency.setValueAtTime(lpFreq, time);
-        lpFilter.Q.value = 1;
+        lpFilter.Q.value = 0.707;
 
         const hpFilter = ctx.createBiquadFilter();
         hpFilter.type = 'highpass';
         hpFilter.frequency.setValueAtTime(hpFreq, time);
-        hpFilter.Q.value = 1;
+        hpFilter.Q.value = 0.707;
 
-        // --- Connect chain: source → LP → HP → envelope → track bus ---
+        // --- Connect ---
         source.connect(lpFilter);
         lpFilter.connect(hpFilter);
         hpFilter.connect(envGain);
         envGain.connect(track.bus.input);
 
-        // --- Start playback ---
-        const offset = isReverse
-            ? (buf.duration - endPos * buf.duration)
-            : (startPos * buf.duration);
-        const duration = loopMode === 'off' ? sampleDuration : undefined;
-
+        // --- Start ---
         if (loopMode === 'off') {
-            source.start(time, offset, duration);
+            source.start(time, offset, sampleDuration);
         } else {
             source.start(time, offset);
         }
-        source.stop(time + totalDuration + 0.01);
+        source.stop(tRelEnd + 0.05);
 
-        // Track source for stop/panic
+        voices.add(source);
         track.addSource(source);
 
-        // Cleanup
         source.onended = () => {
+            voices.delete(source);
             track.activeSources.delete(source);
             source.disconnect();
             lpFilter.disconnect();
@@ -173,10 +185,8 @@ export class SamplerEngine {
             envGain.disconnect();
         };
 
-        // --- Bus params (same as 909/granular) ---
         this._syncBus(track, time, mod);
 
-        // Visual callback
         if (scheduleVisualDrawCallback) {
             scheduleVisualDrawCallback(time, track.id, stepIndex);
         }
@@ -184,9 +194,6 @@ export class SamplerEngine {
 
     _syncBus(track, time, mod) {
         const p = track.params;
-        const ctx = this.audioEngine.getContext();
-        if (!ctx) return;
-
         if (track.bus.hp) {
             const freq = this.audioEngine.getMappedFrequency(Math.max(20, p.hpFilter + (mod.hpFilter || 0)), 'hp');
             track.bus.hp.frequency.setTargetAtTime(freq, time, 0.05);

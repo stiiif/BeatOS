@@ -386,7 +386,9 @@ export class TrackControls {
         document.querySelectorAll('.smp-slider').forEach(el => {
             const key = el.dataset.smp;
             if (sp[key] !== undefined) {
-                el.value = sp[key];
+                const isLog = el.dataset.log === '1';
+                // For log sliders, convert Hz back to 0–1 normalized
+                el.value = isLog ? Math.log(sp[key] / 20) / Math.log(1000) : sp[key];
                 const valEl = el.nextElementSibling;
                 if (valEl && valEl.classList.contains('smp-val')) {
                     valEl.textContent = this._fmtSmpVal(key, sp[key]);
@@ -403,6 +405,7 @@ export class TrackControls {
         if (key === 'pitchSemi') return v + ' st';
         if (key === 'pitchFine') return v + ' ct';
         if (key === 'lpf' || key === 'hpf') return Math.round(v) + ' Hz';
+        if (key === 'voices') return Math.round(v);
         if (key === 'attack' || key === 'decay' || key === 'release') {
             return v < 1 ? Math.round(v * 1000) + 'ms' : v.toFixed(2) + 's';
         }
@@ -410,7 +413,7 @@ export class TrackControls {
         return parseFloat(v).toFixed(3);
     }
 
-    /** Draw the sampler scope — waveform with start/end markers */
+    /** Draw the sampler scope — waveform zoomed to start/end region with markers */
     _drawSamplerScope(t) {
         const canvas = document.getElementById('samplerScopeCanvas');
         if (!canvas) return;
@@ -439,15 +442,23 @@ export class TrackControls {
         const loStart = Math.min(startN, endN);
         const loEnd = Math.max(startN, endN);
 
-        // Draw waveform
+        // Zoom: add 10% padding around the region
+        const regionSpan = loEnd - loStart;
+        const pad = Math.max(0.02, regionSpan * 0.15);
+        const viewStart = Math.max(0, loStart - pad);
+        const viewEnd = Math.min(1, loEnd + pad);
+        const viewSpan = viewEnd - viewStart;
+
+        // Draw waveform (only the visible portion)
         ctx.strokeStyle = '#34d399';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        const step = Math.max(1, Math.floor(data.length / w));
         for (let i = 0; i < w; i++) {
-            const idx = Math.floor((i / w) * data.length);
+            const norm = viewStart + (i / w) * viewSpan;
+            const idx = Math.floor(norm * data.length);
+            const step = Math.max(1, Math.floor(data.length * viewSpan / w));
             let min = 0, max = 0;
-            for (let j = 0; j < step; j++) {
+            for (let j = 0; j < step && idx + j < data.length; j++) {
                 const s = data[idx + j] || 0;
                 if (s < min) min = s;
                 if (s > max) max = s;
@@ -460,28 +471,38 @@ export class TrackControls {
         ctx.stroke();
 
         // Dim outside region
-        const x1 = Math.floor(loStart * w);
-        const x2 = Math.floor(loEnd * w);
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(0, 0, x1, h);
-        ctx.fillRect(x2, 0, w - x2, h);
+        const x1 = Math.floor(((loStart - viewStart) / viewSpan) * w);
+        const x2 = Math.floor(((loEnd - viewStart) / viewSpan) * w);
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        if (x1 > 0) ctx.fillRect(0, 0, x1, h);
+        if (x2 < w) ctx.fillRect(x2, 0, w - x2, h);
 
         // Start marker
-        const sx = Math.floor(startN * w);
-        ctx.strokeStyle = isReverse ? '#ef4444' : '#34d399';
+        const sx = Math.floor(((startN - viewStart) / viewSpan) * w);
+        ctx.strokeStyle = '#34d399';
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
+        // Small label
+        ctx.fillStyle = '#34d399';
+        ctx.font = '7px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('S', Math.max(1, sx + 2), 9);
 
         // End marker
-        const ex = Math.floor(endN * w);
-        ctx.strokeStyle = isReverse ? '#34d399' : '#ef4444';
+        const ex = Math.floor(((endN - viewStart) / viewSpan) * w);
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(ex, 0); ctx.lineTo(ex, h); ctx.stroke();
+        ctx.fillStyle = '#ef4444';
+        ctx.textAlign = 'right';
+        ctx.fillText('E', Math.min(w - 1, ex - 2), 9);
 
-        // Arrow for direction
-        const midX = (sx + ex) / 2;
-        ctx.fillStyle = '#888';
-        ctx.font = '10px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(isReverse ? '◄' : '►', midX, 10);
+        // Direction arrow
+        if (isReverse) {
+            ctx.fillStyle = '#f59e0b';
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('◄ REV', (sx + ex) / 2, h - 3);
+        }
     }
 }

@@ -100,6 +100,7 @@ export class Track {
                 decay: 0.1,        // seconds
                 sustain: 0.8,      // 0–1
                 release: 0.1,      // seconds
+                voices: 4,         // 1–8 simultaneous voices
             },
             
             // --- Amp Envelope ---

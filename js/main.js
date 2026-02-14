@@ -737,7 +737,8 @@ if (btnSAM) {
             t.params.sampler = {
                 start: 0.0, end: 1.0, pitchSemi: 0, pitchFine: 0,
                 lpf: 20000, hpf: 20, volume: 0.8, loopMode: 'off',
-                attack: 0.005, decay: 0.1, sustain: 0.8, release: 0.1
+                attack: 0.005, decay: 0.1, sustain: 0.8, release: 0.1,
+                voices: 4
             };
         }
         updateEngineSelector();
@@ -1011,19 +1012,24 @@ document.querySelectorAll('.lfo-tab').forEach(b => {
 });
 
 // --- SAMPLER SLIDER HANDLERS ---
+// Log mapping: slider 0–1 → 20–20000 Hz
+function smpLogToHz(norm) { return 20 * Math.pow(1000, norm); }
+function smpHzToLog(hz) { return Math.log(hz / 20) / Math.log(1000); }
+
 document.querySelectorAll('.smp-slider').forEach(el => {
     el.addEventListener('input', e => {
         const t = tracks[uiManager.getSelectedTrackIndex()];
         if (!t || t.type !== 'sampler') return;
         const key = el.dataset.smp;
-        const val = parseFloat(e.target.value);
-        if (t.params.sampler) t.params.sampler[key] = val;
-        // Update value display
+        const isLog = el.dataset.log === '1';
+        let val = parseFloat(e.target.value);
+        // Convert log sliders to Hz before storing
+        const storeVal = isLog ? smpLogToHz(val) : val;
+        if (t.params.sampler) t.params.sampler[key] = storeVal;
         const valEl = el.nextElementSibling;
         if (valEl && valEl.classList.contains('smp-val')) {
-            valEl.textContent = uiManager.trackControls._fmtSmpVal(key, val);
+            valEl.textContent = uiManager.trackControls._fmtSmpVal(key, storeVal);
         }
-        // Redraw scope on start/end change
         if (key === 'start' || key === 'end') {
             uiManager.trackControls._drawSamplerScope(t);
         }
@@ -1047,7 +1053,8 @@ if (samplerResetBtn) {
         t.params.sampler = {
             start: 0.0, end: 1.0, pitchSemi: 0, pitchFine: 0,
             lpf: 20000, hpf: 20, volume: 0.8, loopMode: 'off',
-            attack: 0.005, decay: 0.1, sustain: 0.8, release: 0.1
+            attack: 0.005, decay: 0.1, sustain: 0.8, release: 0.1,
+            voices: 4
         };
         uiManager.trackControls._updateSamplerSliders(t);
         uiManager.trackControls._drawSamplerScope(t);
@@ -1097,7 +1104,8 @@ if (samplerSrcBtn) {
             t.params.sampler = {
                 start: 0.0, end: 1.0, pitchSemi: 0, pitchFine: 0,
                 lpf: 20000, hpf: 20, volume: 0.8, loopMode: 'off',
-                attack: 0.005, decay: 0.1, sustain: 0.8, release: 0.1
+                attack: 0.005, decay: 0.1, sustain: 0.8, release: 0.1,
+                voices: 4
             };
         }
         if (uiManager.searchModal) {

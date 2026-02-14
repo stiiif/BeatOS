@@ -20,7 +20,7 @@ export class AutomationPanel {
         if (!container) return;
         
         const track = this.tracks[this.selectedTrackIndex];
-        if (!track || track.type !== 'granular') {
+        if (!track || (track.type !== 'granular' && track.type !== 'sampler')) {
             container.innerHTML = '';
             return;
         }
