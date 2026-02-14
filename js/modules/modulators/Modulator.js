@@ -1,7 +1,7 @@
 // js/modules/modulators/Modulator.js
 // Base class for all modulator types. Defines the contract that all consumers rely on.
 
-export const MOD_TYPE = { LFO: 0, ENV_FOLLOW: 1, COMPARATOR: 2, PHYSICS: 3 };
+export const MOD_TYPE = { LFO: 0, ENV_FOLLOW: 1, COMPARATOR: 2, PHYSICS: 3, AUTOMIZER: 4 };
 export const PHYSICS_MODE = { BOUNCE: 0, PENDULUM: 1, SPRING: 2 };
 export const COMP_MODE = { DIFFERENCE: 0, MULTIPLY: 1, GATE: 2, MIN: 3, MAX: 4, XOR: 5 };
 

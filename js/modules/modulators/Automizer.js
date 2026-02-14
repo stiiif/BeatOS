@@ -4,9 +4,6 @@
 
 import { Modulator, MOD_TYPE } from './Modulator.js';
 
-// Extend MOD_TYPE with AUTOMIZER (4)
-MOD_TYPE.AUTOMIZER = 4;
-
 export class Automizer extends Modulator {
     constructor() {
         super(MOD_TYPE.AUTOMIZER);
