@@ -238,6 +238,15 @@ export class SongPanel {
         const cellY = this.RULER_H;
         const morphY = cellY + this.CELL_H;
 
+        // Click on ruler area → seek to that bar
+        if (y < cellY) {
+            const bar = this._xToBar(px);
+            if (bar >= 0 && bar < this.seq.length) {
+                this._seekToBar(bar);
+            }
+            return;
+        }
+
         // Check morph lane click
         if (y >= morphY && y <= morphY + this.MORPH_H) {
             const cell = this._xToCell(px);
@@ -366,6 +375,8 @@ export class SongPanel {
                 const cell = this._xToCell(px);
                 const tp = this._findTransitionNear(cell);
                 this.canvas.style.cursor = tp ? 'ew-resize' : 'default';
+            } else if (y < cellY) {
+                this.canvas.style.cursor = 'pointer';
             } else {
                 this.canvas.style.cursor = 'default';
             }
@@ -645,6 +656,35 @@ export class SongPanel {
     _stopSong() {
         this.seq.stopPlayback();
         document.getElementById('songCurrentBar').textContent = '--';
+        this.draw();
+    }
+
+    /**
+     * Seek to a specific bar — works both while playing and while stopped.
+     * Resets the scheduler step counter to align with the new position.
+     */
+    _seekToBar(bar) {
+        this.seq.seekToBar(bar);
+
+        // Reset scheduler step to start of bar so sequencer aligns
+        if (this.scheduler) {
+            this.scheduler.resetStep(0);
+            if (this.scheduler.totalStepsPlayed !== undefined) {
+                // Approximate global step position for the bar
+                this.scheduler.totalStepsPlayed = bar * NUM_STEPS;
+            }
+        }
+
+        // If not playing, start playback from this position
+        if (!this.seq.isPlaying) {
+            this.seq.isPlaying = true;
+            if (this.scheduler && !this.scheduler.getIsPlaying()) {
+                document.getElementById('playBtn')?.click();
+            }
+            this._startPlayheadAnimation();
+        }
+
+        document.getElementById('songCurrentBar').textContent = bar + 1;
         this.draw();
     }
 

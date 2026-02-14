@@ -98,6 +98,11 @@ export class Scheduler {
         }
     }
 
+    /** Reset the step counter to a specific step (for song mode seeking) */
+    resetStep(step) {
+        this.currentStep = step % NUM_STEPS;
+    }
+
     stop() {
         this.isPlaying = false;
         clearTimeout(this.schedulerTimerID);

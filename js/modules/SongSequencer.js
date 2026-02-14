@@ -282,6 +282,19 @@ export class SongSequencer {
     }
 
     /**
+     * Seek to a specific bar. If playing, jumps playback position.
+     * If stopped, sets position and processes the cell (recalls snapshot).
+     */
+    seekToBar(bar) {
+        const cell = bar * SUBDIV_PER_BAR;
+        if (cell < 0 || cell >= this.totalCells) return;
+        this.currentCell = cell;
+        this.lastRecalledSlot = -1; // Force re-recall
+        if (this._morphEngine) this._morphEngine.stop();
+        this._processCell(cell);
+    }
+
+    /**
      * Called every 2 sequencer steps (= 1/16 note = 1 cell).
      * The scheduler fires onBarBoundary at step 0; we also need per-step calls.
      * So we call this from the scheduler on EVERY step 0,2,4,...30 (even steps).
