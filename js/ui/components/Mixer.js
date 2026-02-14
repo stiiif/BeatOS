@@ -215,21 +215,27 @@ export class Mixer {
                 ak.updateRotation(val);
                 ak.onChange(val);
             }
-            // Position dot on knob border (works with or without automation data)
+            // Position dot: only on knobs that have automation data
             const hasAuto = this.mixerAutomation.hasAutomation(ak.key);
-            if (hasAuto || isRecording) {
-                const laneLen = this.mixerAutomation.getLaneLoopLength(ak.key);
-                const pos = hasAuto
-                    ? this.mixerAutomation.getLanePosition(ak.key, globalStepFrac)
-                    : ((globalStepFrac * 4) % (laneLen * 4)) / (laneLen * 4);
-                this._drawKnobPip(ak.knobOuter, pos, isRecording, ak._recStartPos);
-                // Track record start position
-                if (isRecording && ak._recStartPos === undefined) {
+            // Red trail: only on knobs that are actively being recorded (touched during this pass)
+            const isActivelyRecording = isRecording && recordingLanes.has(ak.key);
+
+            if (hasAuto || isActivelyRecording) {
+                const pos = this.mixerAutomation.getLanePosition(ak.key, globalStepFrac);
+                const showTrail = isActivelyRecording && ak._recStartPos !== undefined;
+                this._drawKnobPip(ak.knobOuter, pos, showTrail, ak._recStartPos);
+                if (isActivelyRecording && ak._recStartPos === undefined) {
                     ak._recStartPos = pos;
                 }
             }
-            if (!isRecording) {
-                ak._recStartPos = undefined;
+            if (!isRecording || !recordingLanes.has(ak.key)) {
+                if (ak._recStartPos !== undefined) {
+                    ak._recStartPos = undefined;
+                    // If no automation, clear the background
+                    if (!this.mixerAutomation.hasAutomation(ak.key)) {
+                        ak.knobOuter.style.background = '';
+                    }
+                }
             }
         }
 
@@ -326,51 +332,51 @@ export class Mixer {
     }
 
     /**
-     * Draw a position dot on the knob's outer ring using conic-gradient.
-     * When recording, also draws a red trail from the record start position.
-     * @param {HTMLElement} el - knobOuter element
+     * Draw a position dot on the knob's outer ring.
+     * Uses radial-gradient for a true circular dot positioned on the ring edge.
+     * When recording a lane, adds a red trail arc from start to current position.
+     * @param {HTMLElement} el - knobOuter element (assumed to be a circle via border-radius)
      * @param {number} pos - 0.0–1.0 loop position
-     * @param {boolean} isRecording - whether * is held
+     * @param {boolean} showTrail - show red recording trail
      * @param {number|undefined} recStartPos - position when recording started
      */
-    _drawKnobPip(el, pos, isRecording, recStartPos) {
-        const deg = pos * 360;
-        const dotSize = 5; // degrees for the dot arc
+    _drawKnobPip(el, pos, showTrail, recStartPos) {
+        // Compute dot position on the outer edge of the knob circle
+        // Angle: 0 = top (12 o'clock), clockwise
+        const angle = pos * Math.PI * 2 - Math.PI / 2;
+        // Place dot at ~45% from center (on the edge of the knob-outer ring)
+        const radius = 45; // % from center
+        const dotX = 50 + Math.cos(angle) * radius;
+        const dotY = 50 + Math.sin(angle) * radius;
+        const dotR = 4; // dot radius in % of element
 
-        if (isRecording && recStartPos !== undefined) {
-            // Red trail from start to current position
+        const layers = [];
+
+        // Layer 1: red trail arc (only when actively recording this knob)
+        if (showTrail && recStartPos !== undefined) {
             const startDeg = recStartPos * 360;
-            let trailStart, trailEnd;
-            if (deg >= startDeg) {
-                trailStart = startDeg;
-                trailEnd = deg;
+            const endDeg = pos * 360;
+            let arcSpan;
+            if (endDeg >= startDeg) {
+                arcSpan = endDeg - startDeg;
             } else {
-                // Wrapped around — draw two arcs via a single gradient
-                trailStart = startDeg;
-                trailEnd = deg + 360;
+                arcSpan = (360 - startDeg) + endDeg;
             }
-            // Build gradient: red trail arc + white dot at current position
-            el.style.background =
-                `conic-gradient(from ${trailStart}deg, ` +
-                `rgba(239,68,68,0.35) 0deg, rgba(239,68,68,0.35) ${trailEnd - trailStart}deg, ` +
-                `transparent ${trailEnd - trailStart}deg)`;
-            // Overlay the dot using box-shadow on a pseudo-approach: use a second layer
-            // Since conic-gradient is limited, use the trail + put the dot as a brighter spot at the end
-            const dotDeg = (trailEnd - trailStart);
-            el.style.background =
-                `conic-gradient(from ${trailStart}deg, ` +
-                `rgba(239,68,68,0.25) 0deg, ` +
-                `rgba(239,68,68,0.35) ${dotDeg - dotSize}deg, ` +
-                `#ef4444 ${dotDeg - dotSize}deg, #ef4444 ${dotDeg}deg, ` +
-                `transparent ${dotDeg}deg)`;
-        } else {
-            // Normal playback: cream dot only
-            el.style.background =
-                `conic-gradient(from 0deg, ` +
-                `transparent ${deg - dotSize}deg, ` +
-                `#f5f0e0 ${deg - dotSize}deg, #f5f0e0 ${deg + dotSize}deg, ` +
-                `transparent ${deg + dotSize}deg)`;
+            layers.push(
+                `conic-gradient(from ${startDeg}deg at 50% 50%, ` +
+                `rgba(239,68,68,0.3) 0deg, rgba(239,68,68,0.3) ${arcSpan}deg, ` +
+                `transparent ${arcSpan}deg)`
+            );
         }
+
+        // Layer 2: the dot itself
+        const dotColor = showTrail ? '#ef4444' : '#f5f0e0';
+        const glowColor = showTrail ? 'rgba(239,68,68,0.5)' : 'rgba(245,240,224,0.3)';
+        layers.push(
+            `radial-gradient(circle ${dotR}px at ${dotX}% ${dotY}%, ${dotColor} 0%, ${glowColor} 60%, transparent 100%)`
+        );
+
+        el.style.background = layers.join(', ');
     }
 
     setCallbacks(onMute, onSolo, onMuteGroup, onSoloGroup, onSelect) {
