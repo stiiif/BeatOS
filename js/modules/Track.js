@@ -86,6 +86,22 @@ export class Track {
             drumTune: 0.5,    
             drumDecay: 0.5,   
             
+            // --- Sampler Engine Params ---
+            sampler: {
+                start: 0.0,        // 0–1 normalized start point
+                end: 1.0,          // 0–1 normalized end point (< start = reverse)
+                pitchSemi: 0,      // -24 to +24 semitones
+                pitchFine: 0,      // -50 to +50 cents
+                lpf: 20000,        // Low-pass filter cutoff Hz
+                hpf: 20,           // High-pass filter cutoff Hz
+                volume: 0.8,       // 0–1.5
+                loopMode: 'off',   // 'off', 'forward', 'pingpong'
+                attack: 0.005,     // seconds
+                decay: 0.1,        // seconds
+                sustain: 0.8,      // 0–1
+                release: 0.1,      // seconds
+            },
+            
             // --- Amp Envelope ---
             ampAttack: 0.01,
             ampDecay: 0.01,

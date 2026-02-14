@@ -232,11 +232,15 @@
                             class="granular-gen-btn text-[9px] font-bold bg-neutral-800 hover:bg-neutral-700 text-neutral-400 border border-neutral-700 hover:text-white px-1 py-1 rounded transition flex-1 text-center"
                             data-type="texture">FM</button>
 
-                        <!-- Sample (Blue) -->
+                        <!-- Sample (Blue) = Granular Sampler -->
                         <button id="btnSMP"
                             class="text-[9px] font-bold bg-sky-900/30 text-sky-400 border border-sky-900/50 hover:bg-sky-800 hover:text-white px-1 py-1 rounded transition flex-1 text-center">SMP</button>
                         <button id="btnSRC"
                             class="text-[9px] font-bold bg-sky-900/30 text-sky-400 border border-sky-900/50 hover:bg-sky-800 hover:text-white px-1 py-1 rounded transition flex-1 text-center">SRC</button>
+
+                        <!-- Classic Sampler (Green) -->
+                        <button id="btnSAM"
+                            class="text-[9px] font-bold bg-emerald-900/30 text-emerald-400 border border-emerald-900/50 hover:bg-emerald-800 hover:text-white px-1 py-1 rounded transition flex-1 text-center">SAM</button>
 
                         <!-- 909 (Orange) -->
                         <button
@@ -458,6 +462,97 @@
                         </div>
                     </div>
                 </div> <!-- End Granular Controls -->
+
+                <!-- 2b. SAMPLER CONTROLS (Hidden by default) -->
+                <div id="samplerControls" class="hidden">
+                    <div class="flex justify-between items-center mb-2 cursor-pointer select-none group" onclick="toggleSection('samplerContent', this)">
+                        <label class="text-[10px] text-neutral-500 uppercase font-bold group-hover:text-neutral-300 transition-colors pointer-events-none">
+                            <i class="fas fa-record-vinyl mr-1"></i> SAMPLER ENGINE
+                        </label>
+                        <i class="fas fa-chevron-down text-[10px] text-neutral-600 transition-transform duration-200"></i>
+                    </div>
+                    <div id="samplerContent" class="transition-all duration-300 origin-top">
+                        <div>
+                            <label class="text-[10px] text-neutral-500 uppercase font-bold mb-1 block">Scope</label>
+                            <canvas id="samplerScopeCanvas" style="width:100%; height:60px; background:#111; border-radius:4px; border:1px solid #222;"></canvas>
+                        </div>
+                        <div class="space-y-4 pt-2">
+                            <div class="flex gap-1">
+                                <button id="samplerResetBtn"
+                                    class="text-[9px] bg-yellow-800 hover:bg-yellow-700 text-yellow-300 px-2 py-1 rounded transition border border-yellow-700">
+                                    <i class="fas fa-undo"></i>
+                                </button>
+                                <button id="samplerLoadBtn"
+                                    class="text-[9px] bg-emerald-900/40 hover:bg-emerald-800 text-emerald-300 px-2 py-1 rounded transition border border-emerald-900/50">Load</button>
+                                <button id="samplerSrcBtn"
+                                    class="text-[9px] bg-emerald-900/40 hover:bg-emerald-800 text-emerald-300 px-2 py-1 rounded transition border border-emerald-900/50">SRC</button>
+                            </div>
+                            <div class="param-grid">
+                                <div class="section-header">SAMPLE</div>
+
+                                <label>Start</label>
+                                <input type="range" min="0" max="1" step="0.001" data-smp="start" class="smp-slider">
+                                <div class="smp-val">0.000</div>
+
+                                <label>End</label>
+                                <input type="range" min="0" max="1" step="0.001" data-smp="end" class="smp-slider" value="1">
+                                <div class="smp-val">1.000</div>
+
+                                <label>Loop</label>
+                                <select data-smp="loopMode" class="smp-select" style="font-size:9px; background:#1a1a1a; color:#ccc; border:1px solid #333; border-radius:3px; padding:2px 4px; width:100%;">
+                                    <option value="off">Off</option>
+                                    <option value="forward">Forward</option>
+                                    <option value="pingpong">Ping-Pong</option>
+                                </select>
+                                <div class="smp-val"></div>
+
+                                <div class="section-header">PITCH</div>
+
+                                <label>Pitch</label>
+                                <input type="range" min="-24" max="24" step="1" data-smp="pitchSemi" class="smp-slider" value="0">
+                                <div class="smp-val">0 st</div>
+
+                                <label>Fine</label>
+                                <input type="range" min="-50" max="50" step="1" data-smp="pitchFine" class="smp-slider" value="0">
+                                <div class="smp-val">0 ct</div>
+
+                                <div class="section-header">FILTER</div>
+
+                                <label>LPF</label>
+                                <input type="range" min="20" max="20000" step="1" data-smp="lpf" class="smp-slider" value="20000">
+                                <div class="smp-val">20000</div>
+
+                                <label>HPF</label>
+                                <input type="range" min="20" max="20000" step="1" data-smp="hpf" class="smp-slider" value="20">
+                                <div class="smp-val">20</div>
+
+                                <div class="section-header">AMP</div>
+
+                                <label>Volume</label>
+                                <input type="range" min="0" max="1.5" step="0.01" data-smp="volume" class="smp-slider" value="0.8">
+                                <div class="smp-val">0.80</div>
+
+                                <div class="section-header">ENVELOPE</div>
+
+                                <label>Attack</label>
+                                <input type="range" min="0.001" max="2" step="0.001" data-smp="attack" class="smp-slider" value="0.005">
+                                <div class="smp-val">5ms</div>
+
+                                <label>Decay</label>
+                                <input type="range" min="0.001" max="2" step="0.001" data-smp="decay" class="smp-slider" value="0.1">
+                                <div class="smp-val">100ms</div>
+
+                                <label>Sustain</label>
+                                <input type="range" min="0" max="1" step="0.01" data-smp="sustain" class="smp-slider" value="0.8">
+                                <div class="smp-val">0.80</div>
+
+                                <label>Release</label>
+                                <input type="range" min="0.001" max="5" step="0.001" data-smp="release" class="smp-slider" value="0.1">
+                                <div class="smp-val">100ms</div>
+                            </div>
+                        </div>
+                    </div>
+                </div> <!-- End Sampler Controls -->
 
                 <!-- 2. 909 CONTROLS (Hidden by default) -->
                 <div id="simpleDrumControls" class="hidden">

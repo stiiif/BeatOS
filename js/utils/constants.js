@@ -52,5 +52,14 @@ export const MODULATION_TARGETS = [
     { id: 'volume', name: 'Vol' },
     { id: 'pan', name: 'Pan' },
     { id: 'edgeCrunch', name: 'Crunch' },
-    { id: 'orbit', name: 'Orbit' }
+    { id: 'orbit', name: 'Orbit' },
+    // Sampler engine targets
+    { id: 'smp_pitch', name: 'S:Pitch' },
+    { id: 'smp_filter', name: 'S:LPF' },
+    { id: 'smp_hpFilter', name: 'S:HPF' },
+    { id: 'smp_volume', name: 'S:Vol' },
+    { id: 'smp_attack', name: 'S:Atk' },
+    { id: 'smp_decay', name: 'S:Dec' },
+    { id: 'smp_sustain', name: 'S:Sus' },
+    { id: 'smp_release', name: 'S:Rel' },
 ];

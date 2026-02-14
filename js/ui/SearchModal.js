@@ -196,8 +196,10 @@ export class SearchModal {
                 const url = sound.previews['preview-hq-mp3'];
                 await this.loader.loadSampleFromUrl(url, targetTrack);
                 
-                // Force Engine Type to Granular
-                targetTrack.type = 'granular';
+                // Force Engine Type — keep sampler if already sampler, otherwise granular
+                if (targetTrack.type !== 'sampler') {
+                    targetTrack.type = 'granular';
+                }
                 
                 // Reset parameters for clean one-shot playback
                 targetTrack.params.position = 0;

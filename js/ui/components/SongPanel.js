@@ -102,8 +102,6 @@ export class SongPanel {
                 <label class="song-checkbox-label"><input type="checkbox" id="showMorphCb" checked><span>Show Morph</span></label>
             </div>
             <div class="song-transport">
-                <button id="songPlayBtn" class="song-play-btn" title="Play Song"><i class="fas fa-play"></i> SONG</button>
-                <button id="songStopBtn" class="song-stop-btn" title="Stop Song"><i class="fas fa-stop"></i></button>
                 <span class="song-bar-display">Bar: <span id="songCurrentBar">--</span></span>
             </div>
             <div class="song-length-ctrl">
@@ -136,8 +134,6 @@ export class SongPanel {
     _bindEvents() {
         this.toolbar.querySelectorAll('.song-tool-btn[data-tool]').forEach(b => b.addEventListener('click', () => this._setTool(b.dataset.tool)));
         this.toolbar.querySelectorAll('.song-tool-btn[data-action]').forEach(b => b.addEventListener('click', () => this._doAction(b.dataset.action)));
-        document.getElementById('songPlayBtn').addEventListener('click', () => this._playSong());
-        document.getElementById('songStopBtn').addEventListener('click', () => this._stopSong());
         document.getElementById('showMorphCb').addEventListener('change', e => { this.showMorph = e.target.checked; });
         document.getElementById('songLengthInput').addEventListener('change', e => {
             this.seq.setLength(parseInt(e.target.value) || 64);

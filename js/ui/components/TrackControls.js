@@ -212,11 +212,13 @@ export class TrackControls {
         const autoControls = document.getElementById('automationControls');
         const granularControls = document.getElementById('granularControls');
         const drumControls = document.getElementById('simpleDrumControls');
+        const samplerControls = document.getElementById('samplerControls');
         const lfoSection = document.getElementById('lfoSection');
         const speedSel = document.getElementById('autoSpeedSelect');
 
         if(granularControls) granularControls.classList.add('hidden');
         if(drumControls) drumControls.classList.add('hidden');
+        if(samplerControls) samplerControls.classList.add('hidden');
         if(lfoSection) lfoSection.classList.add('hidden');
         if(autoControls) autoControls.classList.add('hidden');
 
@@ -239,6 +241,12 @@ export class TrackControls {
                     btn.classList.remove('bg-orange-600', 'text-white', 'border-orange-500');
                 }
             });
+        }
+        else if (t.type === 'sampler') {
+            if(samplerControls) samplerControls.classList.remove('hidden');
+            if(lfoSection) lfoSection.classList.remove('hidden');
+            this._updateSamplerSliders(t);
+            this._drawSamplerScope(t);
         }
         else {
             const wasHidden = granularControls && granularControls.classList.contains('hidden');
@@ -370,4 +378,110 @@ export class TrackControls {
     getSelectedTrackIndex() { return this.selectedTrackIndex; }
     getSelectedLfoIndex() { return this.selectedLfoIndex; }
     setSelectedLfoIndex(index) { this.selectedLfoIndex = index; }
+
+    /** Update all .smp-slider elements from track.params.sampler */
+    _updateSamplerSliders(t) {
+        const sp = t.params.sampler;
+        if (!sp) return;
+        document.querySelectorAll('.smp-slider').forEach(el => {
+            const key = el.dataset.smp;
+            if (sp[key] !== undefined) {
+                el.value = sp[key];
+                const valEl = el.nextElementSibling;
+                if (valEl && valEl.classList.contains('smp-val')) {
+                    valEl.textContent = this._fmtSmpVal(key, sp[key]);
+                }
+            }
+        });
+        document.querySelectorAll('.smp-select').forEach(el => {
+            const key = el.dataset.smp;
+            if (sp[key] !== undefined) el.value = sp[key];
+        });
+    }
+
+    _fmtSmpVal(key, v) {
+        if (key === 'pitchSemi') return v + ' st';
+        if (key === 'pitchFine') return v + ' ct';
+        if (key === 'lpf' || key === 'hpf') return Math.round(v) + ' Hz';
+        if (key === 'attack' || key === 'decay' || key === 'release') {
+            return v < 1 ? Math.round(v * 1000) + 'ms' : v.toFixed(2) + 's';
+        }
+        if (key === 'volume' || key === 'sustain') return v.toFixed(2);
+        return parseFloat(v).toFixed(3);
+    }
+
+    /** Draw the sampler scope — waveform with start/end markers */
+    _drawSamplerScope(t) {
+        const canvas = document.getElementById('samplerScopeCanvas');
+        if (!canvas) return;
+        canvas.width = canvas.parentElement ? canvas.parentElement.clientWidth - 4 : 300;
+        canvas.height = 60;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, w, h);
+
+        if (!t.buffer) {
+            ctx.fillStyle = '#333';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('No sample loaded', w / 2, h / 2 + 3);
+            return;
+        }
+
+        const data = t.buffer.getChannelData(0);
+        const sp = t.params.sampler || {};
+        const startN = sp.start !== undefined ? sp.start : 0;
+        const endN = sp.end !== undefined ? sp.end : 1;
+        const isReverse = startN > endN;
+        const loStart = Math.min(startN, endN);
+        const loEnd = Math.max(startN, endN);
+
+        // Draw waveform
+        ctx.strokeStyle = '#34d399';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const step = Math.max(1, Math.floor(data.length / w));
+        for (let i = 0; i < w; i++) {
+            const idx = Math.floor((i / w) * data.length);
+            let min = 0, max = 0;
+            for (let j = 0; j < step; j++) {
+                const s = data[idx + j] || 0;
+                if (s < min) min = s;
+                if (s > max) max = s;
+            }
+            const yMin = h / 2 - max * h * 0.45;
+            const yMax = h / 2 - min * h * 0.45;
+            ctx.moveTo(i, yMin);
+            ctx.lineTo(i, yMax);
+        }
+        ctx.stroke();
+
+        // Dim outside region
+        const x1 = Math.floor(loStart * w);
+        const x2 = Math.floor(loEnd * w);
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(0, 0, x1, h);
+        ctx.fillRect(x2, 0, w - x2, h);
+
+        // Start marker
+        const sx = Math.floor(startN * w);
+        ctx.strokeStyle = isReverse ? '#ef4444' : '#34d399';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
+
+        // End marker
+        const ex = Math.floor(endN * w);
+        ctx.strokeStyle = isReverse ? '#34d399' : '#ef4444';
+        ctx.beginPath(); ctx.moveTo(ex, 0); ctx.lineTo(ex, h); ctx.stroke();
+
+        // Arrow for direction
+        const midX = (sx + ex) / 2;
+        ctx.fillStyle = '#888';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(isReverse ? '◄' : '►', midX, 10);
+    }
 }

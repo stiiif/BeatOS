@@ -234,7 +234,12 @@ export class Scheduler {
         }
 
         // Pass stepIndex to allow Step 1 reset check in worklet
-        this.granularSynth.scheduleNote(track, actualTime, scheduleVisualDrawCallback, velocity, stepIndex);
+        // Dispatch by track type
+        if (track.type === 'sampler' && this.samplerEngine) {
+            this.samplerEngine.scheduleNote(track, actualTime, scheduleVisualDrawCallback, velocity, stepIndex);
+        } else {
+            this.granularSynth.scheduleNote(track, actualTime, scheduleVisualDrawCallback, velocity, stepIndex);
+        }
     }
 
     processAutomationTrack(track, totalSteps, time) {

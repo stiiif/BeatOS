@@ -22,14 +22,17 @@ import { getEngineColor, hasEngine } from './utils/engineColors.js';
 import { SongSequencer } from './modules/SongSequencer.js';
 import { SongPanel } from './ui/components/SongPanel.js';
 import { MorphEngine } from './modules/MorphEngine.js';
+import { SamplerEngine } from './core/SamplerEngine.js';
 
 // Import all modulator types to ensure they register in the factory
 import './modules/modulators/index.js';
 
 const audioEngine = new AudioEngine();
 const granularSynth = new GranularSynth(audioEngine);
+const samplerEngine = new SamplerEngine(audioEngine);
 
 const scheduler = new Scheduler(audioEngine, granularSynth);
+scheduler.samplerEngine = samplerEngine;
 const trackManager = new TrackManager(audioEngine);
 const presetManager = new PresetManager();
 const trackLibrary = new TrackLibrary();
@@ -372,9 +375,13 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
 document.getElementById('playBtn').addEventListener('click', () => {
     if (!audioEngine.getContext()) return;
     if (!scheduler.getIsPlaying()) {
-        // Updated callback to pass stepIndex
         scheduler.start((time, trackId, stepIndex) => visualizer.scheduleVisualDraw(time, trackId, stepIndex));
         document.getElementById('playBtn').classList.add('text-emerald-500');
+        // If song mode is active, start song playback too
+        if (songPanel.isOpen && !songPanel.seq.isPlaying) {
+            songPanel.seq.startPlayback();
+            songPanel._startPlayheadAnimation();
+        }
     }
 });
 
@@ -384,23 +391,25 @@ document.getElementById('stopBtn').addEventListener('click', () => {
     if (_stopDblClickTimer) {
         clearTimeout(_stopDblClickTimer);
         _stopDblClickTimer = null;
-        // PANIC: kill everything
         scheduler.stop();
         document.getElementById('playBtn').classList.remove('text-emerald-500');
         uiManager.clearPlayheadForStop();
-        // Stop all active sources on every track
         tracks.forEach(t => t.stopAllSources());
-        // Kill master output momentarily then restore
         const ctx = audioEngine.getContext();
         if (ctx && audioEngine.masterBus && audioEngine.masterBus.volume) {
             const savedVol = audioEngine.masterBus.volume.gain.value;
             audioEngine.masterBus.volume.gain.setValueAtTime(0, ctx.currentTime);
             audioEngine.masterBus.volume.gain.linearRampToValueAtTime(savedVol, ctx.currentTime + 0.05);
         }
-        // Flash stop button red
         const stopBtn = document.getElementById('stopBtn');
         stopBtn.classList.add('text-red-500');
         setTimeout(() => stopBtn.classList.remove('text-red-500'), 300);
+        // Also stop song mode
+        if (songPanel.seq.isPlaying) {
+            songPanel.seq.stopPlayback();
+            document.getElementById('songCurrentBar').textContent = '--';
+            songPanel.draw();
+        }
         return;
     }
 
@@ -409,6 +418,12 @@ document.getElementById('stopBtn').addEventListener('click', () => {
     scheduler.stop();
     document.getElementById('playBtn').classList.remove('text-emerald-500');
     uiManager.clearPlayheadForStop();
+    // Also stop song mode
+    if (songPanel.seq.isPlaying) {
+        songPanel.seq.stopPlayback();
+        document.getElementById('songCurrentBar').textContent = '--';
+        songPanel.draw();
+    }
 });
 
 // ... rest of event listeners ...
@@ -709,6 +724,44 @@ if (btnSRC) {
     });
 }
 
+// 4b. SAMPLER BUTTON (Green - SAM - Classic Sampler)
+const btnSAM = document.getElementById('btnSAM');
+if (btnSAM) {
+    btnSAM.addEventListener('click', () => {
+        if (!tracks || tracks.length === 0 || !audioEngine.getContext()) { alert('Init Audio First'); return; }
+        // Create a temporary file input for sampler loading
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'audio/*';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const currentTrackIdx = uiManager.getSelectedTrackIndex();
+            const t = tracks[currentTrackIdx];
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const audioBuffer = await audioEngine.getContext().decodeAudioData(arrayBuffer);
+                t.buffer = audioBuffer;
+                t.type = 'sampler';
+                t.customSample = { name: file.name, source: 'local' };
+                // Reset sampler params to defaults
+                t.params.sampler = {
+                    start: 0.0, end: 1.0, pitchSemi: 0, pitchFine: 0,
+                    lpf: 20000, hpf: 20, volume: 0.8, loopMode: 'off',
+                    attack: 0.005, decay: 0.1, sustain: 0.8, release: 0.1
+                };
+                updateEngineSelector();
+                updateTrackControlsVisibility();
+                refreshAllTrackVisuals();
+                visualizer.triggerRedraw();
+            } catch (err) {
+                console.error('[Sampler] Load failed:', err);
+            }
+        };
+        input.click();
+    });
+}
+
 // 5. AUTO BUTTON (Purple - OTO)
 const btnOTO = document.getElementById('btnOTO');
 if (btnOTO) {
@@ -972,6 +1025,71 @@ document.querySelectorAll('.value-display').forEach(displayEl => {
 document.querySelectorAll('.lfo-tab').forEach(b => {
     b.addEventListener('click', e => { uiManager.setSelectedLfoIndex(parseInt(e.target.dataset.lfo)); uiManager.updateLfoUI(); });
 });
+
+// --- SAMPLER SLIDER HANDLERS ---
+document.querySelectorAll('.smp-slider').forEach(el => {
+    el.addEventListener('input', e => {
+        const t = tracks[uiManager.getSelectedTrackIndex()];
+        if (!t || t.type !== 'sampler') return;
+        const key = el.dataset.smp;
+        const val = parseFloat(e.target.value);
+        if (t.params.sampler) t.params.sampler[key] = val;
+        // Update value display
+        const valEl = el.nextElementSibling;
+        if (valEl && valEl.classList.contains('smp-val')) {
+            valEl.textContent = uiManager.trackControls._fmtSmpVal(key, val);
+        }
+        // Redraw scope on start/end change
+        if (key === 'start' || key === 'end') {
+            uiManager.trackControls._drawSamplerScope(t);
+        }
+    });
+});
+document.querySelectorAll('.smp-select').forEach(el => {
+    el.addEventListener('change', e => {
+        const t = tracks[uiManager.getSelectedTrackIndex()];
+        if (!t || t.type !== 'sampler') return;
+        const key = el.dataset.smp;
+        if (t.params.sampler) t.params.sampler[key] = e.target.value;
+    });
+});
+
+// Sampler reset button
+const samplerResetBtn = document.getElementById('samplerResetBtn');
+if (samplerResetBtn) {
+    samplerResetBtn.addEventListener('click', () => {
+        const t = tracks[uiManager.getSelectedTrackIndex()];
+        if (!t || t.type !== 'sampler') return;
+        t.params.sampler = {
+            start: 0.0, end: 1.0, pitchSemi: 0, pitchFine: 0,
+            lpf: 20000, hpf: 20, volume: 0.8, loopMode: 'off',
+            attack: 0.005, decay: 0.1, sustain: 0.8, release: 0.1
+        };
+        uiManager.trackControls._updateSamplerSliders(t);
+        uiManager.trackControls._drawSamplerScope(t);
+    });
+}
+
+// Sampler load button (from disk)
+const samplerLoadBtn = document.getElementById('samplerLoadBtn');
+if (samplerLoadBtn) {
+    samplerLoadBtn.addEventListener('click', () => {
+        document.getElementById('btnSAM')?.click();
+    });
+}
+
+// Sampler SRC button (Freesound)
+const samplerSrcBtn = document.getElementById('samplerSrcBtn');
+if (samplerSrcBtn) {
+    samplerSrcBtn.addEventListener('click', () => {
+        const t = tracks[uiManager.getSelectedTrackIndex()];
+        if (!t) return;
+        if (uiManager.searchModal) {
+            const query = t.customSample ? t.customSample.name.replace('.wav', '').replace('.mp3', '') : 'one shot sample';
+            uiManager.searchModal.open(t, query);
+        }
+    });
+}
 
 // FIX: Wrap old LFO listeners with existence checks to prevent crashes when new UI is loaded
 const lfoTargetEl = document.getElementById('lfoTarget');
