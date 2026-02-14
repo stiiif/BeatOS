@@ -729,36 +729,20 @@ const btnSAM = document.getElementById('btnSAM');
 if (btnSAM) {
     btnSAM.addEventListener('click', () => {
         if (!tracks || tracks.length === 0 || !audioEngine.getContext()) { alert('Init Audio First'); return; }
-        // Create a temporary file input for sampler loading
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'audio/*';
-        input.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const currentTrackIdx = uiManager.getSelectedTrackIndex();
-            const t = tracks[currentTrackIdx];
-            try {
-                const arrayBuffer = await file.arrayBuffer();
-                const audioBuffer = await audioEngine.getContext().decodeAudioData(arrayBuffer);
-                t.buffer = audioBuffer;
-                t.type = 'sampler';
-                t.customSample = { name: file.name, source: 'local' };
-                // Reset sampler params to defaults
-                t.params.sampler = {
-                    start: 0.0, end: 1.0, pitchSemi: 0, pitchFine: 0,
-                    lpf: 20000, hpf: 20, volume: 0.8, loopMode: 'off',
-                    attack: 0.005, decay: 0.1, sustain: 0.8, release: 0.1
-                };
-                updateEngineSelector();
-                updateTrackControlsVisibility();
-                refreshAllTrackVisuals();
-                visualizer.triggerRedraw();
-            } catch (err) {
-                console.error('[Sampler] Load failed:', err);
-            }
-        };
-        input.click();
+        const currentTrackIdx = uiManager.getSelectedTrackIndex();
+        const t = tracks[currentTrackIdx];
+        // Switch to sampler engine mode (show controls, user loads sample from within)
+        t.type = 'sampler';
+        if (!t.params.sampler) {
+            t.params.sampler = {
+                start: 0.0, end: 1.0, pitchSemi: 0, pitchFine: 0,
+                lpf: 20000, hpf: 20, volume: 0.8, loopMode: 'off',
+                attack: 0.005, decay: 0.1, sustain: 0.8, release: 0.1
+            };
+        }
+        updateEngineSelector();
+        updateTrackControlsVisibility();
+        refreshAllTrackVisuals();
     });
 }
 
@@ -1074,7 +1058,30 @@ if (samplerResetBtn) {
 const samplerLoadBtn = document.getElementById('samplerLoadBtn');
 if (samplerLoadBtn) {
     samplerLoadBtn.addEventListener('click', () => {
-        document.getElementById('btnSAM')?.click();
+        if (!audioEngine.getContext()) return;
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'audio/*';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const t = tracks[uiManager.getSelectedTrackIndex()];
+            if (!t) return;
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const audioBuffer = await audioEngine.getContext().decodeAudioData(arrayBuffer);
+                t.buffer = audioBuffer;
+                t.type = 'sampler';
+                t.customSample = { name: file.name, source: 'local' };
+                updateEngineSelector();
+                updateTrackControlsVisibility();
+                refreshAllTrackVisuals();
+                visualizer.triggerRedraw();
+            } catch (err) {
+                console.error('[Sampler] Load failed:', err);
+            }
+        };
+        input.click();
     });
 }
 
@@ -1084,6 +1091,15 @@ if (samplerSrcBtn) {
     samplerSrcBtn.addEventListener('click', () => {
         const t = tracks[uiManager.getSelectedTrackIndex()];
         if (!t) return;
+        // Pre-set to sampler so Freesound load respects the type
+        t.type = 'sampler';
+        if (!t.params.sampler) {
+            t.params.sampler = {
+                start: 0.0, end: 1.0, pitchSemi: 0, pitchFine: 0,
+                lpf: 20000, hpf: 20, volume: 0.8, loopMode: 'off',
+                attack: 0.005, decay: 0.1, sustain: 0.8, release: 0.1
+            };
+        }
         if (uiManager.searchModal) {
             const query = t.customSample ? t.customSample.name.replace('.wav', '').replace('.mp3', '') : 'one shot sample';
             uiManager.searchModal.open(t, query);
