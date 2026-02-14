@@ -191,9 +191,8 @@ export class Mixer {
             // Clear position pips when stopped
             if (this._pipsActive) {
                 for (const ak of this._autoKnobs) {
-                    if (this.mixerAutomation.hasAutomation(ak.key)) {
-                        ak.knobOuter.style.background = '';
-                    }
+                    ak.knobOuter.style.background = '';
+                    ak._recStartPos = undefined;
                 }
                 this._pipsActive = false;
             }
@@ -216,12 +215,21 @@ export class Mixer {
                 ak.updateRotation(val);
                 ak.onChange(val);
             }
-            // Update position pip on knob border
-            if (this.mixerAutomation.hasAutomation(ak.key)) {
-                const pos = this.mixerAutomation.getLanePosition(ak.key, globalStepFrac);
-                const deg = pos * 360;
-                ak.knobOuter.style.background =
-                    `conic-gradient(from 0deg, transparent ${deg - 8}deg, #f5f0e0 ${deg - 4}deg, #f5f0e0 ${deg + 4}deg, transparent ${deg + 8}deg)`;
+            // Position dot on knob border (works with or without automation data)
+            const hasAuto = this.mixerAutomation.hasAutomation(ak.key);
+            if (hasAuto || isRecording) {
+                const laneLen = this.mixerAutomation.getLaneLoopLength(ak.key);
+                const pos = hasAuto
+                    ? this.mixerAutomation.getLanePosition(ak.key, globalStepFrac)
+                    : ((globalStepFrac * 4) % (laneLen * 4)) / (laneLen * 4);
+                this._drawKnobPip(ak.knobOuter, pos, isRecording, ak._recStartPos);
+                // Track record start position
+                if (isRecording && ak._recStartPos === undefined) {
+                    ak._recStartPos = pos;
+                }
+            }
+            if (!isRecording) {
+                ak._recStartPos = undefined;
             }
         }
 
@@ -275,7 +283,16 @@ export class Mixer {
             sel.appendChild(opt);
         }
         sel.addEventListener('change', () => {
-            this.mixerAutomation.setLaneLoopLength(autoKey, parseInt(sel.value));
+            const newLen = parseInt(sel.value);
+            if (this.mixerAutomation.hasAutomation(autoKey)) {
+                this.mixerAutomation.setLaneLoopLength(autoKey, newLen);
+            } else {
+                // Pre-configure: store pending length for when recording starts on this key
+                if (!this.mixerAutomation._pendingLengths) this.mixerAutomation._pendingLengths = new Map();
+                this.mixerAutomation._pendingLengths.set(autoKey, newLen);
+            }
+            // Update knob tooltip
+            this._autoKnobs.forEach(ak => { if (ak.key === autoKey) ak.updateAutoBorder(); });
             this._updateLCMDisplay();
             this._hideLoopLengthMenu();
         });
@@ -306,6 +323,54 @@ export class Mixer {
 
     _hideLoopLengthMenu() {
         if (this._loopMenu) { this._loopMenu.remove(); this._loopMenu = null; }
+    }
+
+    /**
+     * Draw a position dot on the knob's outer ring using conic-gradient.
+     * When recording, also draws a red trail from the record start position.
+     * @param {HTMLElement} el - knobOuter element
+     * @param {number} pos - 0.0–1.0 loop position
+     * @param {boolean} isRecording - whether * is held
+     * @param {number|undefined} recStartPos - position when recording started
+     */
+    _drawKnobPip(el, pos, isRecording, recStartPos) {
+        const deg = pos * 360;
+        const dotSize = 5; // degrees for the dot arc
+
+        if (isRecording && recStartPos !== undefined) {
+            // Red trail from start to current position
+            const startDeg = recStartPos * 360;
+            let trailStart, trailEnd;
+            if (deg >= startDeg) {
+                trailStart = startDeg;
+                trailEnd = deg;
+            } else {
+                // Wrapped around — draw two arcs via a single gradient
+                trailStart = startDeg;
+                trailEnd = deg + 360;
+            }
+            // Build gradient: red trail arc + white dot at current position
+            el.style.background =
+                `conic-gradient(from ${trailStart}deg, ` +
+                `rgba(239,68,68,0.35) 0deg, rgba(239,68,68,0.35) ${trailEnd - trailStart}deg, ` +
+                `transparent ${trailEnd - trailStart}deg)`;
+            // Overlay the dot using box-shadow on a pseudo-approach: use a second layer
+            // Since conic-gradient is limited, use the trail + put the dot as a brighter spot at the end
+            const dotDeg = (trailEnd - trailStart);
+            el.style.background =
+                `conic-gradient(from ${trailStart}deg, ` +
+                `rgba(239,68,68,0.25) 0deg, ` +
+                `rgba(239,68,68,0.35) ${dotDeg - dotSize}deg, ` +
+                `#ef4444 ${dotDeg - dotSize}deg, #ef4444 ${dotDeg}deg, ` +
+                `transparent ${dotDeg}deg)`;
+        } else {
+            // Normal playback: cream dot only
+            el.style.background =
+                `conic-gradient(from 0deg, ` +
+                `transparent ${deg - dotSize}deg, ` +
+                `#f5f0e0 ${deg - dotSize}deg, #f5f0e0 ${deg + dotSize}deg, ` +
+                `transparent ${deg + dotSize}deg)`;
+        }
     }
 
     setCallbacks(onMute, onSolo, onMuteGroup, onSoloGroup, onSelect) {
@@ -613,14 +678,17 @@ export class Mixer {
             if (autoKey && this.mixerAutomation && this.mixerAutomation.hasAutomation(autoKey)) {
                 knobOuter.style.outline = '1.5px solid rgba(245, 240, 224, 0.25)';
                 knobOuter.style.outlineOffset = '1px';
-                // Show loop length as title
                 const len = this.mixerAutomation.getLaneLoopLength(autoKey);
-                knobOuter.title = `${label} — Auto loop: ${len} stp (right-click to change)`;
+                knobOuter.title = `${label} — Auto: ${len} stp (right-click)`;
             } else {
                 knobOuter.style.outline = '';
                 knobOuter.style.outlineOffset = '';
                 knobOuter.style.background = '';
-                knobOuter.title = label || '';
+                const pendingLen = this.mixerAutomation && this.mixerAutomation._pendingLengths
+                    ? this.mixerAutomation._pendingLengths.get(autoKey) : null;
+                knobOuter.title = pendingLen
+                    ? `${label} — Pre-set: ${pendingLen} stp (right-click)`
+                    : `${label || ''} (right-click for loop length)`;
             }
         };
 
@@ -649,7 +717,6 @@ export class Mixer {
         if (autoKey) {
             knobOuter.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                if (!this.mixerAutomation || !this.mixerAutomation.hasAutomation(autoKey)) return;
                 this._showLoopLengthMenu(e.clientX, e.clientY, autoKey);
             });
         }

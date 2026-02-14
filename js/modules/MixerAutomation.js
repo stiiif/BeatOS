@@ -33,7 +33,9 @@ export class MixerAutomation {
 
     getLaneLoopLength(key) {
         const lane = this.lanes.get(key);
-        return lane ? lane.loopSteps : this.defaultLoopSteps;
+        if (lane) return lane.loopSteps;
+        if (this._pendingLengths && this._pendingLengths.has(key)) return this._pendingLengths.get(key);
+        return this.defaultLoopSteps;
     }
 
     setLaneLoopLength(key, steps) {
@@ -71,7 +73,12 @@ export class MixerAutomation {
         if (!this.isRecording) return;
         let lane = this.lanes.get(key);
         if (!lane) {
-            const loopSteps = this.defaultLoopSteps;
+            // Check for pre-configured loop length
+            let loopSteps = this.defaultLoopSteps;
+            if (this._pendingLengths && this._pendingLengths.has(key)) {
+                loopSteps = this._pendingLengths.get(key);
+                this._pendingLengths.delete(key);
+            }
             const res = loopSteps * this.RES_PER_STEP;
             lane = { data: new Float32Array(res).fill(value), min, max, offset: 0, loopSteps };
             this.lanes.set(key, lane);
