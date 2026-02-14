@@ -84,6 +84,19 @@ export class EffectControls {
             slider.addEventListener('mouseup', () => this.isDragging = false);
             slider.oninput = (e) => {
                 this.manager.setParam(fxId, pIdx, parseFloat(e.target.value));
+                // Automizer recording: if * is held and an FX Automizer is armed
+                if (this._mixer && this._mixer._isStarHeld && this._scheduler && this._scheduler.getIsPlaying()) {
+                    const fxState = this.manager.effects[fxId];
+                    if (fxState) {
+                        const armedMod = fxState.lfos.find(m => m.type === 4 && m._armed);
+                        if (armedMod) {
+                            const normalized = parseFloat(e.target.value);
+                            const globalResStep = (this._scheduler.totalStepsPlayed || 0) * 4;
+                            if (!armedMod.isRecording) armedMod.startRecording('param_' + pIdx);
+                            armedMod.recordValue(normalized, globalResStep);
+                        }
+                    }
+                }
             };
 
             div.appendChild(slider);

@@ -109,6 +109,8 @@ export class GranularSynthWorklet {
         modCtx.siblings = track.lfos;
         modCtx.audioEngine = this.audioEngine;
         modCtx.tracks = this.audioEngine._tracks;
+        // Provide global step position for Automizer modulators
+        modCtx.globalStepFrac = this.audioEngine._scheduler ? (this.audioEngine._scheduler.totalStepsPlayed || 0) : 0;
         
         // B8: for-loop instead of forEach
         const lfos = track.lfos;
@@ -184,6 +186,7 @@ export class GranularSynthWorklet {
         noteModCtx.audioEngine = this.audioEngine;
         noteModCtx.tracks = this.audioEngine._tracks;
         noteModCtx.stepIndex = stepIndex;
+        noteModCtx.globalStepFrac = this.audioEngine._scheduler ? (this.audioEngine._scheduler.totalStepsPlayed || 0) : 0;
         
         // B8: for-loop instead of forEach
         const lfos = track.lfos;

@@ -39,6 +39,8 @@ const visualizer = new Visualizer('visualizer', 'bufferDisplay', audioEngine);
 // New Effect Managers
 const effectsManager = new EffectsManager(audioEngine);
 const effectControls = new EffectControls(effectsManager);
+effectControls._scheduler = scheduler;
+// effectControls._mixer wired after mixer is available (in render/init)
 
 // Config-driven Randomizer
 const randomizer = new Randomizer();
@@ -57,6 +59,7 @@ const songPanel = new SongPanel(songSequencer, snapshotBank, scheduler);
 
 scheduler.setTrackManager(trackManager);
 scheduler.setTracks(trackManager.getTracks());
+audioEngine._scheduler = scheduler; // For Automizer modCtx globalStepFrac
 
 trackManager.initTracks();
 const tracks = trackManager.getTracks();
@@ -131,6 +134,38 @@ uiManager.selectTrack = (idx, cb) => {
 uiManager._onStepToggle = (trk, step) => {
     refreshAllTrackVisuals();
 };
+
+// When * key is released, stop any active Automizer recordings
+if (uiManager.mixer) {
+    effectControls._mixer = uiManager.mixer;
+    uiManager.mixer._onStarRelease = () => {
+        // Stop granular track Automizers
+        tracks.forEach(t => {
+            t.lfos.forEach(mod => {
+                if (mod.type === 4 && mod.isRecording) {
+                    mod.stopRecording();
+                    mod._armed = false;
+                }
+            });
+        });
+        // Stop FX Automizers
+        if (effectsManager && effectsManager.effects) {
+            effectsManager.effects.forEach(fx => {
+                if (fx && fx.lfos) {
+                    fx.lfos.forEach(mod => {
+                        if (mod.type === 4 && mod.isRecording) {
+                            mod.stopRecording();
+                            mod._armed = false;
+                        }
+                    });
+                }
+            });
+        }
+        // Refresh UIs to update waveform displays
+        if (uiManager.automationPanel) uiManager.automationPanel.render();
+        if (effectControls) effectControls.render();
+    };
+}
 
 function addTrack() {
     const newId = trackManager.addTrack();
@@ -851,6 +886,20 @@ document.querySelectorAll('.param-slider').forEach(el => {
 
         uiManager.updateKnobs(); // Updates all knobs, including position/start/end if they were pushed
         if (t.type === 'granular') visualizer.triggerRedraw();
+
+        // Automizer recording: if * is held and an Automizer slot is armed, capture the gesture
+        if (uiManager.mixer && uiManager.mixer._isStarHeld && scheduler.getIsPlaying()) {
+            const armedMod = t.lfos.find(m => m.type === 4 && m._armed); // MOD_TYPE.AUTOMIZER = 4
+            if (armedMod) {
+                const min = parseFloat(e.target.min);
+                const max = parseFloat(e.target.max);
+                const normalized = (value - min) / (max - min);
+                const totalPlayed = scheduler.totalStepsPlayed || 0;
+                const globalResStep = totalPlayed * 4;
+                if (!armedMod.isRecording) armedMod.startRecording(param);
+                armedMod.recordValue(normalized, globalResStep);
+            }
+        }
     });
 
     // 2. Mouse Wheel Fine-Tuning Event

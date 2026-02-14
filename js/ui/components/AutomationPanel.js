@@ -148,6 +148,7 @@ export class AutomationPanel {
             [MOD_TYPE.ENV_FOLLOW]:  ['SRC', 'ATK', 'REL', 'INV'],
             [MOD_TYPE.COMPARATOR]:  ['A × B', 'MODE', 'THRESH', 'R / SM'],
             [MOD_TYPE.PHYSICS]:     ['MODE', 'GRAV', 'DAMP', 'TRIG'],
+            [MOD_TYPE.AUTOMIZER]:   ['WAVE', 'LOOP', 'REC'],
         };
 
         let maxRows = 0;

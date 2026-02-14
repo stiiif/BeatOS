@@ -89,6 +89,8 @@ export class Mixer {
                 this._isStarHeld = false;
                 this.mixerAutomation.stopRecording();
                 this._updateHeaderRecordState(false);
+                // Stop any active Automizer recordings
+                if (this._onStarRelease) this._onStarRelease();
             }
         });
     }

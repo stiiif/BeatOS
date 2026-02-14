@@ -6,3 +6,4 @@ export { LFO } from './LFO.js';
 export { EnvelopeFollower } from './EnvelopeFollower.js';
 export { Comparator } from './Comparator.js';
 export { PhysicsModulator } from './PhysicsModulator.js';
+export { Automizer } from './Automizer.js';

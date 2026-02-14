@@ -40,6 +40,7 @@ export class EffectsManager {
     update(time) {
         const modCtx = this._modCtx;
         modCtx.audioEngine = this.audioEngine;
+        modCtx.globalStepFrac = this.audioEngine._scheduler ? (this.audioEngine._scheduler.totalStepsPlayed || 0) : 0;
         const lfoVals = this._lfoValues;
         const mods = this._modulations;
 
