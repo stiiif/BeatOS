@@ -159,15 +159,37 @@ export class SnapshotBankUI {
         const occupied = this.bank.isOccupied(i);
         const active = this.bank.activeSlot === i;
 
-        // Reset classes
+        // Per-slot colors (matching song sequencer timeline)
+        const SLOT_COLORS = [
+            '#06b6d4','#8b5cf6','#f59e0b','#ef4444','#10b981','#ec4899','#3b82f6','#f97316',
+            '#14b8a6','#a855f7','#eab308','#e11d48','#22c55e','#d946ef','#6366f1','#fb923c'
+        ];
+        const SLOT_BG_COLORS = [
+            '#164e63','#4c1d95','#78350f','#7f1d1d','#14532d','#831843','#1e3a5f','#7c2d12',
+            '#134e4a','#581c87','#713f12','#881337','#166534','#701a75','#312e81','#9a3412'
+        ];
+
+        // Reset
         btn.className = 'snap-slot';
+        btn.style.cssText = '';
 
         if (occupied) {
             btn.classList.add('snap-occupied');
-            if (active) btn.classList.add('snap-active');
+            // Apply per-slot color
+            btn.style.backgroundColor = SLOT_BG_COLORS[i];
+            btn.style.color = SLOT_COLORS[i];
+            btn.style.borderColor = SLOT_COLORS[i] + '88';
+
+            if (active) {
+                btn.classList.add('snap-active');
+                btn.style.borderColor = SLOT_COLORS[i];
+                btn.style.boxShadow = `0 0 6px ${SLOT_COLORS[i]}66`;
+            }
             btn.title = `S${i + 1} — Click: recall | Shift+Click: overwrite | Dbl-click: clear`;
         } else {
             btn.classList.add('snap-empty');
+            // Empty slots show a dim version of their slot color
+            btn.style.borderColor = SLOT_COLORS[i] + '22';
             btn.title = `S${i + 1} (empty) — Shift+Click: save here`;
         }
     }

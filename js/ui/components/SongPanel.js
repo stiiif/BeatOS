@@ -37,6 +37,9 @@ export class SongPanel {
         // Region edge dragging
         this._edgeDrag = null; // { region, edge:'start'|'end', origCell }
 
+        // Move tool dragging
+        this._moveDrag = null; // { startBar, startMouseBar }
+
         // Morph lane dragging
         this._morphDragCell = -1;
         this._morphDragging = false;
@@ -88,6 +91,7 @@ export class SongPanel {
                 <button data-tool="select" class="song-tool-btn" title="Select (S)"><i class="fas fa-mouse-pointer"></i></button>
                 <button data-tool="draw" class="song-tool-btn active" title="Draw (D)"><i class="fas fa-pen"></i></button>
                 <button data-tool="erase" class="song-tool-btn" title="Erase (E)"><i class="fas fa-eraser"></i></button>
+                <button data-tool="move" class="song-tool-btn" title="Move (M)"><i class="fas fa-arrows-alt-h"></i></button>
                 <span class="song-sep">|</span>
                 <button data-action="copy" class="song-tool-btn" title="Copy (Ctrl+C)"><i class="fas fa-copy"></i></button>
                 <button data-action="paste" class="song-tool-btn" title="Paste (Ctrl+V)"><i class="fas fa-paste"></i></button>
@@ -183,6 +187,7 @@ export class SongPanel {
             if (e.key === 's' && !e.ctrlKey) { e.preventDefault(); this._setTool('select'); }
             if (e.key === 'd' && !e.ctrlKey) { e.preventDefault(); this._setTool('draw'); }
             if (e.key === 'e' && !e.ctrlKey) { e.preventDefault(); this._setTool('erase'); }
+            if (e.key === 'm' && !e.ctrlKey) { e.preventDefault(); this._setTool('move'); }
             if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this._doAction('eraseSelection'); }
             if (e.ctrlKey && e.key === 'c') { e.preventDefault(); this._doAction('copy'); }
             if (e.ctrlKey && e.key === 'v') { e.preventDefault(); this._doAction('paste'); }
@@ -207,7 +212,15 @@ export class SongPanel {
         switch (action) {
             case 'copy': if (has) this.clipboard = this.seq.copyBarRange(s, e); break;
             case 'paste': if (this.clipboard && this.selectionStart >= 0) this.seq.pasteAtBar(this.selectionStart, this.clipboard); break;
-            case 'dup': if (has) this.seq.duplicateBarRange(s, e); break;
+            case 'dup':
+                if (has) {
+                    const newStart = this.seq.duplicateBarRange(s, e);
+                    const rangeLen = e - s;
+                    // Auto-select the newly duplicated range
+                    this.selectionStart = newStart;
+                    this.selectionEnd = newStart + rangeLen;
+                }
+                break;
             case 'clearAll': this.seq.clearAll(); this.selectionStart = -1; this.selectionEnd = -1; break;
             case 'eraseSelection': if (has) this.seq.clearBarRange(s, e); break;
         }
@@ -261,6 +274,26 @@ export class SongPanel {
                 case 'erase':
                     this.seq.setBar(bar, -1);
                     break;
+                case 'move':
+                    // Start moving the selection or the region under cursor
+                    if (this.selectionStart >= 0 && this.selectionEnd >= 0 &&
+                        bar >= Math.min(this.selectionStart, this.selectionEnd) &&
+                        bar <= Math.max(this.selectionStart, this.selectionEnd)) {
+                        // Move entire selection
+                        this._moveDrag = { startBar: Math.min(this.selectionStart, this.selectionEnd), startMouseBar: bar };
+                    } else {
+                        // Select the region under cursor for moving
+                        const cell = bar * SUBDIV_PER_BAR;
+                        const region = this.seq.getRegionAt(cell);
+                        if (region) {
+                            const rStartBar = Math.floor(region.start / SUBDIV_PER_BAR);
+                            const rEndBar = Math.floor(region.end / SUBDIV_PER_BAR);
+                            this.selectionStart = rStartBar;
+                            this.selectionEnd = rEndBar;
+                            this._moveDrag = { startBar: rStartBar, startMouseBar: bar };
+                        }
+                    }
+                    break;
             }
         }
         this.draw();
@@ -303,12 +336,32 @@ export class SongPanel {
             return;
         }
 
+        // Move drag
+        if (this._moveDrag) {
+            const bar = this._xToBar(px);
+            const delta = bar - this._moveDrag.startMouseBar;
+            if (delta !== 0) {
+                const s = Math.min(this.selectionStart, this.selectionEnd);
+                const e = Math.max(this.selectionStart, this.selectionEnd);
+                const newStart = this.seq.moveBarRange(s, e, delta);
+                const rangeLen = e - s;
+                this.selectionStart = newStart;
+                this.selectionEnd = newStart + rangeLen;
+                this._moveDrag.startMouseBar = bar;
+                this.draw();
+            }
+            return;
+        }
+
         if (!this._isDragging) {
             // Hover: check for edge cursor
             const cellY = this.RULER_H;
             if (y >= cellY && y < cellY + this.CELL_H) {
                 const edgeInfo = this._hitTestRegionEdge(px);
-                this.canvas.style.cursor = edgeInfo ? 'ew-resize' : (this.tool === 'draw' ? 'crosshair' : this.tool === 'erase' ? 'not-allowed' : 'default');
+                this.canvas.style.cursor = edgeInfo ? 'ew-resize' :
+                    this.tool === 'draw' ? 'crosshair' :
+                    this.tool === 'erase' ? 'not-allowed' :
+                    this.tool === 'move' ? 'grab' : 'default';
             } else if (y >= cellY + this.CELL_H) {
                 const cell = this._xToCell(px);
                 const tp = this._findTransitionNear(cell);
@@ -332,6 +385,7 @@ export class SongPanel {
     _onMouseUp() {
         this._isDragging = false;
         this._edgeDrag = null;
+        this._moveDrag = null;
         this._morphDragging = false;
         this._morphDragCell = -1;
     }

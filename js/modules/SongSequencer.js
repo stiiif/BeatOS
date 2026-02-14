@@ -108,22 +108,48 @@ export class SongSequencer {
         return { start, end, slot };
     }
 
-    /** Move the start edge of a region. Positive delta = shrink (move right). */
+    /** Move the start edge of a region (junction drag: neighbor end follows). */
     moveRegionStart(region, newStart) {
         newStart = Math.max(0, Math.min(region.end, newStart));
-        // Clear cells before new start
-        for (let i = region.start; i < newStart; i++) this.cells[i] = -1;
-        // Fill cells from newStart to old start if expanding
-        for (let i = newStart; i < region.start; i++) this.cells[i] = region.slot;
+        const oldStart = region.start;
+        if (newStart === oldStart) return;
+
+        // Check if there's a neighbor region directly before this one
+        const neighborSlot = oldStart > 0 ? this.cells[oldStart - 1] : -1;
+
+        if (newStart > oldStart) {
+            // Shrinking this region (moving start right) → expand neighbor or clear
+            if (neighborSlot >= 0) {
+                for (let i = oldStart; i < newStart; i++) this.cells[i] = neighborSlot;
+            } else {
+                for (let i = oldStart; i < newStart; i++) this.cells[i] = -1;
+            }
+        } else {
+            // Expanding this region (moving start left) → shrink neighbor or overwrite empty
+            for (let i = newStart; i < oldStart; i++) this.cells[i] = region.slot;
+        }
     }
 
-    /** Move the end edge of a region. */
+    /** Move the end edge of a region (junction drag: neighbor start follows). */
     moveRegionEnd(region, newEnd) {
         newEnd = Math.max(region.start, Math.min(this.totalCells - 1, newEnd));
-        // Clear cells after new end
-        for (let i = newEnd + 1; i <= region.end; i++) this.cells[i] = -1;
-        // Fill cells from old end to new end if expanding
-        for (let i = region.end + 1; i <= newEnd; i++) this.cells[i] = region.slot;
+        const oldEnd = region.end;
+        if (newEnd === oldEnd) return;
+
+        // Check if there's a neighbor region directly after this one
+        const neighborSlot = oldEnd < this.totalCells - 1 ? this.cells[oldEnd + 1] : -1;
+
+        if (newEnd < oldEnd) {
+            // Shrinking this region (moving end left) → expand neighbor or clear
+            if (neighborSlot >= 0) {
+                for (let i = newEnd + 1; i <= oldEnd; i++) this.cells[i] = neighborSlot;
+            } else {
+                for (let i = newEnd + 1; i <= oldEnd; i++) this.cells[i] = -1;
+            }
+        } else {
+            // Expanding this region (moving end right) → overwrite with this slot
+            for (let i = oldEnd + 1; i <= newEnd; i++) this.cells[i] = region.slot;
+        }
     }
 
     getLastFilledCell() {
@@ -171,6 +197,17 @@ export class SongSequencer {
     duplicateBarRange(startBar, endBar) {
         const data = this.copyBarRange(startBar, endBar);
         this.pasteAtBar(endBar + 1, data);
+        return endBar + 1; // Return the start bar of the duplicated range
+    }
+
+    /** Move a bar range by delta bars (positive = right). Returns new start bar. */
+    moveBarRange(startBar, endBar, deltaBars) {
+        if (deltaBars === 0) return startBar;
+        const data = this.copyBarRange(startBar, endBar);
+        this.clearBarRange(startBar, endBar);
+        const newStart = Math.max(0, Math.min(this.length - (endBar - startBar + 1), startBar + deltaBars));
+        this.pasteAtBar(newStart, data);
+        return newStart;
     }
 
     // ========================================================================
