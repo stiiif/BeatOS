@@ -574,7 +574,11 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     const btn = document.getElementById('saveBtn');
     const originalHtml = btn.innerHTML;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; btn.disabled = true;
-    try { await presetManager.savePreset(tracks, scheduler.getBPM()); } catch (e) { alert("Save failed"); }
+    try { await presetManager.savePreset(tracks, scheduler.getBPM(), {
+        effectsManager,
+        mixerAutomation: uiManager.mixer ? uiManager.mixer.mixerAutomation : null,
+        audioEngine
+    }); } catch (e) { console.error(e); alert("Save failed"); }
     finally { btn.innerHTML = originalHtml; btn.disabled = false; }
 });
 
@@ -585,7 +589,19 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
         audioEngine.onBpmChange = (bpm) => { scheduler.setBPM(bpm); document.getElementById('bpmInput').value = bpm; };
         presetManager.loadPreset(file, tracks, addTrack, (i) => uiManager.updateTrackStateUI(i), uiManager.matrixStepElements, (i) => {
             uiManager.selectTrack(i); visualizer.setSelectedTrackIndex(i); visualizer.triggerRedraw(); updateTrackControlsVisibility();
-        }, uiManager.getSelectedTrackIndex(), audioEngine);
+        }, uiManager.getSelectedTrackIndex(), audioEngine, {
+            effectsManager,
+            mixerAutomation: uiManager.mixer ? uiManager.mixer.mixerAutomation : null,
+            audioEngine,
+            onLoadComplete: () => {
+                // Re-render mixer to sync knobs/faders with restored params
+                if (uiManager.mixer) uiManager.mixer.render();
+                // Re-render FX controls
+                if (typeof effectControls !== 'undefined' && effectControls.render) effectControls.render();
+                // Sync track bus AudioNodes
+                tracks.forEach(t => granularSynth.syncTrackBusParams(t));
+            }
+        });
     }
     document.getElementById('fileInput').value = '';
 });

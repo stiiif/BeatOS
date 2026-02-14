@@ -5,22 +5,30 @@ import { Modulator } from './modulators/Modulator.js';
 
 export class PresetManager {
     // --- SAVE LOGIC ---
-    async savePreset(tracks, bpm) {
-        // Create new ZIP
+    async savePreset(tracks, bpm, extraState = {}) {
         const zip = new JSZip();
         
-        // Prepare track data for JSON
         const tracksData = [];
         
         for(let i=0; i<tracks.length; i++) {
             const t = tracks[i];
             const trackObj = {
                 id: t.id, 
+                type: t.type || 'granular',
+                clockDivider: t.clockDivider || 1,
                 params: t.params, 
-                steps: t.steps, 
+                steps: Array.from(t.steps), 
+                microtiming: Array.from(t.microtiming || []),
                 muted: t.muted, 
                 soloed: t.soloed, 
                 stepLock: t.stepLock,
+                ignoreRandom: t.ignoreRandom || false,
+                chokeGroup: t.chokeGroup || 0,
+                resetOnBar: t.resetOnBar || false,
+                resetOnTrig: t.resetOnTrig || false,
+                cleanMode: t.cleanMode || false,
+                scanSync: t.scanSync || false,
+                scanSyncMultiplier: t.scanSyncMultiplier || 1,
                 lfos: t.lfos.map(l => l.serialize ? l.serialize() : { 
                     wave: l.wave, 
                     rate: l.rate, 
@@ -28,8 +36,6 @@ export class PresetManager {
                     targets: l.targets
                 }),
                 stepPitches: t.stepPitches || null,
-                scanSync: t.scanSync || false,
-                scanSyncMultiplier: t.scanSyncMultiplier || 1,
                 samplePath: null
             };
 
@@ -59,8 +65,30 @@ export class PresetManager {
 
         const presetData = {
             bpm: bpm,
-            version: "2.1", // Bump version for .beatos format with multi-LFO targets
-            tracks: tracksData
+            version: "3.0",
+            tracks: tracksData,
+            // FX Engines
+            effectsManager: extraState.effectsManager ? extraState.effectsManager.effects.map(fx => ({
+                id: fx.id,
+                params: [...fx.params],
+                lfos: fx.lfos.map(l => l.serialize ? l.serialize() : { wave: l.wave, rate: l.rate, amount: l.amount }),
+                matrix: fx.matrix.map(row => [...row])
+            })) : null,
+            // Mixer Automation
+            mixerAutomation: extraState.mixerAutomation ? extraState.mixerAutomation.serialize() : null,
+            // Group Bus params
+            groupBuses: extraState.audioEngine ? extraState.audioEngine.groupBuses.map(g => g ? ({
+                volume: g.volume ? g.volume.gain.value : 0.8,
+                pan: g.volume ? 0 : 0, // Pan is a StereoPannerNode
+                params: g.params ? { ...g.params } : {}
+            }) : null) : null,
+            // Return Bus params
+            returnBuses: extraState.audioEngine ? extraState.audioEngine.returnBuses.map(r => r ? ({
+                params: r.params ? { ...r.params } : {}
+            }) : null) : null,
+            // Master volume
+            masterVolume: extraState.audioEngine && extraState.audioEngine.masterBus ? 
+                extraState.audioEngine.masterBus.volume.gain.value : 1.0
         };
 
         // Add JSON to ZIP
@@ -80,43 +108,35 @@ export class PresetManager {
     }
 
     // --- LOAD LOGIC ---
-    loadPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine) {
+    loadPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, extraState = {}) {
         if (!file) return;
-
-        // Check file extension to decide handling
         const isZip = file.name.endsWith('.beatos') || file.name.endsWith('.zip');
-
         if (isZip) {
-            this.loadZipPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine);
+            this.loadZipPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, extraState);
         } else {
-            // Fallback for legacy .json files
-            this.loadJsonPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine);
+            this.loadJsonPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, extraState);
         }
     }
 
-    async loadZipPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine) {
+    async loadZipPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, extraState = {}) {
         try {
             const zip = await JSZip.loadAsync(file);
-            
-            // 1. Load preset.json
             if (!zip.file("preset.json")) throw new Error("Invalid .beatos file: missing preset.json");
             const jsonStr = await zip.file("preset.json").async("string");
             const data = JSON.parse(jsonStr);
-            
-            await this.applyPresetData(data, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, zip);
-
+            await this.applyPresetData(data, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, zip, extraState);
         } catch (err) {
             console.error(err);
             alert("Failed to load .beatos file: " + err.message);
         }
     }
 
-    loadJsonPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine) {
+    loadJsonPreset(file, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, extraState = {}) {
         const reader = new FileReader();
         reader.onload = async (e) => {
             try {
                 const data = JSON.parse(e.target.result);
-                await this.applyPresetData(data, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, null);
+                await this.applyPresetData(data, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, null, extraState);
             } catch (err) { 
                 console.error(err); 
                 alert("Failed to load JSON preset."); 
@@ -126,7 +146,7 @@ export class PresetManager {
     }
 
     // Shared application logic
-    async applyPresetData(data, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, zipInstance) {
+    async applyPresetData(data, tracks, addTrackCallback, updateTrackStateUICallback, matrixStepElements, selectTrackCallback, selectedTrackIndex, audioEngine, zipInstance, extraState = {}) {
         if(!data.tracks || !Array.isArray(data.tracks)) throw new Error("Invalid preset structure");
         
         const bpm = data.bpm || 120;
@@ -140,6 +160,8 @@ export class PresetManager {
             if (i >= tracks.length) break;
             
             const t = tracks[i];
+            t.type = trackData.type || 'granular';
+            t.clockDivider = trackData.clockDivider || 1;
             t.params = { ...t.params, ...trackData.params };
             
             // Backward compat: convert old pitch ratio to semitones
@@ -148,14 +170,28 @@ export class PresetManager {
                 t.params.pitchFine = 0;
             }
             
-            // Load stepPitches if present
             if (trackData.stepPitches) {
                 t.stepPitches = trackData.stepPitches;
             }
             
-            t.steps = [...trackData.steps];
-            t.muted = !!trackData.muted; t.soloed = !!trackData.soloed;
+            // Restore microtiming
+            if (trackData.microtiming) {
+                const mt = new Float32Array(t.microtiming.length);
+                for (let j = 0; j < Math.min(trackData.microtiming.length, mt.length); j++) {
+                    mt[j] = trackData.microtiming[j];
+                }
+                t.microtiming = mt;
+            }
+            
+            t.steps = new Uint8Array(trackData.steps);
+            t.muted = !!trackData.muted; 
+            t.soloed = !!trackData.soloed;
             t.stepLock = !!trackData.stepLock;
+            t.ignoreRandom = !!trackData.ignoreRandom;
+            t.chokeGroup = trackData.chokeGroup || 0;
+            t.resetOnBar = !!trackData.resetOnBar;
+            t.resetOnTrig = !!trackData.resetOnTrig;
+            t.cleanMode = !!trackData.cleanMode;
             t.scanSync = !!trackData.scanSync;
             t.scanSyncMultiplier = trackData.scanSyncMultiplier || 1;
             
@@ -230,5 +266,79 @@ export class PresetManager {
         
         selectTrackCallback(selectedTrackIndex);
         if (audioEngine.onBpmChange) audioEngine.onBpmChange(bpm);
+
+        // --- RESTORE FX ENGINE STATE ---
+        if (data.effectsManager && extraState.effectsManager) {
+            const em = extraState.effectsManager;
+            data.effectsManager.forEach((fxData, fxIdx) => {
+                if (fxIdx >= em.effects.length) return;
+                const fx = em.effects[fxIdx];
+                // Params
+                if (fxData.params) {
+                    for (let i = 0; i < Math.min(fxData.params.length, fx.params.length); i++) {
+                        fx.params[i] = fxData.params[i];
+                    }
+                }
+                // LFOs
+                if (fxData.lfos) {
+                    fxData.lfos.forEach((lData, lIdx) => {
+                        if (lIdx >= fx.lfos.length) return;
+                        if (lData.type !== undefined) {
+                            fx.lfos[lIdx] = Modulator.deserialize(lData);
+                        } else {
+                            const lfo = fx.lfos[lIdx];
+                            if (lData.wave !== undefined) lfo.wave = lData.wave;
+                            if (lData.rate !== undefined) lfo.rate = lData.rate;
+                            if (lData.amount !== undefined) lfo.amount = lData.amount;
+                            if (lData.sync !== undefined) lfo.sync = lData.sync;
+                            if (lData.syncRateIndex !== undefined) lfo.syncRateIndex = lData.syncRateIndex;
+                            if (lData.targets) lfo.targets = [...lData.targets];
+                        }
+                    });
+                }
+                // Matrix
+                if (fxData.matrix) {
+                    fx.matrix = fxData.matrix.map(row => [...row]);
+                }
+            });
+        }
+
+        // --- RESTORE MIXER AUTOMATION ---
+        if (data.mixerAutomation && extraState.mixerAutomation) {
+            extraState.mixerAutomation.deserialize(data.mixerAutomation);
+        }
+
+        // --- RESTORE GROUP BUS PARAMS ---
+        if (data.groupBuses && audioEngine.groupBuses) {
+            data.groupBuses.forEach((gData, gIdx) => {
+                if (!gData || !audioEngine.groupBuses[gIdx]) return;
+                const bus = audioEngine.groupBuses[gIdx];
+                if (gData.volume !== undefined && bus.volume) {
+                    bus.volume.gain.value = gData.volume;
+                }
+                if (gData.params) {
+                    Object.assign(bus.params || {}, gData.params);
+                }
+            });
+        }
+
+        // --- RESTORE RETURN BUS PARAMS ---
+        if (data.returnBuses && audioEngine.returnBuses) {
+            data.returnBuses.forEach((rData, rIdx) => {
+                if (!rData || !audioEngine.returnBuses[rIdx]) return;
+                const bus = audioEngine.returnBuses[rIdx];
+                if (rData.params) {
+                    Object.assign(bus.params || {}, rData.params);
+                }
+            });
+        }
+
+        // --- RESTORE MASTER VOLUME ---
+        if (data.masterVolume !== undefined && audioEngine.masterBus && audioEngine.masterBus.volume) {
+            audioEngine.masterBus.volume.gain.value = data.masterVolume;
+        }
+
+        // Signal that a full refresh is needed (mixer, FX UI)
+        if (extraState.onLoadComplete) extraState.onLoadComplete();
     }
 }
