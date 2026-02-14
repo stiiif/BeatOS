@@ -97,18 +97,18 @@ export class Mixer {
         this._scheduler = scheduler;
     }
 
+    /** Get current global automation resolution step for recording */
     _getCurrentStep256() {
         if (!this._scheduler || !this._scheduler.getIsPlaying()) return 0;
-        const step = this._scheduler.getCurrentStep();
-        // Approximate sub-step fraction from audio context timing
+        const totalPlayed = this._scheduler.totalStepsPlayed || 0;
         const ctx = this.audioEngine.getContext();
-        if (!ctx) return MixerAutomation.getStep256(step);
+        if (!ctx) return totalPlayed * 4;
         const bpm = this._scheduler.getBPM();
         const secPerStep = 60.0 / bpm / 4;
         const nextNoteTime = this._scheduler.nextNoteTime;
         const elapsed = ctx.currentTime - (nextNoteTime - secPerStep);
         const frac = Math.max(0, Math.min(1, elapsed / secPerStep));
-        return MixerAutomation.getStep256(step, frac);
+        return Math.floor((totalPlayed + frac) * 4);
     }
 
     _getLoopFraction() {
@@ -122,6 +122,21 @@ export class Mixer {
         const elapsed = ctx.currentTime - (nextNoteTime - secPerStep);
         const frac = Math.max(0, Math.min(1, elapsed / secPerStep));
         return MixerAutomation.getLoopFraction(step, frac);
+    }
+
+    /** Get monotonic global step position (fractional) for polymetric automation */
+    _getGlobalStepFrac() {
+        if (!this._scheduler || !this._scheduler.getIsPlaying()) return 0;
+        const step = this._scheduler.getCurrentStep();
+        const totalPlayed = this._scheduler.totalStepsPlayed || 0;
+        const ctx = this.audioEngine.getContext();
+        if (!ctx) return totalPlayed;
+        const bpm = this._scheduler.getBPM();
+        const secPerStep = 60.0 / bpm / 4;
+        const nextNoteTime = this._scheduler.nextNoteTime;
+        const elapsed = ctx.currentTime - (nextNoteTime - secPerStep);
+        const frac = Math.max(0, Math.min(1, elapsed / secPerStep));
+        return totalPlayed + frac;
     }
 
     _updateHeaderRecordState(isRecording) {
@@ -170,36 +185,125 @@ export class Mixer {
      */
     updateAutomation() {
         if (!this.mixerAutomation || this.mixerAutomation.lanes.size === 0) return;
-        if (!this._scheduler || !this._scheduler.getIsPlaying()) return;
+        if (!this._scheduler || !this._scheduler.getIsPlaying()) {
+            // Clear position pips when stopped
+            if (this._pipsActive) {
+                for (const ak of this._autoKnobs) {
+                    if (this.mixerAutomation.hasAutomation(ak.key)) {
+                        ak.knobOuter.style.background = '';
+                    }
+                }
+                this._pipsActive = false;
+            }
+            return;
+        }
+        this._pipsActive = true;
 
-        const fraction = this._getLoopFraction();
+        const globalStepFrac = this._getGlobalStepFrac();
         const isRecording = this.mixerAutomation.isRecording;
         const recordingLanes = this.mixerAutomation._recordingLanes;
 
-        // Update knobs — skip any being dragged or actively recorded
+        // Update knobs
         for (let i = 0; i < this._autoKnobs.length; i++) {
             const ak = this._autoKnobs[i];
             if (ak.isDragging && ak.isDragging()) continue;
             if (isRecording && recordingLanes.has(ak.key)) continue;
-            const val = this.mixerAutomation.getValue(ak.key, fraction);
+            const val = this.mixerAutomation.getValue(ak.key, globalStepFrac);
             if (val !== null) {
                 ak.setCurrentValue(val);
                 ak.updateRotation(val);
                 ak.onChange(val);
             }
+            // Update position pip on knob border
+            if (this.mixerAutomation.hasAutomation(ak.key)) {
+                const pos = this.mixerAutomation.getLanePosition(ak.key, globalStepFrac);
+                const deg = pos * 360;
+                ak.knobOuter.style.background =
+                    `conic-gradient(from 0deg, transparent ${deg - 8}deg, #f5f0e0 ${deg - 4}deg, #f5f0e0 ${deg + 4}deg, transparent ${deg + 8}deg)`;
+            }
         }
 
-        // Update faders — skip actively dragged or recorded
+        // Update faders
         for (let i = 0; i < this._autoFaders.length; i++) {
             const af = this._autoFaders[i];
             if (af.isDragging && af.isDragging()) continue;
             if (isRecording && recordingLanes.has(af.key)) continue;
-            const val = this.mixerAutomation.getValue(af.key, fraction);
+            const val = this.mixerAutomation.getValue(af.key, globalStepFrac);
             if (val !== null) {
                 af.fader.value = val;
                 af.onChange(val);
             }
         }
+
+        // Update LCM display
+        this._updateLCMDisplay();
+    }
+
+    _updateLCMDisplay() {
+        const el = document.getElementById('lcmDisplay');
+        if (!el) return;
+        if (this.mixerAutomation.lanes.size === 0) { el.textContent = '--'; return; }
+        const bpm = this._scheduler ? this._scheduler.getBPM() : 120;
+        el.textContent = this.mixerAutomation.formatLCMTime(bpm);
+    }
+
+    _showLoopLengthMenu(x, y, autoKey) {
+        // Remove existing menu if any
+        this._hideLoopLengthMenu();
+
+        const currentLen = this.mixerAutomation.getLaneLoopLength(autoKey);
+        const menu = document.createElement('div');
+        menu.className = 'auto-loop-menu';
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
+
+        const title = document.createElement('div');
+        title.className = 'auto-loop-title';
+        title.textContent = 'LOOP LENGTH';
+        menu.appendChild(title);
+
+        const sel = document.createElement('select');
+        sel.className = 'auto-loop-select';
+        // Presets: powers of 2, common, primes
+        const presets = [2,3,4,5,6,7,8,10,11,12,13,14,16,17,19,20,23,24,29,31,32,37,41,43,47,48,53,59,61,64,67,71,73,79,83,89,96,97,101,103,107,109,113,127,128];
+        for (const v of presets) {
+            const opt = document.createElement('option');
+            opt.value = v; opt.textContent = v + ' stp';
+            if (v === currentLen) opt.selected = true;
+            sel.appendChild(opt);
+        }
+        sel.addEventListener('change', () => {
+            this.mixerAutomation.setLaneLoopLength(autoKey, parseInt(sel.value));
+            this._updateLCMDisplay();
+            this._hideLoopLengthMenu();
+        });
+        menu.appendChild(sel);
+
+        // Clear lane button
+        const clearBtn = document.createElement('button');
+        clearBtn.className = 'auto-loop-clear';
+        clearBtn.textContent = 'CLEAR';
+        clearBtn.addEventListener('click', () => {
+            this.mixerAutomation.clearLane(autoKey);
+            // Update border on matching knob
+            this._autoKnobs.forEach(ak => { if (ak.key === autoKey) { ak.updateAutoBorder(); ak.knobOuter.style.background = ''; } });
+            this._updateLCMDisplay();
+            this._hideLoopLengthMenu();
+        });
+        menu.appendChild(clearBtn);
+
+        document.body.appendChild(menu);
+        this._loopMenu = menu;
+
+        // Close on click outside
+        const closeHandler = (e) => {
+            if (!menu.contains(e.target)) { this._hideLoopLengthMenu(); document.removeEventListener('mousedown', closeHandler); }
+        };
+        setTimeout(() => document.addEventListener('mousedown', closeHandler), 10);
+    }
+
+    _hideLoopLengthMenu() {
+        if (this._loopMenu) { this._loopMenu.remove(); this._loopMenu = null; }
     }
 
     setCallbacks(onMute, onSolo, onMuteGroup, onSoloGroup, onSelect) {
@@ -502,14 +606,19 @@ export class Mixer {
             tooltip.innerText = val.toFixed(step < 1 ? 2 : 0);
         };
 
-        // Automation border update
+        // Automation border update — dim ring when has automation
         const updateAutoBorder = () => {
             if (autoKey && this.mixerAutomation && this.mixerAutomation.hasAutomation(autoKey)) {
-                knobOuter.style.outline = '1.5px solid #f5f0e0';
+                knobOuter.style.outline = '1.5px solid rgba(245, 240, 224, 0.25)';
                 knobOuter.style.outlineOffset = '1px';
+                // Show loop length as title
+                const len = this.mixerAutomation.getLaneLoopLength(autoKey);
+                knobOuter.title = `${label} — Auto loop: ${len} stp (right-click to change)`;
             } else {
                 knobOuter.style.outline = '';
                 knobOuter.style.outlineOffset = '';
+                knobOuter.style.background = '';
+                knobOuter.title = label || '';
             }
         };
 
@@ -523,6 +632,7 @@ export class Mixer {
         }
 
         knobOuter.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return; // Left click only
             isDragging = true;
             startY = e.clientY;
             startVal = currentValue;
@@ -532,6 +642,15 @@ export class Mixer {
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
+
+        // Right-click: loop length menu for this automation lane
+        if (autoKey) {
+            knobOuter.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                if (!this.mixerAutomation || !this.mixerAutomation.hasAutomation(autoKey)) return;
+                this._showLoopLengthMenu(e.clientX, e.clientY, autoKey);
+            });
+        }
 
         const onMouseMove = (e) => {
             if (!isDragging) return;

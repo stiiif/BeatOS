@@ -272,3 +272,49 @@ input[type=range].v-fader:hover::-webkit-slider-thumb {
     width: 96%; background: #111; border: 1px solid #333; border-radius: 2px;
     padding: 4px 1px; display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 4px;
 }
+
+/* --- Automation Loop Length Context Menu --- */
+.auto-loop-menu {
+    position: fixed;
+    z-index: 100;
+    background: #1a1a1a;
+    border: 1px solid #4338ca;
+    border-radius: 4px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+    min-width: 100px;
+}
+.auto-loop-title {
+    font-size: 7px;
+    letter-spacing: 2px;
+    color: #666;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+}
+.auto-loop-select {
+    background: #111;
+    color: #ccc;
+    border: 1px solid #333;
+    border-radius: 2px;
+    font-size: 9px;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 3px 4px;
+    cursor: pointer;
+}
+.auto-loop-select:focus { outline: 1px solid #4338ca; }
+.auto-loop-clear {
+    background: #2a1515;
+    color: #ef4444;
+    border: 1px solid #7f1d1d;
+    border-radius: 2px;
+    font-size: 7px;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 1px;
+    padding: 2px 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.auto-loop-clear:hover { background: #7f1d1d; color: white; }

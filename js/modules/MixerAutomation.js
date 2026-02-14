@@ -1,40 +1,27 @@
 // js/modules/MixerAutomation.js
 // Records and plays back mixer knob/fader automation over the sequencer loop.
-// 256-step resolution (4x the 64-step sequencer grid) with linear interpolation.
+// Per-lane loop length (2–128 steps), 4x resolution per step.
+// Polymetric: each lane can have its own loop length for generative phase patterns.
 
 export class MixerAutomation {
     constructor() {
-        this.RESOLUTION = 256; // Steps per loop
-        // Lanes keyed by "stripType:stripId:paramName"
-        // e.g. "track:3:gain", "group:0:comp", "return:1:pan"
+        this.RES_PER_STEP = 4;
+        this.defaultLoopSteps = 32;
+
         this.lanes = new Map();
 
-        // Recording state
         this.isRecording = false;
-        this._activeLane = null; // Currently recording lane key
-        this._recordingLanes = new Set(); // All lanes touched during this record pass
-
-        // Playback state
+        this._activeLane = null;
+        this._recordingLanes = new Set();
         this._lastPlaybackStep = -1;
     }
 
-    /**
-     * Get the lane key for a mixer control
-     */
     static laneKey(stripType, stripId, paramName) {
         return `${stripType}:${stripId}:${paramName}`;
     }
 
-    /**
-     * Check if a lane has automation data
-     */
-    hasAutomation(key) {
-        return this.lanes.has(key);
-    }
+    hasAutomation(key) { return this.lanes.has(key); }
 
-    /**
-     * Get all lane keys that match a strip (for clear-all-on-strip)
-     */
     getLanesForStrip(stripType, stripId) {
         const prefix = `${stripType}:${stripId}:`;
         const keys = [];
@@ -44,91 +31,94 @@ export class MixerAutomation {
         return keys;
     }
 
-    /**
-     * Start recording (called when * key is pressed)
-     */
+    getLaneLoopLength(key) {
+        const lane = this.lanes.get(key);
+        return lane ? lane.loopSteps : this.defaultLoopSteps;
+    }
+
+    setLaneLoopLength(key, steps) {
+        const lane = this.lanes.get(key);
+        if (!lane) return;
+        steps = Math.max(2, Math.min(128, steps));
+        const newRes = steps * this.RES_PER_STEP;
+        const oldRes = lane.data.length;
+        if (newRes !== oldRes) {
+            const newData = new Float32Array(newRes);
+            const lastVal = lane.data[Math.min(oldRes, newRes) - 1] || lane.data[0];
+            for (let i = 0; i < newRes; i++) {
+                newData[i] = i < oldRes ? lane.data[i] : lastVal;
+            }
+            lane.data = newData;
+        }
+        lane.loopSteps = steps;
+    }
+
+    // ========================================================================
+    // RECORDING
+    // ========================================================================
+
     startRecording() {
         this.isRecording = true;
         this._recordingLanes.clear();
     }
 
-    /**
-     * Stop recording (called when * key is released)
-     */
     stopRecording() {
         this.isRecording = false;
         this._recordingLanes.clear();
     }
 
-    /**
-     * Record a value at the current playback position.
-     * Called from knob/fader onChange when recording is active.
-     * @param {string} key - Lane key
-     * @param {number} value - Current knob value
-     * @param {number} step256 - Current 256-step position (0-255)
-     * @param {number} min - Param min value (for offset clamping later)
-     * @param {number} max - Param max value
-     */
-    recordValue(key, value, step256, min, max) {
+    recordValue(key, value, globalStep, min, max) {
         if (!this.isRecording) return;
-
         let lane = this.lanes.get(key);
         if (!lane) {
-            // Create new lane — initialize all steps to current value (flat line)
-            lane = {
-                data: new Float32Array(this.RESOLUTION).fill(value),
-                min,
-                max,
-                offset: 0
-            };
+            const loopSteps = this.defaultLoopSteps;
+            const res = loopSteps * this.RES_PER_STEP;
+            lane = { data: new Float32Array(res).fill(value), min, max, offset: 0, loopSteps };
             this.lanes.set(key, lane);
         }
-
-        // Write current value at current step
-        lane.data[step256] = value;
-        
-        // Forward-fill: set all steps ahead of current position to this value
-        // This prevents the knob from jumping back to old values after the recorded section
-        for (let i = step256 + 1; i < this.RESOLUTION; i++) {
-            lane.data[i] = value;
-        }
-
+        const res = lane.data.length;
+        const pos = globalStep % res;
+        lane.data[pos] = value;
+        for (let i = pos + 1; i < res; i++) lane.data[i] = value;
         this._recordingLanes.add(key);
     }
 
-    /**
-     * Get the interpolated automation value at a fractional position.
-     * @param {string} key - Lane key
-     * @param {number} fraction - Position in loop (0.0 to 1.0)
-     * @returns {number|null} - Interpolated value or null if no automation
-     */
-    getValue(key, fraction) {
+    // ========================================================================
+    // PLAYBACK
+    // ========================================================================
+
+    getValue(key, globalStepFrac) {
         const lane = this.lanes.get(key);
         if (!lane) return null;
-
-        const pos = fraction * this.RESOLUTION;
-        const idx = Math.floor(pos);
-        const frac = pos - idx;
-
-        const i0 = idx % this.RESOLUTION;
-        const i1 = (idx + 1) % this.RESOLUTION;
-
+        const res = lane.data.length;
+        const lanePos = (globalStepFrac * this.RES_PER_STEP) % res;
+        const idx = Math.floor(lanePos);
+        const frac = lanePos - idx;
+        const i0 = idx % res;
+        const i1 = (idx + 1) % res;
         const raw = lane.data[i0] + frac * (lane.data[i1] - lane.data[i0]);
         return Math.max(lane.min, Math.min(lane.max, raw + lane.offset));
     }
 
-    /**
-     * Apply an offset to all values in a lane (drag-to-offset).
-     * @param {string} key - Lane key
-     * @param {number} delta - Offset delta to add
-     */
+    /** Get 0.0–1.0 position within a lane's own loop */
+    getLanePosition(key, globalStepFrac) {
+        const lane = this.lanes.get(key);
+        if (!lane) return 0;
+        const totalRes = lane.loopSteps * this.RES_PER_STEP;
+        return ((globalStepFrac * this.RES_PER_STEP) % totalRes) / totalRes;
+    }
+
+    // ========================================================================
+    // OFFSET
+    // ========================================================================
+
     addOffset(key, delta) {
         const lane = this.lanes.get(key);
         if (!lane) return;
         lane.offset += delta;
-        // Clamp offset so no value exceeds bounds
+        const res = lane.data.length;
         let minVal = Infinity, maxVal = -Infinity;
-        for (let i = 0; i < this.RESOLUTION; i++) {
+        for (let i = 0; i < res; i++) {
             const v = lane.data[i] + lane.offset;
             if (v < minVal) minVal = v;
             if (v > maxVal) maxVal = v;
@@ -137,80 +127,116 @@ export class MixerAutomation {
         if (maxVal > lane.max) lane.offset -= (maxVal - lane.max);
     }
 
-    /**
-     * Clear automation for a single lane
-     */
-    clearLane(key) {
-        this.lanes.delete(key);
-    }
+    // ========================================================================
+    // CLEAR
+    // ========================================================================
 
-    /**
-     * Clear all automation lanes for a strip
-     */
+    clearLane(key) { this.lanes.delete(key); }
+
     clearStrip(stripType, stripId) {
         const keys = this.getLanesForStrip(stripType, stripId);
         keys.forEach(k => this.lanes.delete(k));
-        return keys; // Return cleared keys so UI can update borders
+        return keys;
     }
 
-    /**
-     * Clear all automation
-     */
-    clearAll() {
-        this.lanes.clear();
+    clearAll() { this.lanes.clear(); }
+
+    // ========================================================================
+    // LCM
+    // ========================================================================
+
+    getActiveLoopLengths() {
+        const lengths = new Set();
+        for (const lane of this.lanes.values()) lengths.add(lane.loopSteps);
+        return [...lengths];
     }
 
-    /**
-     * Get current 256-step position from sequencer state.
-     * Maps 64-step sequencer position to 256 steps.
-     * @param {number} currentStep - Current sequencer step (0-63)
-     * @param {number} stepFraction - Fractional position within the current step (0.0-1.0)
-     * @returns {number} step256 position (0-255)
-     */
+    getLCM() {
+        const lengths = this.getActiveLoopLengths();
+        if (lengths.length === 0) return 0;
+        return lengths.reduce((a, b) => lcm(a, b));
+    }
+
+    formatLCMTime(bpm, stepsPerBeat = 4) {
+        const lcmSteps = this.getLCM();
+        if (lcmSteps === 0) return '--';
+        const secPerStep = 60 / bpm / stepsPerBeat;
+        const totalSec = lcmSteps * secPerStep;
+        return formatDuration(totalSec);
+    }
+
+    // ========================================================================
+    // COMPAT HELPERS
+    // ========================================================================
+
     static getStep256(currentStep, stepFraction = 0) {
         return Math.floor((currentStep + stepFraction) * 4) % 256;
     }
 
-    /**
-     * Get loop fraction from sequencer state
-     * @param {number} currentStep - Current sequencer step (0-63)
-     * @param {number} stepFraction - Fractional position within step
-     * @param {number} totalSteps - Total steps in sequence (default 64)
-     * @returns {number} fraction 0.0-1.0
-     */
+    static getGlobalStepFrac(currentStep, stepFraction = 0) {
+        return currentStep + stepFraction;
+    }
+
     static getLoopFraction(currentStep, stepFraction = 0, totalSteps = 64) {
         return (currentStep + stepFraction) / totalSteps;
     }
 
-    /**
-     * Serialize for save/load
-     */
+    // ========================================================================
+    // SERIALIZE
+    // ========================================================================
+
     serialize() {
         const obj = {};
         for (const [key, lane] of this.lanes) {
             obj[key] = {
                 data: Array.from(lane.data),
-                min: lane.min,
-                max: lane.max,
-                offset: lane.offset
+                min: lane.min, max: lane.max,
+                offset: lane.offset, loopSteps: lane.loopSteps
             };
         }
         return obj;
     }
 
-    /**
-     * Deserialize from save data
-     */
     deserialize(obj) {
         this.lanes.clear();
         if (!obj) return;
-        for (const [key, laneData] of Object.entries(obj)) {
+        for (const [key, ld] of Object.entries(obj)) {
+            const loopSteps = ld.loopSteps || this.defaultLoopSteps;
             this.lanes.set(key, {
-                data: new Float32Array(laneData.data),
-                min: laneData.min,
-                max: laneData.max,
-                offset: laneData.offset || 0
+                data: new Float32Array(ld.data),
+                min: ld.min, max: ld.max,
+                offset: ld.offset || 0, loopSteps
             });
         }
     }
+}
+
+function gcd(a, b) { while (b) { [a, b] = [b, a % b]; } return a; }
+function lcm(a, b) { return (a / gcd(a, b)) * b; }
+
+function formatDuration(totalSec) {
+    if (totalSec < 60) return Math.round(totalSec) + 's';
+    const MIN = 60, HOUR = 3600, DAY = 86400, WEEK = 604800, MONTH = 2592000, YEAR = 31536000;
+    if (totalSec < HOUR) {
+        const m = Math.floor(totalSec / MIN), s = Math.round(totalSec % MIN);
+        return s > 0 ? `${m}m${s}s` : `${m}m`;
+    }
+    if (totalSec < DAY) {
+        const h = Math.floor(totalSec / HOUR), m = Math.round((totalSec % HOUR) / MIN);
+        return m > 0 ? `${h}h${m}m` : `${h}h`;
+    }
+    if (totalSec < WEEK) {
+        const d = Math.floor(totalSec / DAY), h = Math.round((totalSec % DAY) / HOUR);
+        return h > 0 ? `${d}d${h}h` : `${d}d`;
+    }
+    if (totalSec < MONTH) {
+        const w = Math.floor(totalSec / WEEK), d = Math.round((totalSec % WEEK) / DAY);
+        return d > 0 ? `${w}w${d}d` : `${w}w`;
+    }
+    if (totalSec < YEAR) {
+        const mo = Math.floor(totalSec / MONTH), d = Math.round((totalSec % MONTH) / DAY);
+        return d > 0 ? `${mo}mo${d}d` : `${mo}mo`;
+    }
+    const y = Math.floor(totalSec / YEAR), mo = Math.round((totalSec % YEAR) / MONTH);
+    return mo > 0 ? `${y}y${mo}mo` : `${y}y`;
 }

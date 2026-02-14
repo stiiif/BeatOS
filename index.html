@@ -42,6 +42,11 @@
                 <input type="number" id="maxGrainsInput" value="800" step="50" min="50"
                     class="bg-transparent border-none w-10 text-xs text-center focus:outline-none text-neutral-400 font-mono focus:text-white hover:text-neutral-200 transition">
             </div>
+            <div class="flex items-center gap-1 ml-1 bg-neutral-800 rounded px-2 py-1"
+                title="Polymetric automation cycle length (LCM of all lane loop lengths)">
+                <span class="text-[10px] text-neutral-500 font-bold">⟳</span>
+                <span id="lcmDisplay" class="text-[10px] font-mono text-emerald-400 w-12 text-center">--</span>
+            </div>
         </div>
         <!-- Snapshot bank buttons injected here by SnapshotBankUI.render() -->
         <div id="headerRightSection" class="flex items-center gap-2">
