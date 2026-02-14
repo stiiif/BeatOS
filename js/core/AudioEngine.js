@@ -798,9 +798,9 @@ export class AudioEngine {
 
         if (type === 'kick') {
             const osc = ctx.createOscillator(); const gain = ctx.createGain();
-            const baseFreq = 50 + (tune * 100); const finalDecay = (0.01 + (decayVal * 0.6)) * decayMult;
+            const baseFreq = 20 + (tune * 100); const finalDecay = (0.01 + (decayVal * 0.6)) * decayMult;
             osc.connect(gain); gain.connect(out);
-            osc.frequency.setValueAtTime(150 + (tune*200), t);
+            osc.frequency.setValueAtTime(100 + (tune*200), t);
             osc.frequency.exponentialRampToValueAtTime(baseFreq, t + Math.max(0.001, Math.min(0.02, finalDecay * 0.5) * pitchModMult));
             osc.frequency.exponentialRampToValueAtTime(30, t + finalDecay);
             gain.gain.setValueAtTime(gainMult, t); gain.gain.exponentialRampToValueAtTime(0.001, t + finalDecay);
