@@ -75,34 +75,31 @@ function updateTrackControlsVisibility() {
     updateEngineSelector();
 }
 
-/** Update engine selector collapse state and colors for current track */
+/** Update engine label in Row 1 and collapse/expand the engine selector in Row 2 */
 function updateEngineSelector() {
     const t = tracks[uiManager.getSelectedTrackIndex()];
     if (!t) return;
     const selector = document.getElementById('engineTypeSelector');
-    const collapsed = document.getElementById('engineCollapsed');
     const colLabel = document.getElementById('engineColLabel');
-    if (!selector || !collapsed || !colLabel) return;
+    if (!colLabel) return;
 
-    if (hasEngine(t)) {
-        // Collapse — show compact label
-        selector.classList.add('hidden');
-        collapsed.classList.remove('hidden');
-        const ec = getEngineColor(t);
-        colLabel.style.color = ec.text;
-        colLabel.style.backgroundColor = ec.bg;
-        colLabel.style.borderColor = ec.border;
-        // Build label text
-        let name = ec.label;
-        if (t.type === 'simple-drum') name = '909';
-        else if (t.type === 'automation') name = 'AUTO';
-        else if (t.customSample) name = 'SMP';
-        else if (t.buffer) name = 'GEN';
-        colLabel.textContent = name;
-    } else {
-        // No engine — show full selector
-        selector.classList.remove('hidden');
-        collapsed.classList.add('hidden');
+    // Always update the label color/text in Row 1
+    const ec = getEngineColor(t);
+    colLabel.style.color = ec.text;
+    colLabel.style.backgroundColor = ec.bg;
+    colLabel.style.borderColor = ec.border;
+
+    let name = '—';
+    if (t.type === 'simple-drum') name = '909';
+    else if (t.type === 'automation') name = 'AUTO';
+    else if (t.customSample) name = 'SMP';
+    else if (t.buffer) name = 'GEN';
+    colLabel.textContent = name;
+
+    // Collapse engine selector row if engine is assigned
+    if (selector) {
+        if (hasEngine(t)) selector.classList.add('hidden');
+        else selector.classList.remove('hidden');
     }
 }
 
@@ -112,12 +109,10 @@ function refreshAllTrackVisuals() {
     if (uiManager.mixer) uiManager.mixer.refreshTrackVisuals();
 }
 
-// Expand engine selector on CHG button click
+// CHG button toggles the engine selector row visibility
 document.getElementById('engineExpandBtn')?.addEventListener('click', () => {
     const selector = document.getElementById('engineTypeSelector');
-    const collapsed = document.getElementById('engineCollapsed');
-    if (selector) selector.classList.remove('hidden');
-    if (collapsed) collapsed.classList.add('hidden');
+    if (selector) selector.classList.toggle('hidden');
 });
 
 // Wire step pitch lane toggle
@@ -348,7 +343,34 @@ document.getElementById('playBtn').addEventListener('click', () => {
     }
 });
 
+let _stopDblClickTimer = null;
 document.getElementById('stopBtn').addEventListener('click', () => {
+    // Double-click detection: second click within 300ms = PANIC (kill all audio)
+    if (_stopDblClickTimer) {
+        clearTimeout(_stopDblClickTimer);
+        _stopDblClickTimer = null;
+        // PANIC: kill everything
+        scheduler.stop();
+        document.getElementById('playBtn').classList.remove('text-emerald-500');
+        uiManager.clearPlayheadForStop();
+        // Stop all active sources on every track
+        tracks.forEach(t => t.stopAllSources());
+        // Kill master output momentarily then restore
+        const ctx = audioEngine.getContext();
+        if (ctx && audioEngine.masterBus && audioEngine.masterBus.volume) {
+            const savedVol = audioEngine.masterBus.volume.gain.value;
+            audioEngine.masterBus.volume.gain.setValueAtTime(0, ctx.currentTime);
+            audioEngine.masterBus.volume.gain.linearRampToValueAtTime(savedVol, ctx.currentTime + 0.05);
+        }
+        // Flash stop button red
+        const stopBtn = document.getElementById('stopBtn');
+        stopBtn.classList.add('text-red-500');
+        setTimeout(() => stopBtn.classList.remove('text-red-500'), 300);
+        return;
+    }
+
+    // First click: normal stop
+    _stopDblClickTimer = setTimeout(() => { _stopDblClickTimer = null; }, 300);
     scheduler.stop();
     document.getElementById('playBtn').classList.remove('text-emerald-500');
     uiManager.clearPlayheadForStop();
@@ -568,10 +590,7 @@ document.querySelectorAll('.granular-gen-btn').forEach(btn => {
             
             uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
 
-            const typeLabel = document.getElementById('trackTypeLabel');
             const nameText = document.getElementById('trackNameText');
-            
-            if (typeLabel) typeLabel.textContent = `[GRANULAR]`; 
             if (nameText) nameText.textContent = type === 'texture' ? 'FM Texture' : type.toUpperCase();
             
             // Feedback
@@ -617,9 +636,7 @@ document.querySelectorAll('.type-909-btn').forEach(btn => {
         uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
         
         // Update Labels
-        const typeLabel = document.getElementById('trackTypeLabel');
         const nameText = document.getElementById('trackNameText');
-        if (typeLabel) typeLabel.textContent = `[909]`;
         let displayName = t.params.drumType.toUpperCase();
         if (displayName === 'CLOSED-HAT') displayName = 'CH';
         if (displayName === 'OPEN-HAT') displayName = 'OH';
@@ -685,9 +702,7 @@ if (btnOTO) {
         const groupColor = `hsl(${grp * 45}, 70%, 50%)`;
         uiManager.updateCustomTrackHeader(currentTrackIdx, grp, groupColor);
         
-        const typeLabel = document.getElementById('trackTypeLabel');
         const nameText = document.getElementById('trackNameText');
-        if (typeLabel) typeLabel.textContent = `[AUTO]`;
         if (nameText) nameText.textContent = `Automation`;
         
         // Feedback
@@ -712,9 +727,7 @@ if (sampleInput) {
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; btn.disabled = true;
             await audioEngine.loadCustomSample(file, currentTrack);
             
-            const typeLabel = document.getElementById('trackTypeLabel');
             const nameText = document.getElementById('trackNameText');
-            if (typeLabel) typeLabel.textContent = `[SAMPLE]`;
             if (nameText) { 
                 nameText.textContent = currentTrack.customSample.name; 
                 nameText.title = currentTrack.customSample.name; 

@@ -70,13 +70,6 @@ export class TrackControls {
         // Fix: Update Header Content
         this.updateCustomTrackHeader(idx, grp, groupColor);
 
-        // Fix: Update Indicator
-        const indicator = document.getElementById('trackIndicator');
-        if(indicator) {
-            indicator.style.backgroundColor = groupColor;
-            indicator.style.boxShadow = `0 0 8px ${groupColorGlow}`;
-        }
-        
         // Update Panel Theme
         const rightPanel = document.querySelector('.right-pane');
         if (rightPanel) {
@@ -112,16 +105,12 @@ export class TrackControls {
             trackType = 'Synth';
         }
 
-        // 2. Update Text Elements (using new IDs from HTML)
+        // 2. Update Text Elements
         const nameEl = document.getElementById('trackNameText');
-        const typeEl = document.getElementById('trackTypeLabel');
         
         if (nameEl) {
             nameEl.innerText = trackName;
             nameEl.title = trackName;
-        }
-        if (typeEl) {
-            typeEl.innerText = `[${trackType}]`;
         }
 
         // 3. Update CLEAN Button State

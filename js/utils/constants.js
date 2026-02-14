@@ -1,13 +1,13 @@
 // Constants & Configuration
-export const START_TRACKS = 8;
+export const START_TRACKS = 16;
 export const MAX_TRACKS = 32;
-export const NUM_STEPS = 64; // Set to 64
-export const NUM_LFOS = 2;         // Default modulator count for granular tracks
-export const NUM_FX_MODS = 2;      // Default modulator count for FX engines
-export const MAX_MODULATORS = 4;   // Hard ceiling for add/remove
-export const TRACKS_PER_GROUP = 4; // Changed from 4 to 8 for V2 patterns
+export const NUM_STEPS = 32; // Set to 64
+export const NUM_LFOS = 3;         // Default modulator count for granular tracks
+export const NUM_FX_MODS = 3;      // Default modulator count for FX engines
+export const MAX_MODULATORS = 8;   // Hard ceiling for add/remove
+export const TRACKS_PER_GROUP = 8; // Changed from 4 to 8 for V2 patterns
 
-export const DEFAULT_BPM = 78;
+export const DEFAULT_BPM = 120;
 export const LOOKAHEAD = 25.0;
 export const SCHEDULE_AHEAD_TIME = 0.1;
 
@@ -23,8 +23,8 @@ export const AUTOMATION_INTENSITIES = {
 // New Velocity Constants for V2 Engine
 export const VELOCITY_GAINS = {
     0: 0.0,  // Off
-    1: 0.25,  // Ghost (Low Velocity)
-    2: 0.66, // Normal (Medium Velocity)
+    1: 0.3,  // Ghost (Low Velocity)
+    2: 0.75, // Normal (Medium Velocity)
     3: 1.0   // Accent (High Velocity)
 };
 
