@@ -51,14 +51,7 @@ uiManager.setTrackManager(trackManager);
 visualizer.setTracks(tracks);
 audioEngine._tracks = tracks; // For modulator context (EnvelopeFollower)
 
-// B10: Matrix head update is now batched — scheduler stores pending, render loop reads it
-renderLoop.register('matrixHead', () => {
-    if (scheduler._pendingMatrixDirty) {
-        scheduler._pendingMatrixDirty = false;
-        uiManager.updateMatrixHead(scheduler._pendingMatrixStep, scheduler._pendingMatrixTotal);
-    }
-}, 33); // 30fps is plenty for step head position
-scheduler.setUpdateMatrixHeadCallback(null); // Disable old per-step rAF
+scheduler.setUpdateMatrixHeadCallback(null); // B10: Disabled — batched in renderLoop below
 scheduler.setRandomChokeCallback(() => uiManager.getRandomChokeInfo());
 scheduler.setRandomizer(randomizer, { audioEngine, effectsManager, selectedTrackIndex: 0 });
 
@@ -137,6 +130,14 @@ renderLoop.register('mixerMeters', (ts) => {
 renderLoop.register('mixerAutomation', () => {
     if (uiManager.mixer) uiManager.mixer.updateAutomation();
 }, 0);
+
+// B10: Matrix head update batched — scheduler stores pending step, render loop reads it
+renderLoop.register('matrixHead', () => {
+    if (scheduler._pendingMatrixDirty) {
+        scheduler._pendingMatrixDirty = false;
+        uiManager.updateMatrixHead(scheduler._pendingMatrixStep, scheduler._pendingMatrixTotal);
+    }
+}, 33);
 
 document.getElementById('initAudioBtn').addEventListener('click', async () => {
     console.log("[Main] Init audio clicked.");
