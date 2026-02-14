@@ -186,19 +186,22 @@ export class Mixer {
      * Called from RenderLoop to apply automation playback to knobs/faders
      */
     updateAutomation() {
-        if (!this.mixerAutomation || this.mixerAutomation.lanes.size === 0) return;
+        const hasLanes = this.mixerAutomation && this.mixerAutomation.lanes.size > 0;
+        const hasRecTimers = this._recTimers && this._recTimers.size > 0;
+        if (!hasLanes && !hasRecTimers) return;
         if (!this._scheduler || !this._scheduler.getIsPlaying()) {
-            // Clear position pips when stopped
+            // Clear everything when stopped
             if (this._pipsActive) {
                 for (const ak of this._autoKnobs) {
                     ak.knobOuter.style.background = '';
-                    ak._recStartPos = undefined;
                 }
                 this._pipsActive = false;
             }
+            if (this._recTimers) this._recTimers.clear();
             return;
         }
         this._pipsActive = true;
+        if (!this._recTimers) this._recTimers = new Map();
 
         const globalStepFrac = this._getGlobalStepFrac();
         const isRecording = this.mixerAutomation.isRecording;
@@ -209,10 +212,12 @@ export class Mixer {
             const ak = this._autoKnobs[i];
             if (ak.isDragging && ak.isDragging()) continue;
 
-            const isActivelyRecording = isRecording && recordingLanes.has(ak.key);
+            const laneIsRecording = isRecording && recordingLanes.has(ak.key);
+            const hasAuto = this.mixerAutomation.hasAutomation(ak.key);
+            const timer = this._recTimers.get(ak.key);
 
-            // Skip value playback for knobs being recorded (user is driving the value)
-            if (!isActivelyRecording) {
+            // Skip value playback while this lane is being recorded
+            if (!laneIsRecording) {
                 const val = this.mixerAutomation.getValue(ak.key, globalStepFrac);
                 if (val !== null) {
                     ak.setCurrentValue(val);
@@ -221,20 +226,61 @@ export class Mixer {
                 }
             }
 
-            // Position dot + red trail drawing (always runs, even during recording)
-            const hasAuto = this.mixerAutomation.hasAutomation(ak.key);
-            if (hasAuto || isActivelyRecording) {
-                const pos = this.mixerAutomation.getLanePosition(ak.key, globalStepFrac);
-                const showTrail = isActivelyRecording && ak._recStartPos !== undefined;
-                this._drawKnobPip(ak.knobOuter, pos, showTrail, ak._recStartPos);
-                if (isActivelyRecording && ak._recStartPos === undefined) {
-                    ak._recStartPos = pos;
+            // --- Recording timer management ---
+            // Start timer when knob first gets recorded
+            if (laneIsRecording && !timer) {
+                const loopSteps = this.mixerAutomation.getLaneLoopLength(ak.key);
+                this._recTimers.set(ak.key, {
+                    startStep: globalStepFrac,
+                    loopSteps: loopSteps,
+                    done: false
+                });
+            }
+
+            // Update timer progress
+            const activeTimer = this._recTimers.get(ak.key);
+            if (activeTimer && !activeTimer.done) {
+                const elapsed = globalStepFrac - activeTimer.startStep;
+                const progress = Math.min(1.0, elapsed / activeTimer.loopSteps);
+                // Draw red arc from noon (progress 0–1)
+                this._drawKnobPip(ak.knobOuter, progress, 'recording');
+                if (progress >= 1.0) {
+                    activeTimer.done = true;
                 }
             }
-            if (!isActivelyRecording && ak._recStartPos !== undefined) {
-                ak._recStartPos = undefined;
-                if (!this.mixerAutomation.hasAutomation(ak.key)) {
-                    ak.knobOuter.style.background = '';
+            // Timer complete or recording stopped for this lane → transition to white dot
+            else if (activeTimer && activeTimer.done && !laneIsRecording) {
+                this._recTimers.delete(ak.key);
+            }
+
+            // Normal playback: white dot (only when not showing red timer)
+            if (!activeTimer && hasAuto) {
+                const pos = this.mixerAutomation.getLanePosition(ak.key, globalStepFrac);
+                this._drawKnobPip(ak.knobOuter, pos, 'playback');
+            }
+            // No automation and no timer → clear
+            if (!activeTimer && !hasAuto) {
+                ak.knobOuter.style.background = '';
+            }
+        }
+
+        // When * released: mark all active timers to finish their cycle then transition
+        if (!isRecording && this._recTimers.size > 0) {
+            for (const [key, timer] of this._recTimers) {
+                if (timer.done) {
+                    this._recTimers.delete(key);
+                    // Refresh the knob border for this lane
+                    const ak = this._autoKnobs.find(a => a.key === key);
+                    if (ak) ak.updateAutoBorder();
+                } else {
+                    // Let it keep running until full cycle completes
+                    const elapsed = globalStepFrac - timer.startStep;
+                    const progress = Math.min(1.0, elapsed / timer.loopSteps);
+                    const ak = this._autoKnobs.find(a => a.key === key);
+                    if (ak) this._drawKnobPip(ak.knobOuter, progress, 'finishing');
+                    if (progress >= 1.0) {
+                        timer.done = true;
+                    }
                 }
             }
         }
@@ -332,49 +378,41 @@ export class Mixer {
     }
 
     /**
-     * Draw a position dot on the knob's outer ring.
-     * Uses radial-gradient for a true circular dot positioned on the ring edge.
-     * When recording a lane, adds a red trail arc from start to current position.
-     * @param {HTMLElement} el - knobOuter element (assumed to be a circle via border-radius)
-     * @param {number} pos - 0.0–1.0 loop position
-     * @param {boolean} showTrail - show red recording trail
-     * @param {number|undefined} recStartPos - position when recording started
+     * Draw a position indicator on the knob's outer ring.
+     * @param {HTMLElement} el - knobOuter element
+     * @param {number} pos - 0.0–1.0 position (arc progress or loop position)
+     * @param {string} mode - 'recording' | 'finishing' | 'playback'
      */
-    _drawKnobPip(el, pos, showTrail, recStartPos) {
-        // Compute dot position on the outer edge of the knob circle
-        // Angle: 0 = top (12 o'clock), clockwise
+    _drawKnobPip(el, pos, mode) {
+        // Dot position on circle edge: pos 0 = noon (top), clockwise
         const angle = pos * Math.PI * 2 - Math.PI / 2;
-        // Place dot at ~45% from center (on the edge of the knob-outer ring)
-        const radius = 45; // % from center
+        const radius = 45;
         const dotX = 50 + Math.cos(angle) * radius;
         const dotY = 50 + Math.sin(angle) * radius;
-        const dotR = 4; // dot radius in % of element
 
         const layers = [];
 
-        // Layer 1: red trail arc (only when actively recording this knob)
-        if (showTrail && recStartPos !== undefined) {
-            const startDeg = recStartPos * 360;
-            const endDeg = pos * 360;
-            let arcSpan;
-            if (endDeg >= startDeg) {
-                arcSpan = endDeg - startDeg;
-            } else {
-                arcSpan = (360 - startDeg) + endDeg;
+        if (mode === 'recording' || mode === 'finishing') {
+            // Red arc from noon (0deg = top) sweeping clockwise to current pos
+            const arcDeg = pos * 360;
+            const arcAlpha = mode === 'finishing' ? 0.2 : 0.3;
+            if (arcDeg > 0.5) {
+                layers.push(
+                    `conic-gradient(from -90deg at 50% 50%, ` +
+                    `rgba(239,68,68,${arcAlpha}) 0deg, rgba(239,68,68,${arcAlpha}) ${arcDeg}deg, ` +
+                    `transparent ${arcDeg}deg)`
+                );
             }
+            // Red dot at leading edge
             layers.push(
-                `conic-gradient(from ${startDeg}deg at 50% 50%, ` +
-                `rgba(239,68,68,0.3) 0deg, rgba(239,68,68,0.3) ${arcSpan}deg, ` +
-                `transparent ${arcSpan}deg)`
+                `radial-gradient(circle 4px at ${dotX}% ${dotY}%, #ef4444 0%, rgba(239,68,68,0.5) 60%, transparent 100%)`
+            );
+        } else {
+            // Playback: cream/white dot only
+            layers.push(
+                `radial-gradient(circle 4px at ${dotX}% ${dotY}%, #f5f0e0 0%, rgba(245,240,224,0.3) 60%, transparent 100%)`
             );
         }
-
-        // Layer 2: the dot itself
-        const dotColor = showTrail ? '#ef4444' : '#f5f0e0';
-        const glowColor = showTrail ? 'rgba(239,68,68,0.5)' : 'rgba(245,240,224,0.3)';
-        layers.push(
-            `radial-gradient(circle ${dotR}px at ${dotX}% ${dotY}%, ${dotColor} 0%, ${glowColor} 60%, transparent 100%)`
-        );
 
         el.style.background = layers.join(', ');
     }
