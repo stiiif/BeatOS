@@ -41,7 +41,7 @@ export class SnapshotBankUI {
             btn.textContent = i + 1;
             btn.title = `Snapshot ${i + 1}`;
 
-            btn.addEventListener('click', () => this._onSlotClick(i));
+            btn.addEventListener('click', (e) => this._onSlotClick(i, e));
             btn.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
                 this._onSlotClear(i);
@@ -79,7 +79,17 @@ export class SnapshotBankUI {
     // EVENT HANDLERS
     // ========================================================================
 
-    _onSlotClick(slot) {
+    _onSlotClick(slot, e) {
+        // Shift+click on any slot: overwrite with current live state
+        if (e && e.shiftKey) {
+            this.bank.saveToSlot(slot);
+            const btn = this.buttons[slot];
+            btn.classList.add('snap-just-saved');
+            setTimeout(() => btn.classList.remove('snap-just-saved'), 500);
+            this.refreshAll();
+            return;
+        }
+
         // Double-click detection (300ms window)
         if (this._dblClickTimers.has(slot)) {
             clearTimeout(this._dblClickTimers.get(slot));
@@ -155,8 +165,10 @@ export class SnapshotBankUI {
         if (occupied) {
             btn.classList.add('snap-occupied');
             if (active) btn.classList.add('snap-active');
+            btn.title = `S${i + 1} — Click: recall | Shift+Click: overwrite | Dbl-click: clear`;
         } else {
             btn.classList.add('snap-empty');
+            btn.title = `S${i + 1} (empty) — Shift+Click: save here`;
         }
     }
 

@@ -24,6 +24,7 @@ export class Scheduler {
 
         // Song mode bar boundary callback
         this._onBarBoundary = null;
+        this._onSubdivision = null; // Fires every 2 steps (1/16 note)
 
         // Config-driven randomizer (optional)
         this.randomizer = null;
@@ -56,6 +57,10 @@ export class Scheduler {
 
     setOnBarBoundary(cb) {
         this._onBarBoundary = cb;
+    }
+
+    setOnSubdivision(cb) {
+        this._onSubdivision = cb;
     }
 
     setBPM(bpm) {
@@ -140,6 +145,11 @@ export class Scheduler {
         // Song mode: notify on bar boundary (step 0)
         if (step === 0 && currentTotal > 0 && this._onBarBoundary) {
             this._onBarBoundary();
+        }
+
+        // Song mode: subdivision callback (every 2 steps = 1/16 note)
+        if (step % 2 === 0 && currentTotal > 0 && this._onSubdivision) {
+            this._onSubdivision();
         }
 
         // B10: Store pending step for render loop to pick up

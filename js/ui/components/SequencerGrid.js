@@ -102,6 +102,9 @@ export class SequencerGrid {
     bindKeyboardShortcuts(getSelectedTrackIndex, onToggleStep) {
         document.addEventListener('keydown', (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            // Disable step toggle keys when Song Panel is open (prevents conflicts with SEQ shortcuts)
+            const songPanel = document.getElementById('songPanel');
+            if (songPanel && songPanel.style.display !== 'none') return;
             if (this.keyMapping.hasOwnProperty(e.code)) {
                 const stepIndex = this.keyMapping[e.code];
                 const currentTrackId = getSelectedTrackIndex();

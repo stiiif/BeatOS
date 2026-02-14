@@ -20,6 +20,7 @@ import { SnapshotBank } from './modules/SnapshotBank.js';
 import { SnapshotBankUI } from './ui/components/SnapshotBankUI.js';
 import { SongSequencer } from './modules/SongSequencer.js';
 import { SongPanel } from './ui/components/SongPanel.js';
+import { MorphEngine } from './modules/MorphEngine.js';
 
 // Import all modulator types to ensure they register in the factory
 import './modules/modulators/index.js';
@@ -50,6 +51,7 @@ const snapshotBankUI = new SnapshotBankUI(snapshotBank);
 
 // Song Mode
 const songSequencer = new SongSequencer();
+const morphEngine = new MorphEngine();
 const songPanel = new SongPanel(songSequencer, snapshotBank, scheduler);
 
 scheduler.setTrackManager(trackManager);
@@ -220,21 +222,50 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     const rightSection = document.getElementById('headerRightSection');
     snapshotBankUI.render(header, rightSection);
 
-    // Wire Song Sequencer
-    songSequencer.setContext({ snapshotBank, scheduler });
+    // Wire MorphEngine
+    morphEngine.setContext({ tracks, audioEngine, effectsManager });
+    morphEngine.setCallbacks({
+        onProgress: (fraction) => {
+            // Optional: animate header snapshot buttons during morph
+            if (songPanel.showMorph) {
+                const fromSlot = songSequencer.lastRecalledSlot;
+                // Visual feedback is handled by songPanel.draw() reading morphEngine.fraction
+            }
+        },
+        onComplete: () => {
+            // Morph finished — full UI refresh
+            uiManager.selectTrack(uiManager.getSelectedTrackIndex(), () => {
+                visualizer.setSelectedTrackIndex(uiManager.getSelectedTrackIndex());
+                visualizer.triggerRedraw();
+            });
+            if (uiManager.mixer) uiManager.mixer.render();
+        }
+    });
+
+    // Register morph engine in render loop (~30fps)
+    renderLoop.register('morphEngine', () => {
+        morphEngine.update();
+    }, 33);
+
+    // Wire Song Sequencer (with morphEngine)
+    songSequencer.setContext({ snapshotBank, scheduler, morphEngine });
     songSequencer.setCallbacks({
         onBarChange: (barIndex, slot) => {
             // Playhead update handled by SongPanel animation loop
         },
         onSongStop: () => {
+            morphEngine.stop();
             document.getElementById('songCurrentBar').textContent = '--';
             if (songPanel.isOpen) songPanel.draw();
         }
     });
 
-    // Hook scheduler bar boundary → song sequencer
-    scheduler.setOnBarBoundary(() => {
-        songSequencer.onBarBoundary();
+    // Give SongPanel a ref to morphEngine for visual feedback
+    songPanel.setMorphEngine(morphEngine);
+
+    // Hook scheduler subdivision (1/16 note = every 2 steps) → song sequencer
+    scheduler.setOnSubdivision(() => {
+        songSequencer.onSubdivision();
     });
 
     // Enable drag-drop from snapshot buttons to song timeline

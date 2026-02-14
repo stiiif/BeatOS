@@ -261,10 +261,20 @@ export class PresetManager {
             }
 
             updateTrackStateUICallback(i);
-            // Refresh grid
+            // Refresh grid — restore velocity/accent levels
             for(let s=0; s<t.steps.length; s++) {
-                 const btn = matrixStepElements[i][s];
-                 if(t.steps[s]) btn.classList.add('active'); else btn.classList.remove('active');
+                 const btn = matrixStepElements[i]?.[s];
+                 if (!btn) continue;
+                 btn.classList.remove('active', 'vel-1', 'vel-2', 'vel-3',
+                     'auto-level-1', 'auto-level-2', 'auto-level-3', 'auto-level-4', 'auto-level-5');
+                 const val = t.steps[s];
+                 if (val > 0) {
+                     if (t.type === 'automation') {
+                         btn.classList.add('active', `auto-level-${val}`);
+                     } else {
+                         btn.classList.add(`vel-${val}`);
+                     }
+                 }
             }
         }
         
