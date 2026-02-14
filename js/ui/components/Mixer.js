@@ -210,14 +210,14 @@ export class Mixer {
         // Update knobs
         for (let i = 0; i < this._autoKnobs.length; i++) {
             const ak = this._autoKnobs[i];
-            if (ak.isDragging && ak.isDragging()) continue;
+            const dragging = ak.isDragging && ak.isDragging();
 
             const laneIsRecording = isRecording && recordingLanes.has(ak.key);
             const hasAuto = this.mixerAutomation.hasAutomation(ak.key);
             const timer = this._recTimers.get(ak.key);
 
-            // Skip value playback while this lane is being recorded
-            if (!laneIsRecording) {
+            // Skip value playback while dragging or recording (user drives the value)
+            if (!laneIsRecording && !dragging) {
                 const val = this.mixerAutomation.getValue(ak.key, globalStepFrac);
                 if (val !== null) {
                     ak.setCurrentValue(val);
