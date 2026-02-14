@@ -208,18 +208,21 @@ export class Mixer {
         for (let i = 0; i < this._autoKnobs.length; i++) {
             const ak = this._autoKnobs[i];
             if (ak.isDragging && ak.isDragging()) continue;
-            if (isRecording && recordingLanes.has(ak.key)) continue;
-            const val = this.mixerAutomation.getValue(ak.key, globalStepFrac);
-            if (val !== null) {
-                ak.setCurrentValue(val);
-                ak.updateRotation(val);
-                ak.onChange(val);
-            }
-            // Position dot: only on knobs that have automation data
-            const hasAuto = this.mixerAutomation.hasAutomation(ak.key);
-            // Red trail: only on knobs that are actively being recorded (touched during this pass)
+
             const isActivelyRecording = isRecording && recordingLanes.has(ak.key);
 
+            // Skip value playback for knobs being recorded (user is driving the value)
+            if (!isActivelyRecording) {
+                const val = this.mixerAutomation.getValue(ak.key, globalStepFrac);
+                if (val !== null) {
+                    ak.setCurrentValue(val);
+                    ak.updateRotation(val);
+                    ak.onChange(val);
+                }
+            }
+
+            // Position dot + red trail drawing (always runs, even during recording)
+            const hasAuto = this.mixerAutomation.hasAutomation(ak.key);
             if (hasAuto || isActivelyRecording) {
                 const pos = this.mixerAutomation.getLanePosition(ak.key, globalStepFrac);
                 const showTrail = isActivelyRecording && ak._recStartPos !== undefined;
@@ -228,13 +231,10 @@ export class Mixer {
                     ak._recStartPos = pos;
                 }
             }
-            if (!isRecording || !recordingLanes.has(ak.key)) {
-                if (ak._recStartPos !== undefined) {
-                    ak._recStartPos = undefined;
-                    // If no automation, clear the background
-                    if (!this.mixerAutomation.hasAutomation(ak.key)) {
-                        ak.knobOuter.style.background = '';
-                    }
+            if (!isActivelyRecording && ak._recStartPos !== undefined) {
+                ak._recStartPos = undefined;
+                if (!this.mixerAutomation.hasAutomation(ak.key)) {
+                    ak.knobOuter.style.background = '';
                 }
             }
         }
