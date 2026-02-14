@@ -226,8 +226,19 @@ export class AutomationPanel {
             grid.appendChild(cell);
         });
 
-        // === DESTINATIONS ===
-        MODULATION_TARGETS.forEach(target => {
+        // === DESTINATIONS (filtered by track engine type) ===
+        const trackType = track.type || 'granular';
+        const filteredTargets = MODULATION_TARGETS.filter(target => {
+            if (trackType === 'sampler') {
+                // Sampler: show smp_* targets plus generic bus targets
+                return target.id.startsWith('smp_') || 
+                       ['filter', 'hpFilter', 'volume', 'pan'].includes(target.id);
+            }
+            // Granular/other: show all EXCEPT smp_* targets
+            return !target.id.startsWith('smp_');
+        });
+
+        filteredTargets.forEach(target => {
             const lbl = document.createElement('div');
             lbl.className = 'grid-cell label-cell border-t border-neutral-800';
             lbl.innerText = target.name.toUpperCase();

@@ -33,7 +33,7 @@ export class SamplerEngine {
         const buf = track.buffer;
 
         // --- Polyphony ---
-        const maxVoices = sp.voices !== undefined ? sp.voices : 4;
+        const maxVoices = Math.max(1, Math.min(8, Math.round((sp.voices !== undefined ? sp.voices : 4) + mod.voices)));
         let voices = this._activeVoices.get(track.id);
         if (!voices) { voices = new Set(); this._activeVoices.set(track.id, voices); }
         while (voices.size >= maxVoices) {
@@ -43,7 +43,7 @@ export class SamplerEngine {
         }
 
         // --- Modulation ---
-        const mod = { pitch: 0, filter: 0, hpFilter: 0, volume: 0, attack: 0, decay: 0, sustain: 0, release: 0 };
+        const mod = { pitch: 0, filter: 0, hpFilter: 0, volume: 0, attack: 0, decay: 0, sustain: 0, release: 0, start: 0, end: 0, voices: 0 };
         const modCtx = this._modCtx;
         modCtx.siblings = track.lfos;
         modCtx.audioEngine = this.audioEngine;
@@ -68,6 +68,9 @@ export class SamplerEngine {
                     else if (tgt === 'smp_decay') mod.decay += v * 0.5;
                     else if (tgt === 'smp_sustain') mod.sustain += v * 0.5;
                     else if (tgt === 'smp_release') mod.release += v * 0.5;
+                    else if (tgt === 'smp_start') mod.start += v * 0.5;
+                    else if (tgt === 'smp_end') mod.end += v * 0.5;
+                    else if (tgt === 'smp_voices') mod.voices += v * 4;
                     else if (tgt === 'filter') mod.filter += v * 8000;
                     else if (tgt === 'hpFilter') mod.hpFilter += v * 4000;
                     else if (tgt === 'volume') mod.volume += v * 0.5;
@@ -79,9 +82,9 @@ export class SamplerEngine {
         const velGain = velocity === 1 ? 0.33 : velocity === 2 ? 0.66 : 1.0;
         const velFilterMult = velocity === 1 ? 0.5 : velocity === 2 ? 0.75 : 1.0;
 
-        // --- Sample region ---
-        const rawStart = sp.start !== undefined ? sp.start : 0;
-        const rawEnd = sp.end !== undefined ? sp.end : 1;
+        // --- Sample region (with modulation) ---
+        const rawStart = Math.max(0, Math.min(1, (sp.start !== undefined ? sp.start : 0) + mod.start));
+        const rawEnd = Math.max(0, Math.min(1, (sp.end !== undefined ? sp.end : 1) + mod.end));
         const isReverse = rawStart > rawEnd;
         const regionStart = Math.min(rawStart, rawEnd);
         const regionEnd = Math.max(rawStart, rawEnd);

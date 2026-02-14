@@ -54,6 +54,8 @@ export const MODULATION_TARGETS = [
     { id: 'edgeCrunch', name: 'Crunch' },
     { id: 'orbit', name: 'Orbit' },
     // Sampler engine targets
+    { id: 'smp_start', name: 'S:Start' },
+    { id: 'smp_end', name: 'S:End' },
     { id: 'smp_pitch', name: 'S:Pitch' },
     { id: 'smp_filter', name: 'S:LPF' },
     { id: 'smp_hpFilter', name: 'S:HPF' },
@@ -62,4 +64,5 @@ export const MODULATION_TARGETS = [
     { id: 'smp_decay', name: 'S:Dec' },
     { id: 'smp_sustain', name: 'S:Sus' },
     { id: 'smp_release', name: 'S:Rel' },
+    { id: 'smp_voices', name: 'S:Voices' },
 ];
