@@ -6,8 +6,8 @@
     --strip-gap: 0px;
     --knob-gap: 0px;
     --fader-height: 180px;
-    --thumb-height: 24px;
-    --thumb-width: 32px;
+    --thumb-height: 10px;
+    --thumb-width: 10px;
 }
 
 .mixer-container {
@@ -156,18 +156,16 @@
     justify-content: center;
 }
 
-/* The Background Slot (Grey background behind fader) */
+/* The Background Slot (Modulator-style thin track) */
 .fader-bg-slot {
     position: absolute;
     top: 0;
     bottom: 0;
     left: 50%;
     transform: translateX(-50%);
-    width: 6px; /* Narrow slot */
-    background-color: #080808;
-    border: 1px solid #222;
-    border-radius: 3px;
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
+    width: 4px;
+    background: #2a2a2a;
+    border-radius: 2px;
     z-index: 1;
 }
 
@@ -176,12 +174,12 @@
     position: absolute;
     top: 2%;
     bottom: 2%;
-    left: 2px; /* Pin to left of strip */
-    width: 4px;
+    left: 3px;
+    width: 3px;
     background: #000;
     z-index: 2;
-    border-radius: 2px;
-    opacity: 0.8;
+    border-radius: 1px;
+    opacity: 0.6;
 }
 
 /* The Ruler / Axis (Right side) */
@@ -189,19 +187,18 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    right: 2px; /* Pin to right of strip */
-    width: 6px;
+    right: 3px;
+    width: 3px;
     z-index: 2;
-    /* Logarithmic ticks generated via gradients */
     background: 
         repeating-linear-gradient(
             to bottom,
-            #444 0px,
-            #444 1px,
+            #282828 0px,
+            #282828 1px,
             transparent 1px,
             transparent 10%
         );
-    opacity: 0.5;
+    opacity: 0.4;
     pointer-events: none;
 }
 
@@ -223,7 +220,7 @@ input[type=range].v-fader {
     input[type=range].v-fader { writing-mode: vertical-lr; direction: rtl; }
 }
 
-/* --- FADER CAP (THUMB) STYLING --- */
+/* --- FADER CAP (THUMB) — Modulator Round Dot Style --- */
 
 /* Webkit (Chrome/Safari) */
 input[type=range].v-fader::-webkit-slider-runnable-track {
@@ -234,35 +231,21 @@ input[type=range].v-fader::-webkit-slider-runnable-track {
 input[type=range].v-fader::-webkit-slider-thumb {
     -webkit-appearance: none;
     height: var(--thumb-height);
-    width: 36px; /* Wider than the slot to cover it nicely */
-    margin-left: -18px; /* Center adjustment */
-    
-    /* Cap Design */
-    background: linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 100%);
-    border: 1px solid #000;
-    border-radius: 2px;
-    box-shadow: 
-        0 4px 6px rgba(0,0,0,0.6), /* Drop shadow */
-        inset 0 1px 0 rgba(255,255,255,0.1); /* Highlight */
-    
-    /* Grip Lines */
-    background-image: 
-        linear-gradient(to bottom, transparent 45%, #000 45%, #000 55%, transparent 55%),
-        linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 100%);
+    width: var(--thumb-width);
+    border-radius: 50%;
+    background: #34d399;
+    border: none;
+    box-shadow: 0 0 6px rgba(52, 211, 153, 0.35);
+    cursor: ns-resize;
+    transition: transform 0.1s;
 }
 
-/* Hover State for Cap */
+/* Hover State */
 input[type=range].v-fader:hover::-webkit-slider-thumb {
-    background: linear-gradient(180deg, #444 0%, #222 100%);
-    box-shadow: 0 0 0 1px #555, 0 4px 8px rgba(0,0,0,0.8);
+    transform: scale(1.2);
+    background: #6ee7b7;
+    box-shadow: 0 0 8px rgba(110, 231, 183, 0.5);
 }
-
-/* Fader Cap Line Indicator (Center) */
-/* Note: Standard input[range] thumbs can't easily have pseudo-elements. 
-   We simulate the line using background-image above or simplify. 
-   For a distinct color line like the knobs, we rely on the gradient trick 
-   or strict JS overlay. I'll use a white horizontal line via gradient.
-*/
 
 /* --- GROUP & MASTER STYLES --- */
 .drive-select {
