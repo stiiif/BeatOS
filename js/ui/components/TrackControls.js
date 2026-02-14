@@ -262,7 +262,13 @@ export class TrackControls {
         document.querySelectorAll('.param-slider').forEach(el => {
             const param = el.dataset.param;
             if(t.params[param] !== undefined) {
-                el.value = t.params[param];
+                const isLog = el.dataset.log === '1';
+                // For log sliders: convert Hz to 0–1 normalized for the slider position
+                if (isLog) {
+                    el.value = Math.log(Math.max(20, t.params[param]) / 20) / Math.log(1000);
+                } else {
+                    el.value = t.params[param];
+                }
                 let suffix = '';
                 let displayValue = t.params[param].toFixed(3); 
                 if(param === 'density') { suffix = 'hz'; displayValue = t.params[param].toFixed(1); }
@@ -272,12 +278,13 @@ export class TrackControls {
                 if(param === 'pitch') suffix = 'x';
                 if(param === 'overlap') suffix = 'x';
                 
-                // Special formatting for new params
                 if(param === 'edgeCrunch') { suffix = '%'; displayValue = (t.params[param] * 100).toFixed(0); }
                 if(param === 'orbit') { suffix = '%'; displayValue = (t.params[param] * 100).toFixed(0); }
                 if(param === 'stereoSpread') { suffix = '%'; displayValue = (t.params[param] * 100).toFixed(0); }
 
-                // Scan Sync display override
+                // Log filter display: show Hz
+                if(isLog) { suffix = ' Hz'; displayValue = Math.round(t.params[param]); }
+
                 if(param === 'scanSpeed' && t.scanSync) {
                     const m = t.scanSyncMultiplier;
                     if (m >= 1) displayValue = `S:${m.toFixed(0)}x`;

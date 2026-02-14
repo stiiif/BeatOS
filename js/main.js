@@ -882,6 +882,12 @@ document.querySelectorAll('.param-slider').forEach(el => {
         const param = e.target.dataset.param;
         let value = parseFloat(e.target.value);
 
+        // Log-mapped sliders: convert 0–1 → 20–20000 Hz
+        const isLog = e.target.dataset.log === '1';
+        if (isLog) {
+            value = 20 * Math.pow(1000, value);
+        }
+
         if (param === 'sampleStart') {
             // Constraint: Start cannot be > End
             if (value > t.params.sampleEnd) value = t.params.sampleEnd;
@@ -945,19 +951,28 @@ document.querySelectorAll('.param-slider').forEach(el => {
         e.preventDefault();
         const t = tracks[uiManager.getSelectedTrackIndex()];
         const param = el.dataset.param;
+        const isLog = el.dataset.log === '1';
         const step = parseFloat(el.step) || 0.01;
-        // USE THE ACTUAL STEP (0.001) INSTEAD OF /10 TO AVOID SNAPPING ISSUES
         const fineStep = step; 
         
-        // Scroll down (positive deltaY) -> decrease value, Scroll up -> increase value
         const delta = e.deltaY > 0 ? -1 : 1; 
         
-        // READ FROM PARAMS DIRECTLY (High Precision)
-        let currentValue = t.params[param];
+        if (isLog) {
+            // For log sliders: step in normalized space, convert to Hz
+            const currentHz = t.params[param];
+            let norm = Math.log(Math.max(20, currentHz) / 20) / Math.log(1000);
+            norm = Math.max(0, Math.min(1, norm + delta * fineStep));
+            const newHz = 20 * Math.pow(1000, norm);
+            t.params[param] = newHz;
+            el.value = norm;
+            uiManager.updateKnobs();
+            if (t.type === 'granular') visualizer.triggerRedraw();
+            return;
+        }
         
+        let currentValue = t.params[param];
         let newValue = currentValue + (delta * fineStep);
         
-        // Clamp to min/max
         const min = parseFloat(el.min);
         const max = parseFloat(el.max);
         newValue = Math.max(min, Math.min(max, newValue));
