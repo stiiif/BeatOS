@@ -32,17 +32,7 @@ export class SamplerEngine {
         const sp = p.sampler || {};
         const buf = track.buffer;
 
-        // --- Polyphony ---
-        const maxVoices = Math.max(1, Math.min(8, Math.round((sp.voices !== undefined ? sp.voices : 4) + mod.voices)));
-        let voices = this._activeVoices.get(track.id);
-        if (!voices) { voices = new Set(); this._activeVoices.set(track.id, voices); }
-        while (voices.size >= maxVoices) {
-            const oldest = voices.values().next().value;
-            try { oldest.stop(time); } catch(e) {}
-            voices.delete(oldest);
-        }
-
-        // --- Modulation ---
+        // --- Modulation (must come first so mod.voices is available for polyphony) ---
         const mod = { pitch: 0, filter: 0, hpFilter: 0, volume: 0, attack: 0, decay: 0, sustain: 0, release: 0, start: 0, end: 0, voices: 0 };
         const modCtx = this._modCtx;
         modCtx.siblings = track.lfos;
@@ -76,6 +66,16 @@ export class SamplerEngine {
                     else if (tgt === 'volume') mod.volume += v * 0.5;
                 }
             }
+        }
+
+        // --- Polyphony ---
+        const maxVoices = Math.max(1, Math.min(8, Math.round((sp.voices !== undefined ? sp.voices : 4) + mod.voices)));
+        let voices = this._activeVoices.get(track.id);
+        if (!voices) { voices = new Set(); this._activeVoices.set(track.id, voices); }
+        while (voices.size >= maxVoices) {
+            const oldest = voices.values().next().value;
+            try { oldest.stop(time); } catch(e) {}
+            voices.delete(oldest);
         }
 
         // --- Velocity ---
