@@ -187,23 +187,30 @@ export class GranularSynthWorklet {
             this.lastBarStartTimes.set(track.id, time);
         }
 
-        // 2. Determine effective Scan Time
-        let scanTime = time;
-        if (track.resetOnTrig) {
-            scanTime = 0; // Reset scan offset to 0 for this note
-        } else if (track.resetOnBar) {
-            const barStart = this.lastBarStartTimes.get(track.id) || time;
-            scanTime = Math.max(0, time - barStart);
-        }
+        // 2. Calculate base position WITHOUT scan offset — worklet handles scanning
+        const modNoScan = { ...mod, scanSpeed: 0 };
+        const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, modNoScan, time, 0);
         
-        // 3. Calculate Effective Position
-        const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time, scanTime);
+        // 3. Determine the scan time origin for the worklet
+        // Worklet computes: pos = anchor + scanSpeed * (currentTime - scanOriginTime)
+        let scanOriginTime;
+        if (track.resetOnTrig) {
+            // Reset on every trigger: scan from 0 each note
+            scanOriginTime = time;
+        } else if (track.resetOnBar) {
+            // Reset on bar: scan from bar start
+            scanOriginTime = this.lastBarStartTimes.get(track.id) || time;
+        } else {
+            // Normal: continuous scan from audio context start (time 0)
+            scanOriginTime = 0;
+        }
 
         this.workletNode.port.postMessage({
             type: 'noteOn',
             data: {
                 trackId: Number(track.id),
                 time: time,
+                scanOriginTime: scanOriginTime,
                 duration: (p.relGrain || 0.4) + mod.relGrain,
                 stepIndex: stepIndex,
                 params: {
@@ -458,6 +465,7 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         this.activeNotes.push({
             trackId: Number(data.trackId), 
             startTime: data.time, 
+            scanOriginTime: data.scanOriginTime || data.time,
             duration: data.duration,
             params: pp, 
             nextGrainTime: data.time,
@@ -667,8 +675,15 @@ class BeatOSGranularProcessor extends AudioWorkletProcessor {
         // --- STRICT WINDOW WRAPPING LOGIC ---
         let pos = note.basePosition;
         
-        const timeSinceStart = currentTime - note.startTime;
-        pos += note.params.scanSpeed * timeSinceStart;
+        // Scan from the correct time origin:
+        // - resetOnTrig: scanOriginTime = note.startTime → scans from 0 each trigger
+        // - resetOnBar: scanOriginTime = bar start → scans from bar start
+        // - normal: scanOriginTime = note.startTime → scans from note start
+        const scanSpeed = note.params.scanSpeed;
+        if (scanSpeed !== 0) {
+            const timeSinceScanOrigin = currentTime - note.scanOriginTime;
+            pos += scanSpeed * timeSinceScanOrigin;
+        }
         
         const wStart = note.params.windowStart;
         const wEnd = note.params.windowEnd;

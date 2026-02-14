@@ -149,6 +149,9 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
         uiManager.mixer.setScheduler(scheduler);
         uiManager.mixer.render();
     }
+    
+    // Wire scheduler to TrackControls for Scan Sync
+    uiManager.trackControls.setScheduler(scheduler);
 
     // Render Effects UI
     effectsManager.setBpm(scheduler.getBPM()); // SYNC BPM ON START
@@ -187,7 +190,9 @@ document.getElementById('stopBtn').addEventListener('click', () => {
 document.getElementById('bpmInput').addEventListener('change', e => { 
     const bpm = e.target.value;
     scheduler.setBPM(bpm); 
-    effectsManager.setBpm(bpm); // Update Effects BPM on change
+    effectsManager.setBpm(bpm);
+    // Recalculate scan sync for all synced tracks
+    uiManager.trackControls.onBpmChange();
 });
 
 const applyGrooveBtn = document.getElementById('applyGrooveBtn');
@@ -589,23 +594,25 @@ document.querySelectorAll('.param-slider').forEach(el => {
             // Constraint: Start cannot be > End
             if (value > t.params.sampleEnd) value = t.params.sampleEnd;
             t.params.sampleStart = value;
-            e.target.value = value; // Update slider visual if clamped
+            e.target.value = value;
 
-            // Push Position if it falls behind Start
             if (t.params.position < value) {
                 t.params.position = value;
             }
+            // Recalc sync if active (window changed)
+            if (t.scanSync) uiManager.trackControls._applyScanSync(t);
         } 
         else if (param === 'sampleEnd') {
             // Constraint: End cannot be < Start
             if (value < t.params.sampleStart) value = t.params.sampleStart;
             t.params.sampleEnd = value;
-            e.target.value = value; // Update slider visual if clamped
+            e.target.value = value;
 
-            // Push Position if it goes beyond End
             if (t.params.position > value) {
                 t.params.position = value;
             }
+            // Recalc sync if active (window changed)
+            if (t.scanSync) uiManager.trackControls._applyScanSync(t);
         } 
         else if (param === 'position') {
             // Constraint: Position must be within Start/End
@@ -616,6 +623,11 @@ document.querySelectorAll('.param-slider').forEach(el => {
         } 
         else {
             t.params[param] = value;
+            // Disengage scan sync when user manually moves scanSpeed
+            if (param === 'scanSpeed' && t.scanSync) {
+                t.scanSync = false;
+                updateTrackControlsVisibility();
+            }
         }
 
         uiManager.updateKnobs(); // Updates all knobs, including position/start/end if they were pushed
@@ -659,6 +671,10 @@ document.querySelectorAll('.param-slider').forEach(el => {
              t.params.position = newValue;
         } else {
              t.params[param] = newValue;
+             if (param === 'scanSpeed' && t.scanSync) {
+                 t.scanSync = false;
+                 updateTrackControlsVisibility();
+             }
         }
         
         el.value = newValue; // Update visual slider (might snap, but internal params are precise)

@@ -28,6 +28,8 @@ export class PresetManager {
                     targets: l.targets
                 }),
                 stepPitches: t.stepPitches || null,
+                scanSync: t.scanSync || false,
+                scanSyncMultiplier: t.scanSyncMultiplier || 1,
                 samplePath: null
             };
 
@@ -154,6 +156,8 @@ export class PresetManager {
             t.steps = [...trackData.steps];
             t.muted = !!trackData.muted; t.soloed = !!trackData.soloed;
             t.stepLock = !!trackData.stepLock;
+            t.scanSync = !!trackData.scanSync;
+            t.scanSyncMultiplier = trackData.scanSyncMultiplier || 1;
             
             if (trackData.lfos) trackData.lfos.forEach((lData, lIdx) => {
                 if(lIdx < NUM_LFOS) {

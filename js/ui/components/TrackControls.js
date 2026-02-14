@@ -20,6 +20,10 @@ export class TrackControls {
         console.log(`[TrackControls] Tracks set. Count: ${tracks.length}`);
     }
 
+    setScheduler(scheduler) {
+        this._scheduler = scheduler;
+    }
+
     setGridElements(trackLabelElements, matrixStepElements) {
         this.trackLabelElements = trackLabelElements;
         this.matrixStepElements = matrixStepElements;
@@ -177,6 +181,45 @@ export class TrackControls {
             btnTrig.className = `w-5 h-5 text-[8px] border rounded transition ${t.resetOnTrig ? 'bg-amber-600 text-white border-amber-400' : 'bg-neutral-800 text-neutral-500 border-neutral-700 hover:bg-neutral-700'}`;
         }
 
+        // --- Scan Sync buttons ---
+        const btnSync = document.getElementById('scanSyncBtn');
+        const btnX2 = document.getElementById('scanSyncX2Btn');
+        const btnD2 = document.getElementById('scanSyncD2Btn');
+
+        if (btnSync) {
+            btnSync.onclick = () => {
+                t.scanSync = !t.scanSync;
+                if (t.scanSync) {
+                    t.scanSyncMultiplier = 1;
+                    this._applyScanSync(t);
+                }
+                this.updateTrackControlsVisibility();
+            };
+            btnSync.className = `w-5 h-5 text-[8px] border rounded transition font-bold ${t.scanSync ? 'bg-cyan-600 text-white border-cyan-400' : 'bg-neutral-800 text-neutral-500 border-neutral-700 hover:bg-neutral-700'}`;
+        }
+
+        if (btnX2) {
+            btnX2.onclick = () => {
+                if (!t.scanSync) return;
+                t.scanSyncMultiplier *= 2;
+                this._applyScanSync(t);
+                this.updateTrackControlsVisibility();
+            };
+            const x2Active = t.scanSync && t.scanSyncMultiplier > 1;
+            btnX2.className = `w-5 h-2.5 text-[6px] leading-none border rounded-sm transition ${t.scanSync ? (x2Active ? 'bg-cyan-800 text-cyan-200 border-cyan-600' : 'bg-neutral-700 text-neutral-300 border-neutral-600 hover:bg-neutral-600') : 'bg-neutral-800 text-neutral-600 border-neutral-700 opacity-50'}`;
+        }
+
+        if (btnD2) {
+            btnD2.onclick = () => {
+                if (!t.scanSync) return;
+                t.scanSyncMultiplier *= 0.5;
+                this._applyScanSync(t);
+                this.updateTrackControlsVisibility();
+            };
+            const d2Active = t.scanSync && t.scanSyncMultiplier < 1;
+            btnD2.className = `w-5 h-2.5 text-[6px] leading-none border rounded-sm transition ${t.scanSync ? (d2Active ? 'bg-cyan-800 text-cyan-200 border-cyan-600' : 'bg-neutral-700 text-neutral-300 border-neutral-600 hover:bg-neutral-600') : 'bg-neutral-800 text-neutral-600 border-neutral-700 opacity-50'}`;
+        }
+
         const autoControls = document.getElementById('automationControls');
         const granularControls = document.getElementById('granularControls');
         const drumControls = document.getElementById('simpleDrumControls');
@@ -237,10 +280,65 @@ export class TrackControls {
                 if(param === 'orbit') { suffix = '%'; displayValue = (t.params[param] * 100).toFixed(0); }
                 if(param === 'stereoSpread') { suffix = '%'; displayValue = (t.params[param] * 100).toFixed(0); }
 
+                // Scan Sync display override
+                if(param === 'scanSpeed' && t.scanSync) {
+                    const m = t.scanSyncMultiplier;
+                    if (m >= 1) displayValue = `S:${m.toFixed(0)}x`;
+                    else displayValue = `S:/${(1/m).toFixed(0)}`;
+                    suffix = '';
+                }
+
                 let displayEl = el.nextElementSibling;
                 if (displayEl && !displayEl.classList.contains('value-display')) displayEl = el.parentElement.nextElementSibling;
                 if(displayEl && displayEl.classList.contains('value-display')) displayEl.innerText = displayValue + suffix;
             }
+        });
+    }
+
+    /**
+     * Calculate and apply the sync'd scanSpeed value.
+     * scanSpeed = (sampleDuration * multiplier) / loopDuration
+     * where loopDuration = (60 / bpm) * (numSteps / 4)
+     */
+    _applyScanSync(t) {
+        if (!t.buffer || !this._scheduler) return;
+        
+        const sampleDuration = t.buffer.duration;
+        if (!sampleDuration || sampleDuration <= 0) return;
+        
+        const bpm = this._scheduler.getBPM();
+        const numSteps = t.steps.length || 32;
+        const loopDuration = (60 / bpm) * (numSteps / 4);
+        
+        if (loopDuration <= 0) return;
+
+        // Account for Start/End window — only the active portion of the sample
+        const start = t.params.sampleStart || 0;
+        const end = t.params.sampleEnd !== undefined ? t.params.sampleEnd : 1;
+        const windowFraction = Math.abs(end - start);
+        const effectiveDuration = sampleDuration * (windowFraction || 1);
+        
+        // scanSpeed = how much of the buffer (0-1) to traverse per second
+        // To read the full window in one loop: speed = windowFraction / loopDuration
+        // With multiplier: faster or slower
+        const sign = t.params.scanSpeed < 0 ? -1 : 1;
+        const syncSpeed = (windowFraction / loopDuration) * t.scanSyncMultiplier;
+        
+        t.params.scanSpeed = sign * syncSpeed;
+        
+        // Update slider
+        const slider = document.querySelector('input[data-param="scanSpeed"]');
+        if (slider) slider.value = t.params.scanSpeed;
+        
+        this.updateKnobs();
+    }
+
+    /**
+     * Called when BPM changes — recalculate sync for all synced tracks
+     */
+    onBpmChange() {
+        this.tracks.forEach(t => {
+            if (t.scanSync) this._applyScanSync(t);
         });
     }
 

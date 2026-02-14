@@ -30,6 +30,10 @@ export class Track {
         this.resetOnBar = false;
         this.resetOnTrig = false;
         
+        // Scan Sync: lock scanSpeed to sample/loop ratio
+        this.scanSync = false;
+        this.scanSyncMultiplier = 1; // x2 = 2, /2 = 0.5, etc.
+        
         // NEW: Clean Mode State (Hard AGC)
         this.cleanMode = false;
 
