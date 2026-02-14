@@ -69,6 +69,8 @@ export class PresetManager {
             tracks: tracksData,
             // Snapshot Bank (16 slots)
             snapshots: extraState.snapshotBank ? extraState.snapshotBank.serialize() : [],
+            // Song Mode arrangement
+            songMode: extraState.songSequencer ? extraState.songSequencer.serialize() : null,
             // FX Engines
             effectsManager: extraState.effectsManager ? extraState.effectsManager.effects.map(fx => ({
                 id: fx.id,
@@ -343,6 +345,11 @@ export class PresetManager {
         // --- RESTORE SNAPSHOT BANK ---
         if (data.snapshots && extraState.snapshotBank) {
             extraState.snapshotBank.deserialize(data.snapshots);
+        }
+
+        // --- RESTORE SONG MODE ---
+        if (data.songMode && extraState.songPanel) {
+            extraState.songPanel.deserialize(data.songMode);
         }
 
         // Signal that a full refresh is needed (mixer, FX UI)

@@ -18,6 +18,8 @@ import { Randomizer } from './modules/Randomizer.js';
 import { RenderLoop } from './core/RenderLoop.js';
 import { SnapshotBank } from './modules/SnapshotBank.js';
 import { SnapshotBankUI } from './ui/components/SnapshotBankUI.js';
+import { SongSequencer } from './modules/SongSequencer.js';
+import { SongPanel } from './ui/components/SongPanel.js';
 
 // Import all modulator types to ensure they register in the factory
 import './modules/modulators/index.js';
@@ -45,6 +47,10 @@ const layoutManager = new LayoutManager();
 // Snapshot Bank (16 slots)
 const snapshotBank = new SnapshotBank();
 const snapshotBankUI = new SnapshotBankUI(snapshotBank);
+
+// Song Mode
+const songSequencer = new SongSequencer();
+const songPanel = new SongPanel(songSequencer, snapshotBank, scheduler);
 
 scheduler.setTrackManager(trackManager);
 scheduler.setTracks(trackManager.getTracks());
@@ -213,6 +219,31 @@ document.getElementById('initAudioBtn').addEventListener('click', async () => {
     const header = document.querySelector('header');
     const rightSection = document.getElementById('headerRightSection');
     snapshotBankUI.render(header, rightSection);
+
+    // Wire Song Sequencer
+    songSequencer.setContext({ snapshotBank, scheduler });
+    songSequencer.setCallbacks({
+        onBarChange: (barIndex, slot) => {
+            // Playhead update handled by SongPanel animation loop
+        },
+        onSongStop: () => {
+            document.getElementById('songCurrentBar').textContent = '--';
+            if (songPanel.isOpen) songPanel.draw();
+        }
+    });
+
+    // Hook scheduler bar boundary → song sequencer
+    scheduler.setOnBarBoundary(() => {
+        songSequencer.onBarBoundary();
+    });
+
+    // Enable drag-drop from snapshot buttons to song timeline
+    songPanel.enableDragFromButtons(snapshotBankUI);
+
+    // When clicking a snapshot slot, also set it as the "draw" slot for song panel
+    snapshotBankUI.onSlotSelect = (slot) => {
+        songPanel.setSelectedSlot(slot);
+    };
 
     uiManager.selectTrack(0, () => {
         visualizer.setSelectedTrackIndex(0);
@@ -622,6 +653,12 @@ document.getElementById('snapshotBtn').addEventListener('click', () => {
         uiManager.toggleSnapshot();
     }
 });
+
+// SEQ button — toggle Song Mode panel
+document.getElementById('seqBtn').addEventListener('click', () => {
+    const isOpen = songPanel.toggle();
+    document.getElementById('seqBtn').classList.toggle('seq-active', isOpen);
+});
 document.getElementById('rndChokeBtn').addEventListener('click', () => { uiManager.toggleRandomChoke(); });
 
 document.getElementById('saveBtn').addEventListener('click', async () => {
@@ -632,7 +669,8 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
         effectsManager,
         mixerAutomation: uiManager.mixer ? uiManager.mixer.mixerAutomation : null,
         audioEngine,
-        snapshotBank
+        snapshotBank,
+        songSequencer
     }); } catch (e) { console.error(e); alert("Save failed"); }
     finally { btn.innerHTML = originalHtml; btn.disabled = false; }
 });
@@ -649,6 +687,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
             mixerAutomation: uiManager.mixer ? uiManager.mixer.mixerAutomation : null,
             audioEngine,
             snapshotBank,
+            songPanel,
             onLoadComplete: () => {
                 if (uiManager.mixer) uiManager.mixer.render();
                 if (typeof effectControls !== 'undefined' && effectControls.render) effectControls.render();

@@ -22,6 +22,9 @@ export class Scheduler {
         // B7: Cached solo state — updated on solo toggle, avoids .some() per step
         this._isAnySolo = false;
 
+        // Song mode bar boundary callback
+        this._onBarBoundary = null;
+
         // Config-driven randomizer (optional)
         this.randomizer = null;
         this.randomizerCtx = null;
@@ -49,6 +52,10 @@ export class Scheduler {
     setRandomizer(randomizer, ctx) {
         this.randomizer = randomizer;
         this.randomizerCtx = ctx;
+    }
+
+    setOnBarBoundary(cb) {
+        this._onBarBoundary = cb;
     }
 
     setBPM(bpm) {
@@ -129,6 +136,11 @@ export class Scheduler {
 
     scheduleStep(step, time, scheduleVisualDrawCallback) {
         const currentTotal = this.totalStepsPlayed;
+
+        // Song mode: notify on bar boundary (step 0)
+        if (step === 0 && currentTotal > 0 && this._onBarBoundary) {
+            this._onBarBoundary();
+        }
 
         // B10: Store pending step for render loop to pick up
         this._pendingMatrixStep = step;

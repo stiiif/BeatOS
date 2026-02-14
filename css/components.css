@@ -163,3 +163,184 @@
     color: #fbbf24 !important;
     border-color: #d97706 !important;
 }
+
+/* ============================================================================
+   SONG PANEL — Full-width collapsible panel
+   ============================================================================ */
+
+.song-panel {
+    background: #0a0a0a;
+    border-bottom: 1px solid #333;
+    padding: 4px 8px 6px;
+    width: 100%;
+    overflow: hidden;
+    transition: height 0.2s ease;
+    z-index: 15;
+    flex-shrink: 0;
+}
+
+.song-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+}
+
+.song-title {
+    font-size: 10px;
+    font-weight: 800;
+    color: #6366f1;
+    letter-spacing: 1px;
+    margin-right: 8px;
+}
+
+.song-tools {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.song-sep {
+    color: #333;
+    font-size: 12px;
+    margin: 0 4px;
+}
+
+.song-tool-btn {
+    width: 26px;
+    height: 22px;
+    font-size: 10px;
+    background: #1a1a1a;
+    color: #666;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.song-tool-btn:hover {
+    background: #222;
+    color: #aaa;
+    border-color: #444;
+}
+.song-tool-btn.active {
+    background: #312e81;
+    color: #a5b4fc;
+    border-color: #6366f1;
+}
+.song-tool-btn.song-tool-danger:hover {
+    background: #7f1d1d;
+    color: #fca5a5;
+    border-color: #ef4444;
+}
+
+.song-transport {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.song-play-btn {
+    font-size: 9px;
+    font-weight: 700;
+    background: #14532d;
+    color: #4ade80;
+    border: 1px solid #166534;
+    border-radius: 3px;
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.song-play-btn:hover {
+    background: #166534;
+    border-color: #22c55e;
+}
+
+.song-stop-btn {
+    font-size: 10px;
+    background: #1a1a1a;
+    color: #666;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.song-stop-btn:hover {
+    background: #7f1d1d;
+    color: #fca5a5;
+    border-color: #ef4444;
+}
+
+.song-bar-display {
+    font-size: 10px;
+    color: #555;
+    font-family: 'JetBrains Mono', monospace;
+    margin-left: 8px;
+}
+.song-bar-display span {
+    color: #22d3ee;
+}
+
+.song-length-ctrl {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 12px;
+}
+.song-len-label {
+    font-size: 9px;
+    color: #555;
+    font-weight: 700;
+}
+.song-len-input {
+    width: 42px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 3px;
+    color: #a5b4fc;
+    font-size: 10px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 2px;
+}
+.song-len-input:focus {
+    outline: none;
+    border-color: #6366f1;
+}
+
+.song-canvas {
+    display: block;
+    width: 100%;
+    border: 1px solid #222;
+    border-radius: 3px;
+    background: #0d0d0d;
+}
+
+/* SEQ header button */
+.seq-header-btn {
+    font-size: 10px;
+    font-weight: 700;
+    background: #1a1a1a;
+    color: #6366f1;
+    border: 1px solid #333;
+    border-radius: 3px;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.5px;
+}
+.seq-header-btn:hover {
+    background: #312e81;
+    border-color: #6366f1;
+}
+.seq-header-btn.seq-active {
+    background: #4338ca;
+    color: #fff;
+    border-color: #6366f1;
+    box-shadow: 0 0 6px rgba(99, 102, 241, 0.3);
+}

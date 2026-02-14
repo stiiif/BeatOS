@@ -9,7 +9,8 @@ export class SnapshotBankUI {
         this.container = null;
         this.buttons = [];
         this._addBtn = null;
-        this._dblClickTimers = new Map(); // slot -> timer for double-click detection
+        this._dblClickTimers = new Map();
+        this.onSlotSelect = null; // External callback: (slot) => {}
     }
 
     /**
@@ -93,6 +94,7 @@ export class SnapshotBankUI {
             if (this.bank.isOccupied(slot)) {
                 this.bank.recall(slot);
                 this.refreshAll();
+                if (this.onSlotSelect) this.onSlotSelect(slot);
             }
         }, 250));
     }
