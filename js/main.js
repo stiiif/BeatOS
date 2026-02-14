@@ -51,7 +51,14 @@ uiManager.setTrackManager(trackManager);
 visualizer.setTracks(tracks);
 audioEngine._tracks = tracks; // For modulator context (EnvelopeFollower)
 
-scheduler.setUpdateMatrixHeadCallback((step, total) => uiManager.updateMatrixHead(step, total));
+// B10: Matrix head update is now batched — scheduler stores pending, render loop reads it
+renderLoop.register('matrixHead', () => {
+    if (scheduler._pendingMatrixDirty) {
+        scheduler._pendingMatrixDirty = false;
+        uiManager.updateMatrixHead(scheduler._pendingMatrixStep, scheduler._pendingMatrixTotal);
+    }
+}, 33); // 30fps is plenty for step head position
+scheduler.setUpdateMatrixHeadCallback(null); // Disable old per-step rAF
 scheduler.setRandomChokeCallback(() => uiManager.getRandomChokeInfo());
 scheduler.setRandomizer(randomizer, { audioEngine, effectsManager, selectedTrackIndex: 0 });
 
@@ -828,4 +835,7 @@ if (maxGrainsInput) {
         granularSynth.setMaxGrains(val);
     });
 }
-setInterval(() => { if (grainMonitorEl) grainMonitorEl.innerText = granularSynth.getActiveGrainCount(); }, 100);
+// A6: Grain monitor in render loop at 500ms instead of setInterval 100ms
+renderLoop.register('grainMonitor', () => {
+    if (grainMonitorEl) grainMonitorEl.innerText = granularSynth.getActiveGrainCount();
+}, 500);

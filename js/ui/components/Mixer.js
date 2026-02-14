@@ -325,9 +325,21 @@ export class Mixer {
         const container = this.container.querySelector('.mixer-container');
         if (!container) return;
 
-        // READ SCROLL ONCE PER FRAME (Fast)
-        const scrollLeft = container.scrollLeft;
-        const containerW = container.clientWidth;
+        // Use cached scroll position (updated by scroll event listener)
+        if (this._cachedScrollContainer !== container) {
+            this._cachedScrollContainer = container;
+            this._cachedScrollLeft = container.scrollLeft;
+            this._cachedContainerW = container.clientWidth;
+            container.addEventListener('scroll', () => {
+                this._cachedScrollLeft = container.scrollLeft;
+            }, { passive: true });
+            // Update width on resize 
+            new ResizeObserver(() => {
+                this._cachedContainerW = container.clientWidth;
+            }).observe(container);
+        }
+        const scrollLeft = this._cachedScrollLeft || 0;
+        const containerW = this._cachedContainerW || container.clientWidth;
 
         this.meterCtx.clearRect(0, 0, this.meterOverlay.width, this.meterOverlay.height);
 
@@ -339,8 +351,14 @@ export class Mixer {
         this.meterRegistry.forEach((meta, id) => {
             if (!meta.analyser) return;
             
-            // OPTIMIZATION: Use Cached Positions - NO DOM READS HERE
-            // Calculate screen X based on cached offset minus scroll
+            // B11: Skip silent meters — don't read analyser if output is negligible
+            if (meta.currentValue < 0.005 && meta.targetValue < 0.005) {
+                meta._silentFrames = (meta._silentFrames || 0) + 1;
+                if (meta._silentFrames > 3) return; // Skip after 3 consecutive silent frames
+            } else {
+                meta._silentFrames = 0;
+            }
+
             const x = meta.cachedX - scrollLeft;
             
             // Culling: Skip if outside visible viewport

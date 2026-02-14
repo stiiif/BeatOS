@@ -19,6 +19,9 @@ export class Scheduler {
         this.trackManager = null; 
         this.activeSnapshot = null; 
 
+        // B7: Cached solo state — updated on solo toggle, avoids .some() per step
+        this._isAnySolo = false;
+
         // Config-driven randomizer (optional)
         this.randomizer = null;
         this.randomizerCtx = null;
@@ -26,6 +29,17 @@ export class Scheduler {
 
     setTracks(tracks) {
         this.tracks = tracks;
+    }
+
+    // B7: Call this when any track's solo changes
+    updateSoloState() {
+        this._isAnySolo = false;
+        for (let i = 0; i < this.tracks.length; i++) {
+            if (this.tracks[i].soloed && this.tracks[i].type !== 'automation') {
+                this._isAnySolo = true;
+                return;
+            }
+        }
     }
 
     setTrackManager(tm) {
@@ -97,6 +111,8 @@ export class Scheduler {
 
     schedule(scheduleVisualDrawCallback) {
         const audioCtx = this.audioEngine.getContext();
+        // B7: Refresh solo state once per tick (every 25ms), not per step
+        this.updateSoloState();
         while (this.nextNoteTime < audioCtx.currentTime + SCHEDULE_AHEAD_TIME) {
             this.scheduleStep(this.currentStep, this.nextNoteTime, scheduleVisualDrawCallback);
             this.nextNextTime();
@@ -114,26 +130,30 @@ export class Scheduler {
     scheduleStep(step, time, scheduleVisualDrawCallback) {
         const currentTotal = this.totalStepsPlayed;
 
-        if (this.updateMatrixHeadCallback) {
-            requestAnimationFrame(() => this.updateMatrixHeadCallback(step, currentTotal));
-        }
+        // B10: Store pending step for render loop to pick up
+        this._pendingMatrixStep = step;
+        this._pendingMatrixTotal = currentTotal;
+        this._pendingMatrixDirty = true;
         
-        this.tracks.forEach(t => {
+        // B8: for-loop instead of forEach for automation
+        for (let i = 0; i < this.tracks.length; i++) {
+            const t = this.tracks[i];
             if (t.type === 'automation' && !t.muted) {
                 this.processAutomationTrack(t, currentTotal, time);
             }
-        });
+        }
 
         const randomChokeInfo = this.randomChokeCallback ? this.randomChokeCallback() : { mode: false, groups: [] };
         
+        // B7: Use cached solo state
+        const isAnySolo = this._isAnySolo;
+        
         if (randomChokeInfo.mode) {
             const chokeGroupMap = new Map();
-            const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
             
             for (let i = 0; i < this.tracks.length; i++) {
                 const t = this.tracks[i];
                 if (t.type === 'automation') continue; 
-                // V2: Velocity Check > 0
                 if (t.steps[step] === 0) continue;
                 if (isAnySolo && !t.soloed) continue;
                 if (!isAnySolo && t.muted) continue;
@@ -153,12 +173,9 @@ export class Scheduler {
                 }
             });
         } else {
-            const isAnySolo = this.tracks.some(t => t.soloed && t.type !== 'automation');
             for (let i = 0; i < this.tracks.length; i++) {
                 const t = this.tracks[i];
                 if (t.type === 'automation') continue; 
-
-                // V2: Velocity Check > 0
                 if (t.steps[step] === 0) continue;
                 
                 if (isAnySolo) {

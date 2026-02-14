@@ -29,10 +29,22 @@ export class Visualizer {
         
         // Cache track canvases to avoid getElementById in the loop
         this.canvasCache = new Map();
+        // A5: Cache 2d contexts alongside canvases
+        this.ctxCache = new Map();
         
         // Track triggers and bar starts
         this.lastTriggerTimes = new Map();
         this.lastBarStartTimes = new Map(); 
+
+        // A4: Pre-allocated spectrum buffer
+        this._spectrumData = null; // Lazy init on first use
+        
+        // A1-vis: Pre-allocated overlay mod object
+        this._overlayMod = { position:0, spray:0, grainSize:0, overlap:0, density:0, sampleStart:0, sampleEnd:0, scanSpeed:0, stereoSpread:0 };
+
+        // B9: Cached gradient (recreated only on resize)
+        this._mirrorGrad = null;
+        this._mirrorGradH = 0;
     }
 
     setTracks(tracks) {
@@ -88,9 +100,16 @@ export class Visualizer {
     getTrackCanvas(trackId) {
         if (!this.canvasCache.has(trackId)) {
             const el = document.getElementById(`vis-canvas-${trackId}`);
-            if (el) this.canvasCache.set(trackId, el);
+            if (el) {
+                this.canvasCache.set(trackId, el);
+                this.ctxCache.set(trackId, el.getContext('2d', { alpha: true }));
+            }
         }
         return this.canvasCache.get(trackId);
+    }
+
+    getTrackCtx(trackId) {
+        return this.ctxCache.get(trackId);
     }
 
     /** Called by RenderLoop — replaces internal rAF */
@@ -123,11 +142,11 @@ export class Visualizer {
         }
         this.drawQueue.length = activeCount;
 
-        // Only draw mini canvases that are visible
         for (let i = 0; i < this.tracks.length; i++) {
             const canvas = this.getTrackCanvas(i);
             if (!canvas || canvas.offsetParent === null) continue;
-            const ctx = canvas.getContext('2d', { alpha: true });
+            const ctx = this.getTrackCtx(i);
+            if (!ctx) continue;
             ctx.fillStyle = 'rgba(0,0,0,0.2)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
@@ -138,7 +157,8 @@ export class Visualizer {
                 if (age > 1) continue;
                 const canvas = this.getTrackCanvas(d.trackId);
                 if (!canvas || canvas.offsetParent === null) continue;
-                const ctx = canvas.getContext('2d');
+                const ctx = this.getTrackCtx(d.trackId);
+                if (!ctx) continue;
                 const w = canvas.width;
                 const h = canvas.height;
                 const hue = (d.trackId / this.tracks.length) * 360;
@@ -166,8 +186,9 @@ export class Visualizer {
 
         for(let i=0; i<this.tracks.length; i++) {
             const canvas = this.getTrackCanvas(i);
-            if (!canvas || canvas.offsetParent === null) continue; // Skip hidden canvases
-            const ctx = canvas.getContext('2d', { alpha: true });
+            if (!canvas || canvas.offsetParent === null) continue;
+            const ctx = this.getTrackCtx(i);
+            if (!ctx) continue;
             ctx.fillStyle = 'rgba(0,0,0,0.2)'; 
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
@@ -179,7 +200,8 @@ export class Visualizer {
                 
                 const canvas = this.getTrackCanvas(d.trackId);
                 if (!canvas || canvas.offsetParent === null) continue;
-                const ctx = canvas.getContext('2d');
+                const ctx = this.getTrackCtx(d.trackId);
+                if (!ctx) continue;
                 const w = canvas.width;
                 const h = canvas.height;
                 
@@ -264,17 +286,20 @@ export class Visualizer {
     }
 
     drawStyleMirror(ctx, data, w, h, startIdx, windowLength) {
-        // Step size relative to the visible window length, not full buffer
         const step = Math.max(1, windowLength / w); 
         const amp = h / 2;
         const mid = h / 2;
 
-        const grad = ctx.createLinearGradient(0, 0, 0, h);
-        grad.addColorStop(0, '#10b981');
-        grad.addColorStop(0.5, '#34d399');
-        grad.addColorStop(1, '#10b981');
+        // B9: Cache gradient — only recreate when canvas height changes
+        if (!this._mirrorGrad || this._mirrorGradH !== h) {
+            this._mirrorGrad = ctx.createLinearGradient(0, 0, 0, h);
+            this._mirrorGrad.addColorStop(0, '#10b981');
+            this._mirrorGrad.addColorStop(0.5, '#34d399');
+            this._mirrorGrad.addColorStop(1, '#10b981');
+            this._mirrorGradH = h;
+        }
 
-        ctx.fillStyle = grad;
+        ctx.fillStyle = this._mirrorGrad;
         ctx.beginPath();
 
         for (let i = 0; i < w; i++) {
@@ -389,7 +414,11 @@ export class Visualizer {
 
     drawSpectrum(ctx, w, h, analyser) {
         const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
+        // A4: Reuse pre-allocated buffer
+        if (!this._spectrumData || this._spectrumData.length !== bufferLength) {
+            this._spectrumData = new Uint8Array(bufferLength);
+        }
+        const dataArray = this._spectrumData;
         analyser.getByteFrequencyData(dataArray);
         const barWidth = (w / bufferLength) * 2.5; 
         let x = 0;
@@ -426,20 +455,27 @@ export class Visualizer {
     }
 
     drawOverlays(ctx, t, w, h, time, viewStart, viewEnd) {
-        let mod = { position:0, spray:0, grainSize:0, overlap:0, density:0, sampleStart:0, sampleEnd:0, scanSpeed:0, stereoSpread:0 };
+        // A1-vis: Reuse pre-allocated mod object
+        const mod = this._overlayMod;
+        mod.position=0; mod.spray=0; mod.grainSize=0; mod.overlap=0;
+        mod.density=0; mod.sampleStart=0; mod.sampleEnd=0; mod.scanSpeed=0; mod.stereoSpread=0;
         
-        t.lfos.forEach(lfo => {
-            if (lfo.amount > 0) {
-                const v = lfo.getValue(time);
-                if (lfo.targets && lfo.targets.length > 0) {
-                    lfo.targets.forEach(target => {
-                        if(mod[target] !== undefined) mod[target] += v;
-                    });
-                } else if (lfo.target && lfo.target !== 'none') {
-                    if(mod[lfo.target] !== undefined) mod[lfo.target] += v;
+        // B8: for-loop instead of forEach
+        const lfos = t.lfos;
+        for (let li = 0; li < lfos.length; li++) {
+            const lfo = lfos[li];
+            if (lfo.amount === 0) continue;
+            const v = lfo.getValue(time);
+            const targets = lfo.targets;
+            if (targets && targets.length > 0) {
+                for (let ti = 0; ti < targets.length; ti++) {
+                    const tgt = targets[ti];
+                    if (mod[tgt] !== undefined) mod[tgt] += v;
                 }
+            } else if (lfo.target && lfo.target !== 'none') {
+                if (mod[lfo.target] !== undefined) mod[lfo.target] += v;
             }
-        });
+        }
 
         const p = t.params;
         

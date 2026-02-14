@@ -10,12 +10,14 @@ export class GranularSynthWorklet {
         this.initPromise = null;
         this.activeGrains = 0;
         
-        // Track buffer identity to detect changes manually
         this.bufferVersionMap = new Map(); 
         this.pendingLoads = new Map();
-        
-        // Track last bar start time for Reset On Bar logic
         this.lastBarStartTimes = new Map();
+
+        // A1: Pre-allocated reusable objects — zero alloc per step trigger
+        this._mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, pitchSemi:0, pitchFine:0, chordSpread:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0, relGrain:0, edgeCrunch:0, orbit:0, stereoSpread:0 };
+        this._busMod = { filter:0, hpFilter:0, volume:0, pan:0 };
+        this._noteModCtx = { siblings: null, audioEngine: null, tracks: null, selfIndex: 0, stepIndex: 0 };
     }
 
     async init() {
@@ -99,26 +101,39 @@ export class GranularSynthWorklet {
         const now = time !== null ? time : ctx.currentTime;
         const p = track.params;
 
-        let mod = { filter: 0, hpFilter: 0, volume: 0, pan: 0 };
-        const modCtx = { siblings: track.lfos, audioEngine: this.audioEngine, tracks: this.audioEngine._tracks };
-        track.lfos.forEach((lfo, idx) => {
-            if (lfo.amount === 0) return;
+        // A1: Reuse pre-allocated mod object
+        const mod = this._busMod;
+        mod.filter = 0; mod.hpFilter = 0; mod.volume = 0; mod.pan = 0;
+        
+        const modCtx = this._noteModCtx;
+        modCtx.siblings = track.lfos;
+        modCtx.audioEngine = this.audioEngine;
+        modCtx.tracks = this.audioEngine._tracks;
+        
+        // B8: for-loop instead of forEach
+        const lfos = track.lfos;
+        for (let idx = 0; idx < lfos.length; idx++) {
+            const lfo = lfos[idx];
+            if (lfo.amount === 0) continue;
             modCtx.selfIndex = idx;
             const v = lfo.getValue(now, 120, modCtx);
-            if (lfo.targets && lfo.targets.length > 0) {
-                lfo.targets.forEach(target => {
-                    if (target === 'filter') mod.filter += v * 5000; 
-                    if (target === 'hpFilter') mod.hpFilter += v * 2000; 
-                    if (target === 'volume') mod.volume += v * 0.5;
-                    if (target === 'pan') mod.pan += v;
-                });
+            const targets = lfo.targets;
+            if (targets && targets.length > 0) {
+                for (let ti = 0; ti < targets.length; ti++) {
+                    const t = targets[ti];
+                    if (t === 'filter') mod.filter += v * 5000;
+                    else if (t === 'hpFilter') mod.hpFilter += v * 2000;
+                    else if (t === 'volume') mod.volume += v * 0.5;
+                    else if (t === 'pan') mod.pan += v;
+                }
             } else if (lfo.target) {
-                if (lfo.target === 'filter') mod.filter += v * 5000; 
-                if (lfo.target === 'hpFilter') mod.hpFilter += v * 2000; 
-                if (lfo.target === 'volume') mod.volume += v * 0.5;
-                if (lfo.target === 'pan') mod.pan += v;
+                const t = lfo.target;
+                if (t === 'filter') mod.filter += v * 5000;
+                else if (t === 'hpFilter') mod.hpFilter += v * 2000;
+                else if (t === 'volume') mod.volume += v * 0.5;
+                else if (t === 'pan') mod.pan += v;
             }
-        });
+        }
 
         if (track.bus.hp) {
             const freq = this.audioEngine.getMappedFrequency(Math.max(20, p.hpFilter + mod.hpFilter), 'hp');
@@ -157,19 +172,35 @@ export class GranularSynthWorklet {
 
         this.syncTrackBusParams(track, time);
 
-        let mod = { position:0, spray:0, density:0, grainSize:0, pitch:0, pitchSemi:0, pitchFine:0, chordSpread:0, sampleStart:0, sampleEnd:0, overlap:0, scanSpeed:0, relGrain:0, edgeCrunch: 0, orbit: 0, stereoSpread: 0 };
-        const noteModCtx = { siblings: track.lfos, audioEngine: this.audioEngine, tracks: this.audioEngine._tracks, stepIndex: stepIndex };
-        track.lfos.forEach((lfo, idx) => {
+        // A1: Reuse pre-allocated mod object — zero alloc
+        const mod = this._mod;
+        mod.position=0; mod.spray=0; mod.density=0; mod.grainSize=0; mod.pitch=0;
+        mod.pitchSemi=0; mod.pitchFine=0; mod.chordSpread=0; mod.sampleStart=0;
+        mod.sampleEnd=0; mod.overlap=0; mod.scanSpeed=0; mod.relGrain=0;
+        mod.edgeCrunch=0; mod.orbit=0; mod.stereoSpread=0;
+        
+        const noteModCtx = this._noteModCtx;
+        noteModCtx.siblings = track.lfos;
+        noteModCtx.audioEngine = this.audioEngine;
+        noteModCtx.tracks = this.audioEngine._tracks;
+        noteModCtx.stepIndex = stepIndex;
+        
+        // B8: for-loop instead of forEach
+        const lfos = track.lfos;
+        for (let idx = 0; idx < lfos.length; idx++) {
+            const lfo = lfos[idx];
             noteModCtx.selfIndex = idx;
             const v = lfo.getValue(time, 120, noteModCtx);
-            if (lfo.targets && lfo.targets.length > 0) {
-                lfo.targets.forEach(target => {
-                    if(mod[target] !== undefined) mod[target] += v;
-                });
+            const targets = lfo.targets;
+            if (targets && targets.length > 0) {
+                for (let ti = 0; ti < targets.length; ti++) {
+                    const tgt = targets[ti];
+                    if (mod[tgt] !== undefined) mod[tgt] += v;
+                }
             } else if (lfo.target && mod[lfo.target] !== undefined) {
                 mod[lfo.target] += v;
             }
-        });
+        }
 
         const p = track.params;
         let gainMult = 1.0;
@@ -187,9 +218,11 @@ export class GranularSynthWorklet {
             this.lastBarStartTimes.set(track.id, time);
         }
 
-        // 2. Calculate base position WITHOUT scan offset — worklet handles scanning
-        const modNoScan = { ...mod, scanSpeed: 0 };
-        const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, modNoScan, time, 0);
+        // A2: Mutate scanSpeed to 0, compute position, restore — no spread alloc
+        const savedScanMod = mod.scanSpeed;
+        mod.scanSpeed = 0;
+        const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time, 0);
+        mod.scanSpeed = savedScanMod;
         
         // 3. Determine the scan time origin for the worklet
         // Worklet computes: pos = anchor + scanSpeed * (currentTime - scanOriginTime)
