@@ -221,25 +221,20 @@ export class GranularSynthWorklet {
             this.lastBarStartTimes.set(track.id, time);
         }
 
-        // A2: Mutate scanSpeed to 0, compute position, restore — no spread alloc
-        const savedScanMod = mod.scanSpeed;
-        mod.scanSpeed = 0;
-        const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time, 0);
-        mod.scanSpeed = savedScanMod;
+        // A2: Calculate position WITH scan for the anchor point
+        // The scan offset must be baked into basePosition so each note starts
+        // at the correct scanned position, not back at the anchor.
+        const { absPos, actStart, actEnd } = GranularLogic.calculateEffectivePosition(p, mod, time, 
+            track.resetOnTrig ? 0 : 
+            track.resetOnBar ? Math.max(0, time - (this.lastBarStartTimes.get(track.id) || time)) : 
+            time
+        );
         
         // 3. Determine the scan time origin for the worklet
-        // Worklet computes: pos = anchor + scanSpeed * (currentTime - scanOriginTime)
-        let scanOriginTime;
-        if (track.resetOnTrig) {
-            // Reset on every trigger: scan from 0 each note
-            scanOriginTime = time;
-        } else if (track.resetOnBar) {
-            // Reset on bar: scan from bar start
-            scanOriginTime = this.lastBarStartTimes.get(track.id) || time;
-        } else {
-            // Normal: continuous scan from audio context start (time 0)
-            scanOriginTime = 0;
-        }
+        // The worklet continues scanning from the absPos anchor
+        // Since absPos already includes the cumulative scan offset,
+        // set scanOriginTime = note start so worklet only adds the delta
+        let scanOriginTime = time;
 
         this.workletNode.port.postMessage({
             type: 'noteOn',
